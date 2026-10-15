@@ -17,14 +17,14 @@ public sealed class ExecutionTests
         var plan = LimitPlanner.Plan(20, new Dictionary<string, decimal>(), new Dictionary<string, decimal>(),
             new Dictionary<string, decimal> { ["A"] = .5m }, new Dictionary<string, InstrumentRule> { ["A"] = Rule() }, .5m, Now);
         var order = Assert.Single(plan.Orders);
-        Assert.Equal(3.31m, order.Quantity); Assert.Equal(9.97965m, order.MaximumDebitGbp);
+        Assert.Equal(3.30m, order.Quantity); Assert.Equal(9.9495m, order.MaximumDebitGbp);
         Assert.Equal(20, plan.CashRemainingGbp + order.MaximumDebitGbp);
     }
     [Fact] public void PenceQuotesConvertToPoundsForBudgetOnly()
     {
         var plan = LimitPlanner.Plan(20, new Dictionary<string, decimal>(), new Dictionary<string, decimal>(),
             new Dictionary<string, decimal> { ["A"] = 1 }, new Dictionary<string, InstrumentRule> { ["A"] = Rule("GBX", 300) }, 1, Now);
-        var order = Assert.Single(plan.Orders); Assert.Equal(300, order.LimitPrice); Assert.InRange(order.MaximumDebitGbp, 19.9m, 20m);
+        var order = Assert.Single(plan.Orders); Assert.Equal(300, order.LimitPrice); Assert.InRange(order.MaximumDebitGbp, 19.8m, 20m);
     }
     [Fact] public void PendingExposureAndAppreciationPreventFurtherConcentration()
     {
@@ -115,6 +115,46 @@ public sealed class ExecutionTests
             }
         }
         finally { Directory.Delete(root,true); }
+    }
+    [Fact] public void DuplicateListingsCannotEvadePerStockConcentration()
+    {
+        var rules = new Dictionary<string, InstrumentRule> { ["A"] = Rule(), ["B"] = Rule() with { Symbol = "B" } };
+        Assert.Throws<ResearchException>(() => LimitPlanner.Plan(20, new Dictionary<string, decimal>(), new Dictionary<string, decimal>(),
+            new Dictionary<string, decimal> { ["A"] = .5m, ["B"] = .5m }, rules, .5m, Now));
+    }
+    [Fact] public void FeesAndLimitPremiumCannotPushNewExposureAbovePostFillCap()
+    {
+        var rule = Rule() with { LimitPrice = 3.06m, QuantityStep = .000001m, MaximumFeeBps = 1000 };
+        var plan = LimitPlanner.Plan(20, new Dictionary<string, decimal>(), new Dictionary<string, decimal>(),
+            new Dictionary<string, decimal> { ["A"] = .5m }, new Dictionary<string, InstrumentRule> { ["A"] = rule }, .5m, Now);
+        var order = Assert.Single(plan.Orders); var markedHolding = order.Quantity * rule.Ask;
+        var nav = 20 - order.MaximumDebitGbp + markedHolding;
+        Assert.True(markedHolding / nav <= .5m);
+    }
+    [Fact] public void FeesOnNewBuyCannotPushAnExistingHoldingAboveCap()
+    {
+        var rules = new Dictionary<string, InstrumentRule> { ["A"] = Rule() with { Ask = 1, LimitPrice = 1, MaximumFeeBps = 0 },
+            ["B"] = Rule() with { Symbol = "B", BrokerTicker = "B_TEST_EQ", Ask = 1, LimitPrice = 1, MaximumFeeBps = 1000 } };
+        var plan = LimitPlanner.Plan(10, new Dictionary<string, decimal> { ["A"] = 10 }, new Dictionary<string, decimal>(),
+            new Dictionary<string, decimal> { ["A"] = .5m, ["B"] = .5m }, rules, .5m, Now);
+        Assert.Empty(plan.Orders); Assert.Contains(plan.Notes, n => n.Contains("post-cost"));
+    }
+    [Fact] public async Task StalledResponseBodyIsBoundedAndSubmissionRemainsUnknown()
+    {
+        var handler = new Stub(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(new StalledStream()) }));
+        var client = new Trading212Client(new HttpClient(handler), BrokerEnvironment.Demo, "fixture-key", "fixture-secret", TimeSpan.FromMilliseconds(50));
+        var result = await client.PlaceLimit(Intent(), default).WaitAsync(TimeSpan.FromSeconds(2));
+        Assert.Equal("unknown", result.Outcome);
+    }
+    private sealed class StalledStream : Stream
+    {
+        public override bool CanRead => true; public override bool CanSeek => false; public override bool CanWrite => false;
+        public override long Length => throw new NotSupportedException(); public override long Position { get => 0; set => throw new NotSupportedException(); }
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        { await Task.Delay(Timeout.Infinite, cancellationToken); return 0; }
+        public override int Read(byte[] buffer,int offset,int count) => throw new NotSupportedException();
+        public override void Flush() => throw new NotSupportedException(); public override long Seek(long offset,SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException(); public override void Write(byte[] buffer,int offset,int count) => throw new NotSupportedException();
     }
     private static BuyIntent Intent() => new("A","A_TEST_EQ",1,3,"GBP",3.1m,50);
     private static HttpResponseMessage Json(string json) => new(HttpStatusCode.OK) { Content = new StringContent(json,Encoding.UTF8,"application/json") };

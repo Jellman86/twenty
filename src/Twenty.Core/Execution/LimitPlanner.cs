@@ -27,23 +27,32 @@ public static class LimitPlanner
                 r.QuantityStep is < 0.00000001m or > 100000 || r.MinimumNotionalGbp is < 0 or > 1000 || r.MaximumFeeBps is < 0 or > 1000 ||
                 r.ObservedAt > now || now - r.ObservedAt > TimeSpan.FromMinutes(5)) throw new ResearchException("execution-inputs");
         }
+        var usedRules = targets.Keys.Concat(quantities.Keys).Concat(pendingQuantities.Keys).Distinct().Select(s => rules[s]).ToArray();
+        if (usedRules.Select(r => r.BrokerTicker).Distinct(StringComparer.Ordinal).Count() != usedRules.Length)
+            throw new ResearchException("execution-duplicate-listing");
         decimal Price(string symbol) => rules[symbol].Ask / (rules[symbol].QuoteCurrency == "GBX" ? 100 : 1);
         var exposures = quantities.Keys.Concat(pendingQuantities.Keys).Distinct().ToDictionary(s => s,
             s => (quantities.GetValueOrDefault(s) + pendingQuantities.GetValueOrDefault(s)) * Price(s));
         var nav = cash + exposures.Values.Sum(); // cash excludes pending debits; pending share exposure is included above.
+        // Bound post-fill NAV after both fees and paying a limit above the observed ask.
+        // Applying the largest debit-to-mark loss to all spendable cash is conservative.
+        var lossFraction = usedRules.Length == 0 ? 0 : usedRules.Max(r => 1 - r.Ask / (r.LimitPrice * (1 + r.MaximumFeeBps / 10000)));
+        var navFloor = nav - cash * lossFraction;
         var remaining = cash;
         var orders = ImmutableArray.CreateBuilder<BuyIntent>(); var notes = ImmutableArray.CreateBuilder<string>();
-        foreach (var symbol in exposures.Keys.Where(s => nav > 0 && exposures[s] / nav > maximumWeight)) notes.Add($"{symbol}: existing exposure exceeds the target cap; purchases cannot repair drift by selling.");
+        foreach (var symbol in exposures.Keys.Where(s => exposures[s] > navFloor * maximumWeight))
+            notes.Add($"{symbol}: existing or worst-case post-cost exposure exceeds the cap; retain cash. This purchase policy cannot sell to repair drift.");
+        if (notes.Count > 0) return new([], cash, notes.ToImmutable());
         foreach (var (symbol, weight) in targets.OrderByDescending(x => x.Value).ThenBy(x => x.Key, StringComparer.Ordinal))
         {
             var rule = rules[symbol]; var limitGbp = rule.LimitPrice / (rule.QuoteCurrency == "GBX" ? 100 : 1);
-            var gap = Math.Max(0, nav * weight - exposures.GetValueOrDefault(symbol));
+            var gap = Math.Max(0, navFloor * weight - exposures.GetValueOrDefault(symbol));
             var budget = Math.Min(remaining, gap);
             var quantity = decimal.Floor(budget / (limitGbp * (1 + rule.MaximumFeeBps / 10000)) / rule.QuantityStep) * rule.QuantityStep;
             var notional = quantity * limitGbp;
             if (quantity <= 0 || notional < rule.MinimumNotionalGbp) { if (gap > 0) notes.Add($"{symbol}: below the verified minimum after rounding; retain cash."); continue; }
             var reserve = notional * (1 + rule.MaximumFeeBps / 10000);
-            if (reserve > remaining || exposures.GetValueOrDefault(symbol) + notional > nav * maximumWeight) throw new ResearchException("execution-budget");
+            if (reserve > remaining || exposures.GetValueOrDefault(symbol) + notional > navFloor * maximumWeight) throw new ResearchException("execution-budget");
             orders.Add(new(symbol, rule.BrokerTicker, quantity, rule.LimitPrice, rule.QuoteCurrency, reserve, rule.MaximumFeeBps));
             remaining -= reserve;
         }

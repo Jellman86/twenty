@@ -24,17 +24,21 @@ public sealed class Trading212Client
     private readonly Uri origin;
     private readonly SemaphoreSlim serial = new(1, 1);
     private DateTimeOffset nextRequest;
+    private readonly TimeSpan operationTimeout;
     public BrokerEnvironment Environment { get; }
-    public Trading212Client(HttpClient client, BrokerEnvironment environment, string key, string secret)
+    public Trading212Client(HttpClient client, BrokerEnvironment environment, string key, string secret, TimeSpan? operationTimeout = null)
     {
         if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(secret) || key.Contains(':') || key.Length > 4096 || secret.Length > 4096)
             throw new ResearchException("broker-credentials");
+        this.operationTimeout = operationTimeout ?? TimeSpan.FromSeconds(15);
+        if (this.operationTimeout < TimeSpan.FromMilliseconds(10) || this.operationTimeout > TimeSpan.FromMinutes(1)) throw new ResearchException("broker-timeout-config");
         this.client = client; Environment = environment;
         origin = new Uri(environment == BrokerEnvironment.Demo ? "https://demo.trading212.com" : "https://live.trading212.com");
         authorization = Convert.ToBase64String(Encoding.UTF8.GetBytes(key + ":" + secret));
     }
     public async Task<BrokerSummary> Summary(CancellationToken ct)
     {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct); deadline.CancelAfter(operationTimeout); ct = deadline.Token;
         using var response = await Send(HttpMethod.Get, "/api/v0/equity/account/summary", null, ct);
         if (!response.IsSuccessStatusCode) throw new ResearchException("broker-read-unavailable");
         var summary = await Read<BrokerSummary>(response, ct);
@@ -46,6 +50,7 @@ public sealed class Trading212Client
     {
         if (intent.Quantity <= 0 || intent.LimitPrice <= 0 || intent.QuoteCurrency is not ("GBP" or "GBX") || string.IsNullOrWhiteSpace(intent.BrokerTicker))
             throw new ResearchException("broker-order-inputs");
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct); deadline.CancelAfter(operationTimeout); ct = deadline.Token;
         try
         {
             using var response = await Send(HttpMethod.Post, "/api/v0/equity/orders/limit",
@@ -64,6 +69,7 @@ public sealed class Trading212Client
     public async Task<BrokerOrder?> PendingOrder(long id, CancellationToken ct)
     {
         if (id <= 0) throw new ResearchException("broker-order-inputs");
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct); deadline.CancelAfter(operationTimeout); ct = deadline.Token;
         using var response = await Send(HttpMethod.Get, $"/api/v0/equity/orders/{id}", null, ct);
         if (response.StatusCode == HttpStatusCode.NotFound) return null; // Requires history + fills reconciliation; never infer cancelled/filled.
         if (!response.IsSuccessStatusCode) throw new ResearchException("broker-read-unavailable");
@@ -74,6 +80,7 @@ public sealed class Trading212Client
     public async Task<bool> RequestCancel(long id, CancellationToken ct)
     {
         if (id <= 0) throw new ResearchException("broker-order-inputs");
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct); deadline.CancelAfter(operationTimeout); ct = deadline.Token;
         using var response = await Send(HttpMethod.Delete, $"/api/v0/equity/orders/{id}", null, ct);
         return response.IsSuccessStatusCode; // Accepted cancellation still needs final fill/status reconciliation.
     }
