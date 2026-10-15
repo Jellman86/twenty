@@ -248,7 +248,7 @@ public sealed class BrokerLedger
         order.Id > 0 && order.Ticker == intent.Intent.BrokerTicker && order.Quantity == intent.Intent.Quantity && order.LimitPrice == intent.Intent.LimitPrice &&
         order.Type == "LIMIT" && order.Side == "BUY" && order.Strategy == "QUANTITY" && order.TimeInForce == "DAY" && order.InitiatedFrom == "API" &&
         order.Currency == intent.OrderCurrency && order.FilledQuantity >= 0 && order.FilledQuantity <= order.Quantity &&
-        order.CreatedAt is { } created && intent.SubmittedAt is { } submitted && created >= submitted.AddMinutes(-2) && created <= now.AddMinutes(2) &&
+        order.CreatedAt is { } created && intent.SubmittedAt is { } submitted && created >= submitted.AddMinutes(-2) && created <= submitted.AddMinutes(2) && created <= now.AddMinutes(2) &&
         order.Status is "LOCAL" or "UNCONFIRMED" or "CONFIRMED" or "NEW" or "CANCELLING" or "CANCELLED" or "PARTIALLY_FILLED" or "FILLED" or "REJECTED";
     public void RecordDemoReceipt(ExecutionPolicy policy, string codeHash, BrokerPosition[] positions)
     {

@@ -237,6 +237,15 @@ public sealed class ForwardExecutionTests
         Assert.Equal(ExecutionPolicy.Hash(new {Amount=20m}),ExecutionPolicy.Hash(new {Amount=20.000m}));
     }
 
+    [Fact] public async Task UnknownBindingCannotClaimAnIdenticalOrderCreatedMuchLater()
+    {
+        using var f=new Fixture();f.Gateway.UnknownAfterAccept=true;await f.Coordinator.Run(default);
+        var unknown=f.Account.Intents.Single(i=>i.Phase=="unknown");var order=f.Gateway.Rows.Single().Order;
+        f.Clock.Now=f.Clock.Now.AddMinutes(10);f.Gateway.Rows[0]=f.Gateway.Rows[0] with {Order=order with {CreatedAt=f.Clock.Now}};
+        Assert.Equal("execution-unknown-binding",(await Assert.ThrowsAsync<ResearchException>(()=>f.Coordinator.BindUnknown(f.Policy.AccountKey,unknown.Id,order.Id,default))).Code);
+        Assert.Equal("unknown",f.Account.Intents.Single(i=>i.Id==unknown.Id).Phase);Assert.Equal(1,f.Gateway.Posts);
+    }
+
     internal sealed class FixedClock : TimeProvider
     { public DateTimeOffset Now=DateTimeOffset.Parse("2015-01-15T12:00:00Z");public override DateTimeOffset GetUtcNow()=>Now; }
     internal sealed class Fixture : IDisposable

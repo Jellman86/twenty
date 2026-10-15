@@ -22,3 +22,11 @@ All four hypotheses (relative-return ridge, momentum, breakout and six-month ups
 Local Python validation additionally passed all 22 tests with PyTorch available, including CPU neural training; no XPU device was used.
 
 These checks cover initial operations under the one-CPU/512-MiB container bounds. They are not historical-market validation, a long prospective paper period, GPU/XPU compatibility testing or genuine Trading 212 contract verification. No periodic training or trading schedule is enabled.
+
+## Coordinator deployment checkpoint
+
+The subsequent coordinator revision `59ae711c4cd66ab6f70fd001aedf8b796c250e27` passed [CI](https://github.com/Jellman86/twenty/actions/runs/38801009525) with 214 .NET tests, the Python base suite (two optional neural tests skipped), Svelte checking/build, secret scanning and image smoke. GHCR manifest `sha256:7ed71aca8cc7fde35e2f056eff6dc31943b463bd83589589c60d6741718e8bac` was verified against the image's commit before Dockhand deployment.
+
+Read-only inspection confirmed no broker credential/configuration paths were set in the existing container. Dockhand synced the unchanged Compose commit `bd5bfcb` and returned successful forced deployment. All 11 prior run records and both existing simulated paper accounts were preserved exactly. The new broker runtime reported no credentials/configuration, no broker accounts and zero demo receipts. The extended HTTPS smoke passed, including disabled-cycle/missing-credential guards and stale historical-panel rejection. No authenticated broker call or trade was made.
+
+A separate subsequent hardening regression limits unknown-order attribution to the submission's bounded creation window, rather than allowing an identical order created much later. The local suite passes 215 tests with this change; it does not provide authenticated broker acceptance.
