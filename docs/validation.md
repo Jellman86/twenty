@@ -2,7 +2,7 @@
 
 ## Astra review fixes and ECB FX audit
 
-An independent [Astra review](reviews/2026-10-15-astra.md) reproduced two P1 defects in the otherwise passing foundation: backdated observed availability and a mixed SEC page rejected by a valid relative Form 4 path. Both are fixed with regression cases. The [ECB parser/audit](ecb-fx.md) adds synthetic tests plus a separate real-source sample check across two ECB delivery formats. Local .NET validation now passes 128 tests; no live SEC collection or historical-vintage audit is claimed.
+An independent [Astra review](reviews/2026-10-15-astra.md) reproduced two P1 defects in the otherwise passing foundation: backdated observed availability and a mixed SEC page rejected by a valid relative Form 4 path. Both are fixed with regression cases. The [ECB parser/audit](ecb-fx.md) adds synthetic tests plus a separate real-source sample check across two ECB delivery formats. Local .NET validation now passes 128 tests; Astra independently reran those tests and the stored ECB samples in a follow-up review, finding no new actionable defects. CI run [38772982226](https://github.com/Jellman86/twenty/actions/runs/38772982226) passed tests, secret scanning, container smoke and publication. No live SEC collection or historical-vintage audit is claimed.
 
 ## SEC collector implementation
 

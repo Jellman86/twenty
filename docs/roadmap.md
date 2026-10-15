@@ -27,7 +27,7 @@ Track delivery in the [public Twenty project](https://github.com/users/Jellman86
 | P0 | Versioned research and development workflow | Critical literature notes, data/protocol decisions, commits on `dev`; releases reserved for `main` | Implemented in this research pack |
 | P0 | C#/.NET application foundation | .NET 10 domain/host/tests; shared accounting/timing fixtures against the Python harness | Web host, contribution parity and dataset contracts implemented; portfolio accounting/timing parity remains #6 |
 | P0 | Reference simulator and numerical controls | Cash-flow, costs, minimums, future-price and train-label timing tests; fair benchmarks | Implemented for the documented simplified monthly model |
-| P0 | Historical-data acceptance | Primary source/contract review; sampled corporate actions/delistings; GBP and timestamp audit | Provider candidates reviewed; no full-market vendor selected |
+| P0 | Historical-data acceptance | Primary source/contract review; sampled corporate actions/delistings; GBP and timestamp audit | ECB reference-FX wire/units sampled and parsed; stock provider and terminal-return coverage remain unselected |
 | P0 | Changing-universe simulation | Historical listing/eligibility, terminal losses/payouts and executable-price handling | Not implemented; blocks credible stock-selection results |
 | P1 | Statement/filing archive | Idempotent collection, source hashes, disclosure/availability/revision timestamps and comparable sections | Bounded CLI, originals/cache/quarantine and offline tests implemented; live SEC validation pending (#4) |
 | P1 | Formal numeric comparison | Ridge/tree/MLP versus equal-weight, momentum and broad exposure; identical realistic costs and registered inner/outer splits | Ridge/MLP scaffold implemented; historical study and tree model outstanding |
@@ -57,3 +57,7 @@ The £1 million aspiration stays in deterministic scenario tools. It is not a re
 ## Dataset foundation implementation
 
 Issue #3 has an offline C# schema, validation/selection guards, immutable archive and synthetic leakage fixtures; see [contract v1](data-contract-v1.md). Source collection, vendor coverage and backtest/ledger integration remain separate issues.
+
+## Independent review and FX checkpoint
+
+[Astra review and follow-up](reviews/2026-10-15-astra.md) identified two P1 timing/SEC-path defects, now fixed and re-reviewed without new actionable findings. The [ECB sample audit and parser](ecb-fx.md) advances #5 with explicit reference-rate units and exact-date conversion, while historical availability, complete exchange calendars and stock-data coverage remain open.
