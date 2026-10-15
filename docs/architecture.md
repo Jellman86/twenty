@@ -48,3 +48,7 @@ Backtesting is an application calculation, not automatically a neural GPU worklo
 6. The research dashboard can run privately on Quark now. Add a broker adapter only after evidence/engineering gates and separate execution authorisation.
 
 The critical literature and data requirements do not change with programming language. No profitability claim, dataset purchase, remote deployment or main-branch release follows from this architecture choice.
+
+## External contracts
+
+Implement adapters against the [upstream contract audit](upstream-contracts.md). In particular, the broker accepts quantity orders rather than cash budgets and explicitly warns that order-creation retries can duplicate orders. The existing cash-notional harness is an idealised research reference. A future execution ledger needs quantity precision, cost reserves, partial-fill accounting and unknown-submission reconciliation. Public API documentation and linked terms contain a live-use/consent mismatch that must be resolved before any live integration.

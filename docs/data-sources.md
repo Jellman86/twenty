@@ -2,6 +2,8 @@
 
 Reviewed 15 October 2026. This is a design and provider-documentation review. No commercial feed was purchased or completeness-certified. Research-data spending is distinct from the £20 monthly investment budget; assuming a separate budget without approval would conceal the economics.
 
+See [upstream contracts](upstream-contracts.md) for the current schema audit, cash-notional versus quantity-order gap, broker terms discrepancy and acceptance fixtures.
+
 ## Recommended source order
 
 | Need | Candidate | What the documentation supports | Twenty decision |
@@ -72,7 +74,7 @@ Do not invert the FX quote silently or count a conversion twice. Adjusted return
 
 ## Account costs and economic constraints
 
-Trading 212 currently documents live API support for the Stocks & Shares ISA and a beta interface with primary-currency execution. Its fee schedule lists a 0.15% FX charge and £1 minimum stock/ETF orders. Those facts do not establish successful execution for every instrument or account permission. [Account/API support](https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-Trading-212-API-key), [ISA fees](https://www.trading212.com/terms/isa).
+Trading 212 currently documents live API support for the Stocks & Shares ISA and a beta interface with primary-currency execution. Its fee schedule lists a 0.15% FX charge and £1 minimum stock/ETF orders. Those facts do not establish successful execution for every instrument or account permission. The linked API Terms retain testing-only/prior-consent language; resolve the discrepancy and applicable terms before live integration (see upstream audit). [Account/API support](https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-Trading-212-API-key), [ISA fees](https://www.trading212.com/terms/isa).
 
 Apply FX, spread, slippage and purchase taxes per instrument/side. Many UK company-share purchases incur 0.5% SDRT; exemptions and fund treatment require actual instrument classification. An ISA shields qualifying UK investment income/gains; it is not a blanket transaction-tax exemption. [HMRC share taxes](https://www.gov.uk/tax-buy-shares), [ISA rules](https://www.gov.uk/individual-savings-accounts/how-isas-work).
 

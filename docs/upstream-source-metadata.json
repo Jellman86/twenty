@@ -1,0 +1,9 @@
+{
+  "reviewed_at_utc": "2026-10-15T15:24:38.998758+00:00",
+  "source_url": "https://docs.trading212.com/_bundle/api.json?download=",
+  "openapi": "3.0.1",
+  "api_version": "v0",
+  "sha256": "a272f70a713fa9f2f906e9b4be12136c9d5d63d7f9f48562e939aa35c4fc041d",
+  "scope": "Public specification only; no authenticated account requests. Raw upstream material is cached outside Git.",
+  "status": "Beta snapshot; re-review before implementation."
+}

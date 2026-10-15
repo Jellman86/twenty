@@ -7,6 +7,7 @@ Reviewed 15 October 2026. The initial code is a research foundation; none of the
 Start with these documents:
 
 - [Critical review of 24 academic studies](literature-review.md): findings, conflicting evidence, relevance to a small ISA, source links and the extent actually reviewed.
+- [Upstream contracts and integration boundaries](upstream-contracts.md): broker request/response semantics, execution gaps, timestamp/FX contracts, terms discrepancy and required fixtures.
 - [Data sourcing and collection design](data-sources.md): primary sources, provider candidates, timestamping, delistings, costs and scraper requirements.
 - [Model and evaluation protocol](evaluation-protocol.md): limited hypothesis families, chronological tests, benchmarks, search correction and forward validation.
 - [Prioritised implementation roadmap](roadmap.md): evidence gates and a clear distinction between implemented and planned work.
