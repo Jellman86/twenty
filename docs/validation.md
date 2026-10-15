@@ -1,5 +1,9 @@
 # Validation record
 
+## Astra review fixes and ECB FX audit
+
+An independent [Astra review](reviews/2026-10-15-astra.md) reproduced two P1 defects in the otherwise passing foundation: backdated observed availability and a mixed SEC page rejected by a valid relative Form 4 path. Both are fixed with regression cases. The [ECB parser/audit](ecb-fx.md) adds synthetic tests plus a separate real-source sample check across two ECB delivery formats. Local .NET validation now passes 128 tests; no live SEC collection or historical-vintage audit is claimed.
+
 ## SEC collector implementation
 
 The bounded SEC collector adds offline HTTP/archive tests for linked history, amendments, first-seen timing, caching and restart, retries/rate limits, cancellation, storage bounds, quarantine, unsafe URLs and integrity failures. Local validation on 15 October 2026 passed 89 .NET tests (43 added for this collector), 22 Python tests with optional neural dependencies, Svelte checking/build and Ruff. These tests use authored synthetic responses; no live SEC request or real-data coverage audit has been completed. See [collector scope and operating limits](sec-collector.md).

@@ -39,6 +39,7 @@ jobs:
       - run: dotnet restore Twenty.slnx --locked-mode && dotnet test Twenty.slnx -c Release --no-restore
       - run: dotnet run --project src/Twenty.Data -c Release --no-restore -- validate fixtures/data/point-in-time.v1.json
       - run: dotnet run --project src/Twenty.Data -c Release --no-restore -- sec-inspect 1 fixtures/sec/submissions.synthetic.json
+      - run: dotnet run --project src/Twenty.Data -c Release --no-restore -- ecb-inspect fixtures/fx/ecb.synthetic.xml --date 2024-04-02 --base USD --quote GBP
       - run: uv run --locked python -m unittest discover -s tests -v
       - run: uvx ruff check src/twenty tests/*.py scripts/*.py
   image:

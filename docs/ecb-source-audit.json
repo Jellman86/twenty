@@ -1,0 +1,87 @@
+{
+  "reviewedOn": "2026-10-15",
+  "provider": "European Central Bank",
+  "purpose": "Reference FX research; not executable broker pricing",
+  "licenceReference": "https://www.ecb.europa.eu/services/using-our-site/disclaimer/html/index.en.html",
+  "rawPayloadsCommitted": false,
+  "sources": [
+    {
+      "name": "exr-gbp-usd-week.csv",
+      "url": "https://data-api.ecb.europa.eu/service/data/EXR/D.GBP+USD.EUR.SP00.A?startPeriod=2024-06-03&endPeriod=2024-06-07&format=csvdata",
+      "retrievedAt": "2026-10-15T16:42:55.344294+00:00",
+      "status": 200,
+      "contentType": "text/csv",
+      "bytes": 2460,
+      "sha256": "196f839995f66831b604aa3afe93e3b12630e7238f98133ddb75ecec2190c83a"
+    },
+    {
+      "name": "reference-history.xml",
+      "url": "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.xml",
+      "retrievedAt": "2026-10-15T16:42:55.576295+00:00",
+      "status": 200,
+      "contentType": "text/xml",
+      "bytes": 8201190,
+      "sha256": "b58260fcd9cb45bd779efeb35da13273ee83cf541ff4ec9655db91a943742cf1"
+    },
+    {
+      "name": "exr-gbp-usd-holiday.csv",
+      "url": "https://data-api.ecb.europa.eu/service/data/EXR/D.GBP+USD.EUR.SP00.A?startPeriod=2024-03-28&endPeriod=2024-04-02&format=csvdata",
+      "retrievedAt": "2026-10-15T16:50:04.460904+00:00",
+      "status": 200,
+      "contentType": "text/csv",
+      "bytes": 1178,
+      "sha256": "caae0f6598008bcbd3ca8e9737b0adc61371c1e51246221eef409e91b52cf58a"
+    }
+  ],
+  "xmlSchema": {
+    "envelopeNamespace": "http://www.gesmes.org/xml/2002-08-01",
+    "cubeNamespace": "http://www.ecb.int/vocabulary/2002-08-01/eurofxref",
+    "dateAttribute": "time",
+    "rateAttributes": [
+      "currency",
+      "rate"
+    ],
+    "baseCurrency": "EUR",
+    "quoteUnit": "major"
+  },
+  "apiCsvColumnsReviewed": [
+    "KEY",
+    "FREQ",
+    "CURRENCY",
+    "CURRENCY_DENOM",
+    "EXR_TYPE",
+    "EXR_SUFFIX",
+    "TIME_PERIOD",
+    "OBS_VALUE",
+    "OBS_STATUS",
+    "UNIT",
+    "UNIT_MULT",
+    "PUBL_ECB",
+    "PUBL_MU",
+    "PUBL_PUBLIC"
+  ],
+  "checks": {
+    "csharpXmlParserAccepted": true,
+    "xmlRateRows": 221383,
+    "xmlReferenceDays": 7115,
+    "xmlFirstDate": "1999-01-04",
+    "xmlLastDate": "2026-10-15",
+    "comparedCsvObservations": 14,
+    "exactValueMatchesAgainstXml": 14,
+    "publicationColumnsPopulatedInSample": false,
+    "apiUnitMultiplierInSample": "0",
+    "apiObservationStatusInSample": "A",
+    "absentDatesInHolidayWindow": [
+      "2024-03-29",
+      "2024-03-30",
+      "2024-03-31",
+      "2024-04-01"
+    ]
+  },
+  "limitations": [
+    "Two ECB delivery formats, not two independent producers or an original-vintage audit.",
+    "Reference dates and usual release schedule do not establish actual historical publication/availability instants.",
+    "Current historical values may include revisions; no historical-vintage import policy is implemented.",
+    "XML parsing and explicit cross-rates only; no scheduled FX collector, complete calendar or broker conversion model."
+  ]
+}

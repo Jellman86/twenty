@@ -2,6 +2,8 @@
 
 Reviewed 15 October 2026. This is a design and provider-documentation review. No commercial feed was purchased or completeness-certified. Research-data spending is distinct from the £20 monthly investment budget; assuming a separate budget without approval would conceal the economics.
 
+The [ECB sample audit](ecb-fx.md) now verifies reference-FX wire shape and conversion units against retrieved samples; historical publication/vintage evidence and full market coverage remain unresolved.
+
 See [upstream contracts](upstream-contracts.md) for the current schema audit, cash-notional versus quantity-order gap, broker terms discrepancy and acceptance fixtures.
 
 ## Recommended source order

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gesmes:Envelope xmlns:gesmes="http://www.gesmes.org/xml/2002-08-01" xmlns="http://www.ecb.int/vocabulary/2002-08-01/eurofxref">
+  <gesmes:subject>AUTHORED SYNTHETIC FIXTURE — NOT ECB OBSERVATIONS</gesmes:subject>
+  <gesmes:Sender><gesmes:name>Twenty synthetic tests</gesmes:name></gesmes:Sender>
+  <Cube>
+    <Cube time="2024-04-02">
+      <Cube currency="GBP" rate="0.8" />
+      <Cube currency="USD" rate="1.25" />
+      <Cube currency="JPY" rate="160" />
+    </Cube>
+    <Cube time="2024-03-28">
+      <Cube currency="GBP" rate="0.85" />
+      <Cube currency="USD" rate="1.1" />
+    </Cube>
+  </Cube>
+</gesmes:Envelope>

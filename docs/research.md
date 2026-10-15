@@ -7,6 +7,7 @@ Reviewed 15 October 2026. The initial code is a research foundation; none of the
 Start with these documents:
 
 - [Critical review of 24 academic studies](literature-review.md): findings, conflicting evidence, relevance to a small ISA, source links and the extent actually reviewed.
+- [ECB reference FX audit](ecb-fx.md): real wire-format samples, explicit cross-rate units and an offline XML parser; historical availability import remains unimplemented.
 - [SEC filing collector](sec-collector.md): bounded collection, immutable originals, first-observation timing, caching and quarantine; live validation pending.
 - [Implemented dataset contract v1](data-contract-v1.md): offline validation, original/revision selection, identity/currency checks and immutable snapshots.
 - [Upstream contracts and integration boundaries](upstream-contracts.md): broker request/response semantics, execution gaps, timestamp/FX contracts, terms discrepancy and required fixtures.

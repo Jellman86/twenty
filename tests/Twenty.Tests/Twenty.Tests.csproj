@@ -26,4 +26,5 @@
 <ItemGroup><None Include="../../fixtures/projections.json" Link="projections.json" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 <ItemGroup><None Include="../../fixtures/data/*.json" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup><None Include="../../fixtures/sec/*.json" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><None Include="../../fixtures/fx/*.xml" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

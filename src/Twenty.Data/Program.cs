@@ -2,9 +2,20 @@ using System.Globalization;
 using System.Text.Json;
 using Twenty.Core.Data;
 using Twenty.Ingestion.Sec;
+using Twenty.Ingestion.Fx;
 
 try
 {
+    if (args.Length == 8 && args[0] == "ecb-inspect" && args[2] == "--date" && args[4] == "--base" && args[6] == "--quote")
+    {
+        if (!DateOnly.TryParseExact(args[3], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+            throw new EcbDataException("invalid-reference-date");
+        var book = EcbReferenceRates.Parse(DatasetArchive.ReadBounded(args[1]));
+        var quote = book.CrossRate(date, args[5], args[7]);
+        Console.WriteLine(JsonSerializer.Serialize(new { valid = true, rates = book.Rates.Length,
+            quote, parserVersion = EcbReferenceRates.ParserVersion }, DatasetJson.Options));
+        return 0;
+    }
     if (args.Length == 3 && args[0] == "sec-inspect")
     {
         var page = SecParser.Parse(DatasetArchive.ReadBounded(args[2]), args[1], history: false, DateTimeOffset.UtcNow);
@@ -42,6 +53,7 @@ try
         Console.Error.WriteLine("Usage: Twenty.Data validate <dataset.json> [--archive <directory>]\n" +
             "       Twenty.Data sec-inspect <CIK> <submissions.json>\n" +
             "       Twenty.Data sec-collect <CIK> --from yyyy-mm-dd --to yyyy-mm-dd --archive <private-directory>\n" +
+            "       Twenty.Data ecb-inspect <xml> --date yyyy-mm-dd --base USD --quote GBP\n" +
             "Live collection requires TWENTY_SEC_CONTACT (a monitored email address; never committed or printed).");
         return 2;
     }
@@ -56,6 +68,11 @@ try
         observations = file.Observations.Length, issues = validation.Issues, archive = stored
     }, DatasetJson.Options));
     return validation.IsValid ? 0 : 1;
+}
+catch (EcbDataException error)
+{
+    Console.Error.WriteLine(JsonSerializer.Serialize(new { valid = false, code = error.Code }));
+    return 1;
 }
 catch (SecCollectionException error)
 {
