@@ -9,6 +9,7 @@
   let datasets = $state<Dataset[]>([]), runs = $state<Run[]>([]), selected = $state<Run | null>(null), report = $state<Report | null>(null);
   let datasetId = $state(''), hypothesis = $state('ridge-relative-return'), topK = $state(3), cap = $state(50), monthly = $state(20), forwardYears = $state(10), alpha = $state(10), fxBps = $state(15), taxBps = $state(0), busy = $state(false), error = $state('');
   let requestId = '';
+  let totalTrials = $state(0);
   const labels: Record<string,string> = { candidate: 'Selected strategy', momentum: 'Momentum comparator', equal_weight: 'All assets equally', benchmark: 'Dataset benchmark', cash: 'Uninvested cash' };
   const methods: Record<string,string> = { 'ridge-relative-return': 'Train a relative-return model', momentum: 'Rank long momentum', breakout: '12-month return-index breakout', 'upside-tail': 'Model +50% upside over six months' };
   const money = (x: number) => new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2}).format(x);
@@ -26,7 +27,7 @@
   const band = $derived(`${forwardLine('upperBalanceGbp')} ${forwardLine('lowerBalanceGbp').split(' ').reverse().join(' ')}`);
   async function api(path:string, init?:RequestInit) { const response=await fetch(path,init); if(!response.ok){let code='service-unavailable';try{code=(await response.json()).error??code;}catch{}throw new Error(code);}return response.status===202?response.json().catch(()=>null):response.json(); }
   async function refresh() {
-    try { runs=await api('/api/research/runs'); if(selected){selected=runs.find(r=>r.id===selected!.id)??selected;if(selected.status==='succeeded'&&!report){const id=selected.id;const result=await api(`/api/research/runs/${id}/report`);if(selected?.id===id)report=result;}} }
+    try { const [history,stats]=await Promise.all([api('/api/research/runs'),api('/api/research/trials')]);runs=history;totalTrials=stats.total; if(selected){selected=runs.find(r=>r.id===selected!.id)??selected;if(selected.status==='succeeded'&&!report){const id=selected.id;const result=await api(`/api/research/runs/${id}/report`);if(selected?.id===id)report=result;}} }
     catch(e){error=e instanceof Error?e.message:'service-unavailable';}
   }
   async function inspect(run:Run) { selected=run;report=null;error='';if(run.status==='succeeded'){try{const result=await api(`/api/research/runs/${run.id}/report`);if(selected?.id===run.id)report=result;}catch(e){error=e instanceof Error?e.message:'report-unavailable';}} }
@@ -62,7 +63,8 @@
 <button type="button" class="secondary" disabled={busy||!datasetId||active} onclick={()=>void compare()}>Compare 1, 2, 4 and 8 holdings</button>
 <p class="dataset-note">Concentration is an experiment, not a recommended allocation. A broad benchmark and cash stay in every comparison.</p>
 </form></section>
-<section class="panel lab-history" aria-labelledby="history-title"><div class="panel-heading"><div><p class="eyebrow">ALL ATTEMPTS</p><h2 id="history-title">Experiment history</h2></div><span class="badge">{runs.length} registered · 1 job at a time</span></div>
+<section class="panel lab-history" aria-labelledby="history-title"><div class="panel-heading"><div><p class="eyebrow">TRIAL REGISTER</p><h2 id="history-title">Experiment history</h2></div><span class="badge">{totalTrials} registered · 1 job at a time</span></div>
+{#if totalTrials>runs.length}<p class="dataset-note">Showing the latest {runs.length} of {totalTrials} registered attempts. Older attempts remain stored and count toward the research search.</p>{/if}
 {#if !runs.length}<div class="lab-empty"><span>↗</span><h3>Start with a testable idea.</h3><p>Run one experiment or compare portfolio sizes. Results and failed attempts will appear here.</p></div>{:else}<div class="table-scroll lab-run-scroll"><table><thead><tr><th>Hypothesis / dataset</th><th>Holdings</th><th>Status</th><th>Inspect</th></tr></thead><tbody>{#each runs as run}<tr class:selected-run={selected?.id===run.id}><td><strong>{methods[run.config.hypothesis]}</strong><small>{run.datasetName} · {new Date(run.createdAt).toLocaleString('en-GB')}</small></td><td>{run.config.topK}</td><td><span class="run-status" data-status={run.status}>{run.status}{run.status==='running'?` ${run.progress}%`:''}</span></td><td><button class="secondary small-button" onclick={()=>void inspect(run)} aria-label={`Inspect ${run.id.slice(0,8)}`}>Open</button></td></tr>{/each}</tbody></table></div>{/if}
 {#if selected && ['queued','running'].includes(selected.status)}<div class="running-note" aria-live="polite"><p>{selected.status==='queued'?'Waiting for the research worker.':'Training and evaluating chronological folds.'}</p><progress max="100" value={selected.progress}></progress><button class="secondary small-button" onclick={()=>void cancel(selected!)}>Cancel experiment</button></div>{/if}
 {#if selected?.errorCode}<div class="error" role="alert">{selected.errorCode==='tail-insufficient-examples'?'This training window has too few +50% six-month winners to fit the upside model responsibly. Use a larger suitable dataset or test another hypothesis.':`Experiment ${selected.status}: ${selected.errorCode}. The attempt remains recorded.`}</div>{/if}

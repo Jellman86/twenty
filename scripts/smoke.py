@@ -54,6 +54,7 @@ for _ in range(120):
         break
     time.sleep(0.5)
 assert state["status"] == "succeeded", state
+assert json.load(get("/api/research/trials"))["total"] >= 1
 assert state["engineSha256"] and state["reportSha256"] and state["workerCommit"]
 report = json.load(get(f'/api/research/runs/{run["id"]}/report'))
 assert report["synthetic"] is True

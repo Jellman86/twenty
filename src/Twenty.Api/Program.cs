@@ -72,6 +72,7 @@ app.MapGet("/api/meta", () => new { name = "Twenty", mode = "Research only", bro
     roadmap = "https://github.com/users/Jellman86/projects/1" });
 app.MapGet("/api/research/datasets", () => store.Datasets());
 app.MapGet("/api/research/runs", () => store.ListRuns().Take(100));
+app.MapGet("/api/research/trials", () => new { total = store.ListRuns().Count, displayedLimit = 100 });
 app.MapPost("/api/research/runs", (RunRequest request) => Results.Accepted("/api/research/runs", store.Enqueue(request, Environment.GetEnvironmentVariable("TWENTY_COMMIT") ?? "local")));
 app.MapGet("/api/research/runs/{id}", (string id) => store.Find(id) is { } run ? Results.Ok(run) : Results.NotFound());
 app.MapGet("/api/research/runs/{id}/report", (string id) => store.Report(id) is { } report ? Results.Ok(report) : Results.NotFound());
