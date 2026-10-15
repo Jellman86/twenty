@@ -27,4 +27,6 @@
 <ItemGroup><None Include="../../fixtures/data/*.json" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup><None Include="../../fixtures/sec/*.json" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
   <ItemGroup><None Include="../../fixtures/fx/*.xml" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><None Include="../../fixtures/research/*" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="../../src/Twenty.Api/Twenty.Api.csproj" /></ItemGroup>
 </Project>

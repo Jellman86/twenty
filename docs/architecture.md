@@ -1,6 +1,6 @@
 # Architecture direction: C#/.NET + Svelte application, Python research
 
-Decision date: 15 October 2026. Based on the user's preference for C#/.NET. **Recommended application foundation: .NET 10 LTS.** The first implemented slice is an ASP.NET Core application serving a Svelte 5 + TypeScript + Vite dashboard, alongside the Python research harness. It exposes deterministic contribution scenarios and issue/evidence navigation. It has no historical dataset, persistent portfolio or broker connection.
+Decision date: 15 October 2026. Based on the user's preference for C#/.NET. **Recommended application foundation: .NET 10 LTS.** The first implemented slice is an ASP.NET Core application serving a Svelte 5 + TypeScript + Vite dashboard, alongside the Python research harness. It now exposes native CPU strategy experiments, decimal notional backtests, conditional scenarios and persistent simulated share portfolios alongside contribution/evidence navigation. There is no certified historical dataset or live trading. See [the implemented application](initial-application.md).
 
 Microsoft lists .NET 10 as an active LTS release supported until November 2028. The local machine already has the .NET 10.0.302 SDK. At implementation, pin an appropriate supported SDK and keep servicing updates current rather than selecting a preview. [Official support policy](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core).
 
@@ -12,7 +12,7 @@ Microsoft lists .NET 10 as an active LTS release supported until November 2028. 
 | Application host | ASP.NET Core with hosted workers | Local/private API, job lifecycle, cancellation, collection and experiment orchestration |
 | Structured state | SQLite initially | Dataset/run metadata, ingestion cursors, model registry and later paper-account ledger |
 | Original/large data | Immutable files; columnar format where justified | Filing originals, versioned datasets, feature snapshots and model artifacts |
-| First native trained models | ML.NET candidate | CPU regression/tree baselines under Twenty's chronological evaluation contract |
+| First native trained models | Five-feature native ridge; ML.NET tree candidate | CPU regression/tree baselines under Twenty's chronological evaluation contract |
 | Neural/text experiments | Existing Python environment, optional worker | PyTorch and specialised research libraries, including prospective Intel XPU tests |
 | Exported-model inference | ONNX Runtime C# where export is supported | Score compatible frozen models without a Python process |
 | Dashboard | Svelte 5 + TypeScript + Vite | Private research workbench; ASP.NET serves its compiled static assets |
@@ -51,4 +51,4 @@ The critical literature and data requirements do not change with programming lan
 
 ## External contracts
 
-Implement adapters against the [upstream contract audit](upstream-contracts.md). In particular, the broker accepts quantity orders rather than cash budgets and explicitly warns that order-creation retries can duplicate orders. The existing cash-notional harness is an idealised research reference. A future execution ledger needs quantity precision, cost reserves, partial-fill accounting and unknown-submission reconciliation. Public API documentation and linked terms contain a live-use/consent mismatch that must be resolved before any live integration.
+Implement adapters against the [upstream contract audit](upstream-contracts.md). In particular, the broker accepts quantity orders rather than cash budgets and explicitly warns that order-creation retries can duplicate orders. The existing cash-notional harness is an idealised research reference. A future execution ledger needs quantity precision, cost reserves, partial-fill accounting and unknown-submission reconciliation. The linked terms also explicitly restrict Algorithmic Trading. Development continues under the user’s instruction; [the setup audit](trading212-setup.md) records the restriction and precise technical inputs still missing.

@@ -1,0 +1,8 @@
+{
+  "source": "Twenty-authored random winners/crashes stress fixture; NOT historical stocks or evidence of alpha",
+  "synthetic": true,
+  "benchmark": "STRESS_BENCH",
+  "currency": "GBP",
+  "frequency": "monthly",
+  "seed": 8212
+}

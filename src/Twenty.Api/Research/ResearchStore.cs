@@ -1,0 +1,200 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Data.Sqlite;
+using Twenty.Core.Research;
+
+namespace Twenty.Api.Research;
+
+public sealed record DatasetEntry(string Id, string Name, string Sha256, bool Synthetic, int Months, int Assets, DateOnly Start, DateOnly End);
+public sealed record RunRequest(string RequestId, string DatasetId, ExperimentConfig Config, ResearchCosts Costs);
+public sealed record RunEntry(string Id, string DatasetId, string DatasetName, bool Synthetic, string Status, DateTimeOffset CreatedAt,
+    DateTimeOffset? StartedAt, DateTimeOffset? FinishedAt, int Progress, string? ErrorCode, string CodeCommit, string ConfigSha256,
+    ExperimentConfig Config, ResearchCosts Costs, bool CancelRequested, string? ReportSha256 = null, string? WorkerCommit = null, string? EngineSha256 = null);
+
+public sealed class ResearchStore : IDisposable
+{
+    public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { MaxDepth = 64 };
+    public string Root { get; }
+    private readonly string connectionString;
+    private readonly FileStream lease;
+    private readonly object gate = new();
+    public ResearchStore(string root)
+    {
+        Root = Path.GetFullPath(root);
+        Directory.CreateDirectory(Root);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(Root, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        lease = new FileStream(Path.Combine(Root, ".app.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        Directory.CreateDirectory(Path.Combine(Root, "datasets")); Directory.CreateDirectory(Path.Combine(Root, "runs"));
+        connectionString = new SqliteConnectionStringBuilder { DataSource = Path.Combine(Root, "research.db"), DefaultTimeout = 10, Pooling = false }.ToString();
+        using var db = Open();
+        Execute(db, "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS datasets(id TEXT PRIMARY KEY, json TEXT NOT NULL);" +
+            "CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, request_id TEXT NOT NULL UNIQUE, dataset_id TEXT NOT NULL, json TEXT NOT NULL, status TEXT NOT NULL);" +
+            "CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, at TEXT NOT NULL, kind TEXT NOT NULL);" +
+            "CREATE TABLE IF NOT EXISTS holdout_access(dataset_id TEXT NOT NULL, run_id TEXT NOT NULL UNIQUE, at TEXT NOT NULL);" );
+        foreach (var run in ListRuns().Where(r => r.Status == "running")) Save(run with { Status = "interrupted", FinishedAt = DateTimeOffset.UtcNow, ErrorCode = "process-restarted" }, "restart-interrupted");
+    }
+    public void Dispose() => lease.Dispose();
+    private SqliteConnection Open() { var db = new SqliteConnection(connectionString); db.Open(); return db; }
+    private static void Execute(SqliteConnection db, string sql) { using var command = db.CreateCommand(); command.CommandText = sql; command.ExecuteNonQuery(); }
+    public DatasetEntry Import(byte[] csv, byte[] metadata, string name)
+    {
+        var panel = MonthlyPanel.Read(csv, metadata);
+        if (name.Length is < 1 or > 80) throw new ResearchException("dataset-name");
+        lock (gate)
+        {
+            if (Datasets().Count >= 20 && Datasets().All(x => x.Id != panel.Sha256)) throw new ResearchException("dataset-capacity");
+            var directory = Path.Combine(Root, "datasets", panel.Sha256); Directory.CreateDirectory(directory);
+            ImmutableWrite(Path.Combine(directory, "prices.csv"), csv); ImmutableWrite(Path.Combine(directory, "prices.metadata.json"), metadata);
+            var entry = new DatasetEntry(panel.Sha256, name, panel.Sha256, panel.Synthetic, panel.Dates.Length, panel.Assets.Length, panel.Dates[0], panel.Dates[^1]);
+            using var db = Open(); using var command = db.CreateCommand();
+            command.CommandText = "INSERT OR IGNORE INTO datasets(id,json) VALUES($id,$json)";
+            command.Parameters.AddWithValue("$id", entry.Id); command.Parameters.AddWithValue("$json", JsonSerializer.Serialize(entry, Json)); command.ExecuteNonQuery();
+            return entry;
+        }
+    }
+    public List<DatasetEntry> Datasets()
+    {
+        using var db = Open(); using var command = db.CreateCommand(); command.CommandText = "SELECT json FROM datasets ORDER BY id";
+        using var reader = command.ExecuteReader(); var rows = new List<DatasetEntry>();
+        while (reader.Read()) rows.Add(JsonSerializer.Deserialize<DatasetEntry>(reader.GetString(0), Json)!);
+        return rows;
+    }
+    public MonthlyPanel Panel(string id)
+    {
+        if (id is null || id.Length != 64 || id.Any(c => !char.IsAsciiHexDigitLower(c)) || !Datasets().Any(x => x.Id == id)) throw new ResearchException("dataset-not-found");
+        var directory = Path.Combine(Root, "datasets", id);
+        var csv = Twenty.Core.Data.DatasetArchive.ReadBounded(Path.Combine(directory, "prices.csv"));
+        var metadata = Twenty.Core.Data.DatasetArchive.ReadBounded(Path.Combine(directory, "prices.metadata.json"));
+        var panel = MonthlyPanel.Read(csv, metadata);
+        if (panel.Sha256 != id) throw new ResearchException("dataset-integrity");
+        return panel;
+    }
+    public RunEntry Enqueue(RunRequest request, string codeCommit)
+    {
+        if (!Guid.TryParseExact(request.RequestId, "D", out _) || request.Config is null || request.Costs is null) throw new ResearchException("run-request");
+        var panel = Panel(request.DatasetId); request.Config.Validate(panel); request.Costs.Validate();
+        var configHash = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { request.DatasetId, request.Config, request.Costs }, Json)));
+        lock (gate)
+        {
+            using var db = Open(); using var transaction = db.BeginTransaction();
+            using var lookup = db.CreateCommand(); lookup.Transaction = transaction;
+            lookup.CommandText = "SELECT json FROM runs WHERE request_id=$request"; lookup.Parameters.AddWithValue("$request", request.RequestId);
+            if (lookup.ExecuteScalar() is string existing)
+            {
+                var prior = JsonSerializer.Deserialize<RunEntry>(existing, Json)!;
+                if (prior.ConfigSha256 != configHash) throw new ResearchException("request-id-conflict");
+                return prior;
+            }
+            using var count = db.CreateCommand(); count.Transaction = transaction;
+            count.CommandText = "SELECT COUNT(*) FROM runs";
+            if ((long)count.ExecuteScalar()! >= 1000) throw new ResearchException("trial-capacity");
+            count.CommandText = "SELECT COUNT(*) FROM runs WHERE status IN ('queued','running')";
+            if ((long)count.ExecuteScalar()! >= 10) throw new ResearchException("queue-capacity");
+            // The initial app deliberately does not expose a final holdout run. Record/review promotion first.
+            if (request.Config.EvaluateHoldout) throw new ResearchException("holdout-gate-closed");
+            var dataset = Datasets().Single(x => x.Id == request.DatasetId);
+            var run = new RunEntry(Guid.NewGuid().ToString("N"), dataset.Id, dataset.Name, dataset.Synthetic, "queued", DateTimeOffset.UtcNow,
+                null, null, 0, null, codeCommit, configHash, request.Config, request.Costs, false);
+            using var insert = db.CreateCommand(); insert.Transaction = transaction;
+            insert.CommandText = "INSERT INTO runs(id,request_id,dataset_id,json,status) VALUES($id,$request,$dataset,$json,'queued')";
+            insert.Parameters.AddWithValue("$id", run.Id); insert.Parameters.AddWithValue("$request", request.RequestId);
+            insert.Parameters.AddWithValue("$dataset", dataset.Id); insert.Parameters.AddWithValue("$json", JsonSerializer.Serialize(run, Json)); insert.ExecuteNonQuery();
+            Event(db, transaction, run.Id, "queued"); transaction.Commit();
+            return run;
+        }
+    }
+    public List<RunEntry> ListRuns()
+    {
+        using var db = Open(); using var command = db.CreateCommand(); command.CommandText = "SELECT json FROM runs ORDER BY rowid DESC LIMIT 1000";
+        using var reader = command.ExecuteReader(); var rows = new List<RunEntry>();
+        while (reader.Read()) rows.Add(JsonSerializer.Deserialize<RunEntry>(reader.GetString(0), Json)!);
+        return rows;
+    }
+    public RunEntry? Find(string id) => ListRuns().SingleOrDefault(x => x.Id == id);
+    public RunEntry? Claim()
+    {
+        lock (gate)
+        {
+            var queued = ListRuns().LastOrDefault(x => x.Status == "queued");
+            if (queued is null) return null;
+            var run = queued with { Status = "running", StartedAt = DateTimeOffset.UtcNow, WorkerCommit = Environment.GetEnvironmentVariable("TWENTY_COMMIT") ?? "local",
+                EngineSha256 = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(typeof(Backtest).Assembly.Location))) };
+            Save(run, "started"); return run;
+        }
+    }
+    public void Cancel(string id)
+    {
+        lock (gate)
+        {
+            var run = Find(id) ?? throw new ResearchException("run-not-found");
+            if (run.Status is "queued" or "running") Save(run with { CancelRequested = true, Status = run.Status == "queued" ? "cancelled" : "running",
+                FinishedAt = run.Status == "queued" ? DateTimeOffset.UtcNow : null }, "cancel-requested");
+        }
+    }
+    public void Save(RunEntry run, string kind)
+    {
+        lock (gate)
+        {
+            using var db = Open(); using var tx = db.BeginTransaction(); using var cmd = db.CreateCommand(); cmd.Transaction = tx;
+            cmd.CommandText = "UPDATE runs SET json=$json,status=$status WHERE id=$id";
+            cmd.Parameters.AddWithValue("$json", JsonSerializer.Serialize(run, Json)); cmd.Parameters.AddWithValue("$status", run.Status); cmd.Parameters.AddWithValue("$id", run.Id);
+            if (cmd.ExecuteNonQuery() != 1) throw new ResearchException("run-not-found");
+            Event(db, tx, run.Id, kind); tx.Commit();
+        }
+    }
+    private static void Event(SqliteConnection db, SqliteTransaction tx, string id, string kind)
+    {
+        using var cmd = db.CreateCommand(); cmd.Transaction = tx;
+        cmd.CommandText = "INSERT INTO events(run_id,at,kind) VALUES($id,$at,$kind)"; cmd.Parameters.AddWithValue("$id", id);
+        cmd.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O")); cmd.Parameters.AddWithValue("$kind", kind); cmd.ExecuteNonQuery();
+    }
+    public void Complete(string id, BacktestReport report)
+    {
+        lock (gate)
+        {
+            var run = Find(id) ?? throw new ResearchException("run-not-found");
+            if (run.CancelRequested) throw new OperationCanceledException();
+            var bytes = JsonSerializer.SerializeToUtf8Bytes(report, Json);
+            if (bytes.Length > 8 * 1024 * 1024 || Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories)
+                .Where(p => !p.EndsWith(".app.lock", StringComparison.Ordinal)).Sum(p => new FileInfo(p).Length) + bytes.Length > 256L * 1024 * 1024)
+                throw new ResearchException("artifact-capacity");
+            var directory = Path.Combine(Root, "runs", run.Id); Directory.CreateDirectory(directory);
+            ImmutableWrite(Path.Combine(directory, "report.json"), bytes);
+            Save(run with { Status = "succeeded", Progress = 100, FinishedAt = DateTimeOffset.UtcNow,
+                ReportSha256 = Convert.ToHexStringLower(SHA256.HashData(bytes)) }, "succeeded");
+        }
+    }
+    public void Progress(string id, int percent)
+    {
+        lock (gate)
+        {
+            var run = Find(id)!;
+            if (run.CancelRequested) throw new OperationCanceledException();
+            Save(run with { Progress = percent }, "progress");
+        }
+    }
+    public BacktestReport? Report(string id)
+    {
+        var run = Find(id);
+        if (run?.Status != "succeeded") return null;
+        var bytes = Twenty.Core.Data.DatasetArchive.ReadBounded(Path.Combine(Root, "runs", run.Id, "report.json"));
+        if (Convert.ToHexStringLower(SHA256.HashData(bytes)) != run.ReportSha256) throw new ResearchException("report-integrity");
+        return JsonSerializer.Deserialize<BacktestReport>(bytes, Json);
+    }
+    private static void ImmutableWrite(string path, byte[] bytes)
+    {
+        if (File.Exists(path))
+        {
+            if (!File.ReadAllBytes(path).AsSpan().SequenceEqual(bytes)) throw new ResearchException("artifact-integrity");
+            return;
+        }
+        var temp = path + ".tmp-" + Guid.NewGuid().ToString("N");
+        try
+        {
+            using (var file = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { file.Write(bytes); file.Flush(true); }
+            File.Move(temp, path, false);
+        }
+        finally { if (File.Exists(temp)) File.Delete(temp); }
+    }
+}

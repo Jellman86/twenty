@@ -1,0 +1,8 @@
+{
+  "source": "Twenty seeded random synthetic fixture; NOT historical market data",
+  "synthetic": true,
+  "benchmark": "SYNTH_BENCH",
+  "currency": "GBP",
+  "frequency": "monthly",
+  "seed": 212
+}

@@ -1,0 +1,138 @@
+using System.Collections.Immutable;
+
+namespace Twenty.Core.Research;
+
+public sealed record ExperimentConfig(decimal MonthlyGbp = 20m, int TopK = 3, decimal MaximumWeight = 0.5m,
+    int TrainMonths = 60, int RefitMonths = 12, int HoldoutMonths = 24, double RidgeAlpha = 10,
+    string Hypothesis = "ridge-relative-return", bool EvaluateHoldout = false, int ForwardYears = 10, int Seed = 212)
+{
+    public void Validate(MonthlyPanel panel)
+    {
+        if (MonthlyGbp is < 1 or > 1000 || TopK is < 1 or > 10 || MaximumWeight is <= 0 or > 1 || TrainMonths is < 24 or > 240 ||
+            RefitMonths is < 1 or > 24 || HoldoutMonths is < 12 or > 120 || !double.IsFinite(RidgeAlpha) || RidgeAlpha is < 0.01 or > 1000 ||
+            Hypothesis is not ("ridge-relative-return" or "momentum" or "breakout" or "upside-tail") || ForwardYears is < 1 or > 30 || Seed is < 0 or > 1000000 ||
+            panel.Dates.Length - 1 - HoldoutMonths <= MonthlyPanel.Warmup + TrainMonths + LabelHorizon) throw new ResearchException("invalid-experiment-config");
+    }
+    public int LabelHorizon => Hypothesis == "upside-tail" ? 6 : 1;
+}
+public sealed record EquityObservation(DateOnly DecisionDate, DateOnly PeriodEnd, string Strategy, PortfolioStep State);
+public sealed record Prediction(DateOnly DecisionDate, DateOnly FeatureCutoff, string Symbol, double Score, decimal TargetWeight);
+public sealed record TrainingFold(DateOnly DecisionDate, DateOnly LastLabelEnd, int TrainingMonths, int TrainingRows, RidgeSnapshot Model);
+public sealed record StrategySummary(string Strategy, decimal EndingEquityGbp, decimal ContributionsGbp, decimal ProfitGbp,
+    decimal TradingCostGbp, decimal TradedNotionalGbp, decimal MaxDrawdown, double AnnualisedTimeWeightedReturn,
+    double AnnualisedVolatility, double PositiveMonthFraction);
+public sealed record ForwardPoint(int Year, decimal ContributionsGbp, double LowerBalanceGbp, double MedianBalanceGbp, double UpperBalanceGbp);
+public sealed record ForwardScenarios(string Method, int Paths, int BlockMonths, int Seed, bool Synthetic, ImmutableArray<ForwardPoint> Points);
+public sealed record BacktestReport(string EngineVersion, string DatasetSha256, bool Synthetic, string Source, string FeatureVersion,
+    ExperimentConfig Config, ResearchCosts Costs, string Scope, DateOnly EvaluationStart, DateOnly EvaluationEnd, DateOnly ReservedPeriodStart,
+    ImmutableArray<StrategySummary> Summaries, ImmutableArray<EquityObservation> Equity, ImmutableArray<Prediction> Predictions,
+    ImmutableArray<TrainingFold> Folds, ForwardScenarios Forward, ImmutableArray<string> Limitations);
+
+public static class Backtest
+{
+    public const string Version = "native-monthly-v1";
+    public static readonly ImmutableArray<string> Strategies = ["candidate", "momentum", "equal_weight", "benchmark", "cash"];
+    public static Dictionary<string, decimal> Rank(double[] scores, ImmutableArray<string> assets, int topK, decimal cap)
+    {
+        if (scores.Length != assets.Length || scores.Any(v => !double.IsFinite(v))) throw new ResearchException("ranking-scores");
+        var count = Math.Min(topK, assets.Length);
+        var weight = Math.Min(EqualFraction(count), cap);
+        return Enumerable.Range(0, assets.Length).OrderByDescending(i => scores[i]).ThenBy(i => assets[i], StringComparer.Ordinal).Take(count)
+            .ToDictionary(i => assets[i], _ => weight, StringComparer.Ordinal);
+    }
+    public static BacktestReport Run(MonthlyPanel panel, ExperimentConfig config, ResearchCosts costs, CancellationToken ct = default, Action<int>? progress = null)
+    {
+        config.Validate(panel); costs.Validate();
+        var first = MonthlyPanel.Warmup + config.TrainMonths + config.LabelHorizon;
+        var reserved = panel.Dates.Length - 1 - config.HoldoutMonths;
+        var start = config.EvaluateHoldout ? reserved : first;
+        var stop = config.EvaluateHoldout ? panel.Dates.Length - 1 : reserved;
+        var portfolios = Strategies.ToDictionary(s => s, _ => new NotionalPortfolio());
+        var equity = ImmutableArray.CreateBuilder<EquityObservation>();
+        var predictions = ImmutableArray.CreateBuilder<Prediction>();
+        var folds = ImmutableArray.CreateBuilder<TrainingFold>();
+        RidgeModel? model = null;
+        for (var t = start; t < stop; t++)
+        {
+            ct.ThrowIfCancellationRequested();
+            if ((t - start) % config.RefitMonths == 0)
+            {
+                var training = Enumerable.Range(MonthlyPanel.Warmup, t - config.LabelHorizon - MonthlyPanel.Warmup).ToArray();
+                var x = new List<double[]>(); var y = new List<double>();
+                foreach (var i in training) { ct.ThrowIfCancellationRequested(); x.AddRange(panel.Features(i)); y.AddRange(config.Hypothesis == "upside-tail" ? panel.UpsideLabels(i) : panel.Labels(i)); }
+                if (config.Hypothesis == "upside-tail" && (y.Count(v => v == 1) < 5 || y.Count(v => v == 0) < 5))
+                    throw new ResearchException("tail-insufficient-examples");
+                model = RidgeModel.Fit(x.ToArray(), y.ToArray(), config.RidgeAlpha);
+                folds.Add(new(panel.Dates[t], panel.Dates[training[^1] + config.LabelHorizon], training.Length, x.Count, model.Snapshot));
+            }
+            var features = panel.Features(t);
+            var scores = config.Hypothesis switch
+            {
+                "momentum" => features.Select(x => x[2]).ToArray(),
+                "breakout" => panel.BreakoutScores(t),
+                _ => model!.Predict(features)
+            };
+            var candidate = Rank(scores, panel.Assets, config.TopK, config.MaximumWeight);
+            if (config.Hypothesis == "breakout") candidate = candidate.Where(x => scores[panel.Assets.IndexOf(x.Key)] > 0).ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
+            var allocations = new Dictionary<string, Dictionary<string, decimal>>
+            {
+                ["candidate"] = candidate,
+                ["momentum"] = Rank(features.Select(x => x[2]).ToArray(), panel.Assets, config.TopK, config.MaximumWeight),
+                ["equal_weight"] = panel.Assets.ToDictionary(s => s, _ => EqualFraction(panel.Assets.Length)),
+                ["benchmark"] = new() { [panel.Benchmark] = 1m }, ["cash"] = new()
+            };
+            for (var a = 0; a < panel.Assets.Length; a++) predictions.Add(new(panel.Dates[t], panel.Dates[t - 1], panel.Assets[a], scores[a], candidate.GetValueOrDefault(panel.Assets[a])));
+            var returns = panel.Returns(t);
+            foreach (var strategy in Strategies) equity.Add(new(panel.Dates[t], panel.Dates[t + 1], strategy, portfolios[strategy].Step(config.MonthlyGbp, allocations[strategy], returns, costs)));
+            progress?.Invoke((t - start + 1) * 100 / (stop - start));
+        }
+        var summaries = Strategies.Select(s =>
+        {
+            var p = portfolios[s];
+            var observations = equity.Where(r => r.Strategy == s).ToArray();
+            var returns = observations.Select(r => (double)r.State.PeriodReturn).ToArray();
+            var mean = returns.Average();
+            var vol = returns.Length > 1 ? Math.Sqrt(returns.Sum(r => Math.Pow(r - mean, 2)) / (returns.Length - 1) * 12) : 0;
+            return new StrategySummary(s, p.Equity, p.Contributions, p.Equity - p.Contributions, p.CostsPaid,
+                observations.Sum(r => r.State.TradedNotionalGbp), p.MaxDrawdown, Math.Pow((double)p.UnitPrice, 12.0 / returns.Length) - 1, vol,
+                returns.Count(r => r > 0) / (double)returns.Length);
+        }).ToImmutableArray();
+        var forward = ForwardProjection.Build(equity.Where(x => x.Strategy == "candidate").Select(x => (double)x.State.PeriodReturn).ToArray(), config, panel.Synthetic, ct);
+        return new(Version, panel.Sha256, panel.Synthetic, panel.Source, MonthlyPanel.FeatureVersion, config, costs,
+            config.EvaluateHoldout ? "reserved_holdout" : "development_walk_forward", panel.Dates[start], panel.Dates[stop], panel.Dates[reserved],
+            summaries, equity.ToImmutable(), predictions.ToImmutable(), folds.ToImmutable(), forward,
+            ["Fixed-universe GBP total-return indices; missing delistings/eligibility can bias results. No point-in-time provider coverage is certified.",
+             "Fractional GBP notionals, flat per-side costs and cash at zero interest approximate execution; these are not broker quantities/fills.",
+             "Concentration and hypothesis settings are research choices, not optimised or approved for real investing.",
+             "Conditional bootstrap scenarios assume the sampled return regime repeats; bands are not calibrated investment probabilities.",
+             "Synthetic inputs demonstrate software only; no alpha, millionaire probability or live-trading approval is established."]);
+    }
+    private static decimal EqualFraction(int count) => decimal.Truncate(1m / count * 1000000000000000000000000m) / 1000000000000000000000000m;
+}
+public static class ForwardProjection
+{
+    public static ForwardScenarios Build(double[] returns, ExperimentConfig config, bool synthetic, CancellationToken ct)
+    {
+        const int paths = 300, block = 6;
+        var random = new Random(config.Seed);
+        var balances = Enumerable.Range(0, config.ForwardYears + 1).Select(_ => new double[paths]).ToArray();
+        for (var p = 0; p < paths; p++)
+        {
+            ct.ThrowIfCancellationRequested(); var balance = 0d; var start = 0;
+            for (var month = 0; month < config.ForwardYears * 12; month++)
+            {
+                if (month % block == 0) start = random.Next(returns.Length);
+                var rate = returns[(start + month % block) % returns.Length];
+                balance = (balance + (double)config.MonthlyGbp) * (1 + rate);
+                if (!double.IsFinite(balance) || balance > 1e24) throw new ResearchException("forward-numeric-range");
+                if ((month + 1) % 12 == 0) balances[(month + 1) / 12][p] = balance;
+            }
+        }
+        var points = Enumerable.Range(0, config.ForwardYears + 1).Select(year =>
+        {
+            Array.Sort(balances[year]);
+            return new ForwardPoint(year, year * 12 * config.MonthlyGbp, balances[year][29], balances[year][149], balances[year][269]);
+        }).ToImmutableArray();
+        return new("Circular 6-month block resampling of candidate net development returns; nominal GBP; 10th/50th/90th path quantiles", paths, block, config.Seed, synthetic, points);
+    }
+}

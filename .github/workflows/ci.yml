@@ -58,7 +58,7 @@ jobs:
         run: docker build --build-arg COMMIT="$GITHUB_SHA" -t ghcr.io/jellman86/twenty:dev -t ghcr.io/jellman86/twenty:sha-${GITHUB_SHA::12} .
       - name: Smoke test the built image
         run: |
-          docker run --detach --name twenty-smoke --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m --cap-drop ALL --security-opt no-new-privileges:true --memory 512m --cpus 1 -p 127.0.0.1:18080:8080 ghcr.io/jellman86/twenty:dev
+          docker run --detach --name twenty-smoke --read-only --tmpfs /tmp:rw,nosuid,nodev,noexec,size=16m --tmpfs /data:rw,nosuid,nodev,noexec,size=64m,uid=1654,gid=1654 --cap-drop ALL --security-opt no-new-privileges:true --memory 512m --cpus 1 -p 127.0.0.1:18080:8080 ghcr.io/jellman86/twenty:dev
           trap 'docker logs twenty-smoke; docker rm -f twenty-smoke' EXIT
           for attempt in $(seq 1 30); do
             if curl --fail --silent http://127.0.0.1:18080/health/ready; then break; fi

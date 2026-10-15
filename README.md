@@ -2,7 +2,7 @@
 
 [Public project roadmap](https://github.com/users/Jellman86/projects/1) · [Issues](https://github.com/Jellman86/twenty/issues) · [Critical literature review](docs/literature-review.md)
 
-C#/.NET 10 + Svelte 5, TypeScript and Vite. A private research dashboard with deterministic contribution scenarios, roadmap and evidence review. Python remains the offline training/backtest harness. No broker is connected and no live orders can be placed.
+C#/.NET 10 + Svelte 5, TypeScript and Vite. A working private growth research lab: native C# model training, speculative strategy backtests, conditional forward scenarios and durable simulated stock purchases. Python remains an independent offline research reference. Real orders are not exposed; private credentials can enable a read-only Trading 212 summary. See [the initial application](docs/initial-application.md) and [API setup instructions](docs/trading212-setup.md).
 
 ```sh
 npm ci --prefix web
@@ -20,10 +20,13 @@ CI scans full Git history and checked-out files with checksum-verified Gitleaks 
 
 Local investment research, starting with a £20 monthly contribution. Twenty trains its own small forecasting models, compares them with simpler strategies and records the evidence. It makes no claim that those contributions will reach £1 million.
 
-The application base is **C#/.NET 10 LTS** with a Svelte 5 workbench and an offline C# dataset validator. Python remains the model-training and backtest research harness described below. The C# portfolio accounting engine and background experiment workers remain planned. See [the architecture direction](docs/architecture.md).
+The application base is **C#/.NET 10 LTS** with a Svelte 5 workbench and an offline C# dataset validator. Native C# decimal portfolio accounting, CPU ridge training, a SQLite experiment registry and a bounded background worker are implemented. Python remains the independent model/backtest research harness described below. See [the architecture direction](docs/architecture.md).
 
 ## What works today
 
+- Browser-run C# experiments: relative-return ranking, momentum, return-index breakout and six-month upside-tail ranking.
+- Persisted jobs, cancellation, restart recovery, model/report hashes and all attempted trials.
+- Contribution-only share buy plans, durable simulated partial fills/cancellation and a persisted pause.
 - GBP contribution/target calculations using annual effective compounding.
 - A locally trained ridge regressor, plus an optional small PyTorch neural network.
 - Explicit CPU, Apple GPU (`mps`), NVIDIA GPU (`cuda`) or Intel GPU (`xpu`) selection for neural training. `auto` detects CUDA, then XPU, then MPS, then CPU. XPU needs a compatible Intel installation; local implementation checks do not establish support on Quark. HPU is an experimental adapter requiring a separate Intel Gaudi environment; it has not been tested.
@@ -32,7 +35,7 @@ The application base is **C#/.NET 10 LTS** with a Svelte 5 workbench and an offl
 - Costs, minimum order notionals, residual cash, fractional GBP allocations and drawdowns measured without treating deposits as investment gains.
 - Run manifests, input hashes, model parameters, predictions, equity histories and an append-only experiment register.
 
-**Model training and backtesting run offline; the research workbench is privately deployed on Quark. There is no Trading 212 connection, automated deposit, order placement or background training job.** The example datasets are synthetic, not historical backtests or evidence of an investment edge. There is no LLM or filing signal in the implemented model yet.
+**Training and backtesting run through the private web workbench or the offline Python harness. The default deployment has no credentials or broker connection. There are no real orders, automated deposits or periodic trading/training schedules.** The example datasets are synthetic, not historical backtests or evidence of an investment edge. There is no LLM or filing signal in the implemented model yet.
 
 ## Run locally
 
@@ -109,7 +112,7 @@ uv run twenty backtest --data data/synthetic.csv --fx-bps 0 --buy-tax-bps 50
 
 Sells occur before buys. Buys reserve their transaction costs, and insufficient notionals remain in cash. There is no borrowing or shorting. Cash earns zero. All portfolios start with zero capital at the evaluation start. There are no prior accumulated deposits.
 
-Data/hosting/electricity costs, instrument-specific taxes, foreign withholding, separate fund fees, real order matching, partial fills and market impact are not implemented. Fund expenses may already be reflected in a supplied fund total-return series and must not be counted twice. No probability of reaching £1 million, alpha significance or investment recommendation is produced.
+Data/hosting/electricity costs, instrument-specific taxes, foreign withholding, separate fund fees, real order matching and market impact are not implemented. Partial-fill/cancellation accounting is exercised separately with a durable synthetic order simulator, not historical market fills. Fund expenses may already be reflected in a supplied fund total-return series and must not be counted twice. No probability of reaching £1 million, alpha significance or investment recommendation is produced.
 
 ## Next milestones
 
@@ -118,7 +121,7 @@ Data/hosting/electricity costs, instrument-specific taxes, foreign withholding, 
 3. Archive SEC/company filings with public availability and first-seen timestamps. Train/evaluate a filing-change feature extractor against simple text-difference baselines; save supporting passages. Historical LLM contamination must be addressed separately.
 4. Profile data loading, feature generation, training and simulation independently. Add vectorised scenario batches or compiled accounting only where measurements justify it, retaining a reference simulator for parity checks.
 5. Freeze a candidate; collect forward paper predictions and compare them with the same contribution benchmarks.
-6. Add a separate Trading 212 adapter with account reconciliation, order deduplication, instrument limits and a kill switch after the research and paper stages warrant it.
+6. Complete the Trading 212 live coordinator and broker-history/fill reconciliation around the implemented transport and quantity planner; validate current signals and account/instrument inputs before enabling real execution.
 
 See [the research pack](docs/research.md) for the critical review of 24 academic studies, source/data decisions, evaluation protocol and roadmap.
 
@@ -128,6 +131,6 @@ All development and research changes belong on **`dev`**. **`main`** is reserved
 
 ## Quark target
 
-A read-only inspection on 15 October 2026 found an Intel Core Ultra 5 235T (14 CPU cores), approximately 32 GB installed RAM, Arrow Lake-S Intel Graphics (PCI ID `8086:7d67`) and a render node at `/dev/dri/renderD128`. This is an Intel **GPU**, not a Habana **HPU**. The research web container is now deployed through Git-backed Dockhand. No GPU drivers or training jobs have been installed for Twenty, and the broker remains disconnected.
+A read-only inspection on 15 October 2026 found an Intel Core Ultra 5 235T (14 CPU cores), approximately 32 GB installed RAM, Arrow Lake-S Intel Graphics (PCI ID `8086:7d67`) and a render node at `/dev/dri/renderD128`. This is an Intel **GPU**, not a Habana **HPU**. The research web container is now deployed through Git-backed Dockhand. No GPU drivers have been installed for Twenty. Native CPU experiments are explicitly requested and bounded; there is no periodic training, and the default broker remains disconnected.
 
 Start with CPU training/backtests. Verify the Intel compute runtime and PyTorch XPU device detection in an isolated environment before trying neural training on its iGPU. OpenVINO is a separate potential inference backend, not an implemented training backend. Avoid automatic heavyweight jobs: Quark already hosts other services, and the inspection found substantial existing memory/swap use. Benchmark under explicit CPU/memory and concurrency limits without changing its existing workloads.

@@ -56,5 +56,5 @@ Keep money/accounting calculations on the CPU reference implementation. Benchmar
 
 - [SEC data APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces): filings collector implemented and tested with offline fixtures; live validation and Company Facts ingestion remain outstanding.
 - [ALFRED vintage data](https://fred.stlouisfed.org/docs/api/fred/alfred.html): use historical releases rather than revised macroeconomic values if macro features are added.
-- [Trading 212 API](https://docs.trading212.com/api) and [supported account/order types](https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-Trading-212-API-key): live automation is technically possible, but no broker adapter is implemented here.
+- [Trading 212 API](https://docs.trading212.com/api) and [supported account/order types](https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-Trading-212-API-key): quantity-limit HTTP transport and an isolated order simulator are implemented; real execution is not enabled. See the [current setup/terms audit](trading212-setup.md).
 - [Trading 212 ISA fees](https://www.trading212.com/terms/isa) and [HMRC share purchase taxes](https://www.gov.uk/tax-buy-shares): validate actual instrument costs before using any backtest to inform execution.

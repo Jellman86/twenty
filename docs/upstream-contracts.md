@@ -10,9 +10,10 @@ The current OpenAPI inventory exposes account summary, instrument/exchange metad
 
 Order submission takes signed share quantity, not a cash budget. Creation endpoints explicitly warn of duplicate orders on replay. Pending-order retrieval and cancellation are not proof of final execution outcome; reconcile historical orders/fills. The current cash-notional Python simulator is an idealised research reference, not a faithful broker execution adapter. [Orders](https://docs.trading212.com/api/orders), [history](https://docs.trading212.com/api/historical-events).
 
-### Terms need clarification before live integration
+### Documented API terms restriction
 
-The API Help Centre now lists live market, limit, stop and stop-limit orders. However, the linked API Terms §§6.1–6.2 describe testing-only personal use; §6.3 requires prior written consent for applications intended for other end-users, and §6.7 contains prior-consent language for customised interfaces. §7.1 also disclaims real-time market data. This is a concrete mismatch to resolve against the applicable account/entity terms with Trading 212 before live use or offering an integrated broker product to others. A public repository alone does not settle those permissions. No broker enquiry was sent and no agreement was accepted. [Help Centre](https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-Trading-212-API-key), [linked API Terms](https://www.trading212.com/legal-documentation/API-Terms_EN.pdf).
+A second review on 15 October 2026 found a stronger restriction than our first testing/live discrepancy: linked API Terms §4.2(a) explicitly prohibits Algorithmic Trading; §11 defines automated initiation, timing, price or quantity with limited human intervention. The Help Centre still advertises key permissions and demo/live order capabilities. Key availability does not remove that restriction. The user instructed the project to continue building without seeking clarification. We continue independent engineering and retain this finding, without claiming consent or a changed agreement. No enquiry was sent or agreement accepted. [Help Centre](https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-Trading-212-API-key), [linked API Terms](https://www.trading212.com/legal-documentation/API-Terms_EN.pdf).
+
 
 ### Relevant published endpoint budgets
 
@@ -42,7 +43,7 @@ Use small C# typed HTTP clients and source-specific DTOs behind domain interface
 | Corporate filings | Company CIK, accession, form, acceptance time, public availability evidence, period, immutable original hash | A period end is not a release time. A company is not interchangeable with one listed security. |
 | FX | Base currency, quote currency, quote-units per base, observation/publication time and rate purpose | GBP/GBX scaling and FX direction must be explicit. Reference rates are not broker executable conversions. |
 | Broker reads | Environment/account binding, timestamped balances, positions, pending orders, fill/cash events | Read-only first. An account's GBP currency does not establish that it is the user's ISA. Persist raw responses privately, never in public Git. |
-| Future order adapter | Local intent ID, cash reservation, signed share quantity, state, broker order/fill IDs | Live capability absent from current web app. Paper ledger first; confirmed legal/account permissions and separate user authorisation before live access. |
+| Future order adapter | Local intent ID, cash reservation, signed share quantity, state, broker order/fill IDs | Quantity planner, durable simulator and HTTP transport implemented; actual order coordinator/history-fill reconciliation and verified current inputs remain outstanding. |
 
 Keep cash and share quantities as validated `decimal` values, timestamps as `DateTimeOffset` with source precision retained, and statistical arrays floating point. Absence is not zero. Unknown broker states or ambiguous unit mappings must block new order decisions while preserving evidence for reconciliation.
 
@@ -83,4 +84,4 @@ These are required future tests, not tests already executed:
 - SEC history chunks, unequal parallel-array lengths, amendment/duplicate accession handling, comparable-period facts disclosed later, acceptance versus first-public timing, and schema/parser changes.
 - Raw versus adjusted price changes after a corporate action; missing terminal outcomes; FX holidays and late publication.
 
-Resolve before execution: applicable broker terms/consent, verified ISA account binding, instrument-specific quantity step/minimum/currency rules, price freshness, fill/FX semantics, and attainable data licence/coverage. Before collection, supply a genuine monitored SEC contact identity without committing private contact details. These are gates in issues #3, #4, #5, #6 and #10; they do not prevent building the offline contracts and fixtures.
+The applicable terms restriction is documented; development is continuing as instructed. Remaining technical inputs before execution: verified ISA account binding, instrument-specific quantity step/minimum/currency rules, price freshness, fill/FX semantics, and attainable data licence/coverage. Before collection, supply a genuine monitored SEC contact identity without committing private contact details. These are gates in issues #3, #4, #5, #6 and #10; they do not prevent building the offline contracts and fixtures.

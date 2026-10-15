@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import ResearchLab from './ResearchLab.svelte';
+  import ExecutionLab from './ExecutionLab.svelte';
   type Point = { year: number; contributions: number; balance: number };
   type Scenario = {
     assumptions: {
@@ -23,7 +25,7 @@
       currency: 'GBP',
       maximumFractionDigits: 0,
     }).format(n);
-  let section = $state('workbench');
+  let section = $state('research');
   let monthly = $state(20);
   let years = $state(30);
   let annualPercent = $state(7);
@@ -59,7 +61,7 @@
     try {
       const response = await fetch('/api/projections', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'X-Twenty-Request': '1' },
         body: JSON.stringify({
           monthly,
           years,
@@ -86,7 +88,7 @@
   onMount(() => {
     const navigate = () => {
       const hash = location.hash.slice(1);
-      section = ['roadmap', 'evidence'].includes(hash) ? hash : 'workbench';
+      section = ['roadmap', 'evidence', 'workbench', 'execution'].includes(hash) ? hash : 'research';
     };
     navigate();
     window.addEventListener('hashchange', navigate);
@@ -115,6 +117,8 @@
     >
     <div class="workspace-label">YOUR WORKSPACE</div>
     <nav aria-label="Main navigation">
+      <a href="#research" class:active={section === 'research'} aria-current={section === 'research' ? 'page' : undefined}><span class="nav-icon">⌁</span>Growth lab</a>
+      <a href="#execution" class:active={section === 'execution'} aria-current={section === 'execution' ? 'page' : undefined}><span class="nav-icon">⇢</span>Decisions & orders</a>
       <a
         href="#workbench"
         class:active={section === 'workbench'}
@@ -147,8 +151,8 @@
     <header>
       <span
         >PROJECT TWENTY <span class="slash">/</span>
-        {section === 'workbench'
-          ? 'Research workbench'
+        {section === 'research' ? 'Speculative growth lab' : section === 'execution' ? 'Decisions & orders' : section === 'workbench'
+          ? 'Contribution scenarios'
           : section === 'roadmap'
             ? 'Project roadmap'
             : 'Evidence review'}</span
@@ -157,7 +161,11 @@
       >
     </header>
     <main id="main">
-      {#if section === 'workbench'}
+      {#if section === 'research'}
+        <ResearchLab />
+      {:else if section === 'execution'}
+    <ExecutionLab />
+    {:else if section === 'workbench'}
         <div class="page-heading">
           <div>
             <p class="eyebrow">THE £20 EXPERIMENT</p>
