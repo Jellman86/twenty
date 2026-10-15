@@ -12,6 +12,12 @@
     "milestone": "M1 \u00b7 Research workbench"
   },
   {
+    "number": 12,
+    "title": "Keep secrets out of public source and container publication",
+    "url": "https://github.com/Jellman86/twenty/issues/12",
+    "milestone": "M1 \u00b7 Research workbench"
+  },
+  {
     "number": 3,
     "title": "Establish dataset provenance and point-in-time schema",
     "url": "https://github.com/Jellman86/twenty/issues/3",

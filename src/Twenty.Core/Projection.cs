@@ -36,6 +36,7 @@ public static class Projection
     public static double? RequiredReturn(double monthly, int years, double target)
     {
         double low = -0.999999, high = 1;
+        if (FutureValue(monthly, years, low) > target) return null;
         while (FutureValue(monthly, years, high) < target)
         {
             high *= 2;

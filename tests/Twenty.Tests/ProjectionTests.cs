@@ -33,6 +33,10 @@ public class ProjectionTests
         Assert.Equal(new ProjectionPoint(0, 0, 0), result.Points[0]);
     }
 
+    [Fact]
+    public void ImpossibleTargetBelowLastDepositHasNoSupportedRoot() =>
+        Assert.Null(Projection.Calculate(new(20, 30, 0.07, 1)).RequiredAnnualReturn);
+
     [Theory]
     [InlineData(0, 30, .07)]
     [InlineData(20, 0, .07)]

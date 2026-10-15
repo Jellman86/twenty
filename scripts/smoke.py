@@ -11,7 +11,9 @@ def get(path):
 
 assert json.load(get("/health/ready"))["mode"] == "research"
 assert json.load(get("/api/meta"))["brokerConnected"] is False
-assert len(json.load(get("/api/roadmap"))) == 11
+roadmap = json.load(get("/api/roadmap"))
+assert len(roadmap) >= 11
+assert all(issue["url"].startswith("https://github.com/Jellman86/twenty/issues/") for issue in roadmap)
 assert b'<div id="app">' in get("/").read()
 request = urllib.request.Request(base + "/api/projections", json.dumps({"monthly":20,"years":30,"annualReturn":0.07,"target":1000000}).encode(), {"Content-Type": "application/json"})
 result = json.load(urllib.request.urlopen(request, timeout=10))

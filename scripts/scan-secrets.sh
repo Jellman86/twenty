@@ -11,3 +11,15 @@ printf '%s  %s\n' "$checksum" "$scratch/gitleaks.tar.gz" | sha256sum --check --s
 tar -xzf "$scratch/gitleaks.tar.gz" -C "$scratch" gitleaks
 "$scratch/gitleaks" git --redact --no-banner --log-opts="--all" .
 "$scratch/gitleaks" dir --redact --no-banner .
+# A generated fake key proves the scanner fails closed; no real credential is used.
+mkdir "$scratch/control"
+printf 'aws_access_key_id = "%s%s"\n' 'AKIA' 'ABCDEFGHIJKLMNOP' > "$scratch/control/leak.txt"
+set +e
+"$scratch/gitleaks" dir --redact --no-banner "$scratch/control" >/dev/null 2>&1
+control_status=$?
+set -e
+if [ "$control_status" -ne 1 ]; then
+  echo 'Secret-scanner negative control failed' >&2
+  exit 1
+fi
+echo 'Synthetic leak control correctly rejected'

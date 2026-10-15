@@ -14,6 +14,8 @@ Track delivery in the [public Twenty project](https://github.com/users/Jellman86
 - [M4 · Paper portfolio · #10: Implement a persistent paper portfolio and broker capability audit](https://github.com/Jellman86/twenty/issues/10)
 - [M4 · Paper portfolio · #11: Define evidence gates and the first release on main](https://github.com/Jellman86/twenty/issues/11)
 
+- [M1 · Research workbench · #12: Keep secrets out of public source and container publication](https://github.com/Jellman86/twenty/issues/12)
+
 ## Research planning context
 
 # Research-driven roadmap
