@@ -2,6 +2,8 @@
 
 Status: proposed research protocol, reviewed 15 October 2026. Only the features and checks explicitly marked implemented in the README exist today. This document specifies the next experiments; it does not certify an investment strategy.
 
+The native [registered first study](registered-studies.md) now implements a finite upfront hypothesis/concentration/cost family, common development dates, a one-month selection gap and a one-time final pair. Its fixed wealth-margin screen is a declared engineering/research convention, not a universal approval threshold. Point-in-time data certification, wider model families and prospective promotion remain outstanding.
+
 ## Research question
 
 Does a locally trained model improve the net outcome of a small GBP, long-only portfolio beyond simple strategies, and does disclosure-change information add value beyond numerical features? The £1 million aspiration is a separate scenario calculation, not a training target or an instruction to maximise risk.

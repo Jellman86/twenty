@@ -10,9 +10,10 @@ public sealed record DatasetEntry(string Id, string Name, string Sha256, bool Sy
 public sealed record RunRequest(string RequestId, string DatasetId, ExperimentConfig Config, ResearchCosts Costs);
 public sealed record RunEntry(string Id, string DatasetId, string DatasetName, bool Synthetic, string Status, DateTimeOffset CreatedAt,
     DateTimeOffset? StartedAt, DateTimeOffset? FinishedAt, int Progress, string? ErrorCode, string CodeCommit, string ConfigSha256,
-    ExperimentConfig Config, ResearchCosts Costs, bool CancelRequested, string? ReportSha256 = null, string? WorkerCommit = null, string? EngineSha256 = null);
+    ExperimentConfig Config, ResearchCosts Costs, bool CancelRequested, string? ReportSha256 = null, string? WorkerCommit = null, string? EngineSha256 = null,
+    string? StudyId = null, string? StudyCandidateId = null, string? StudyStage = null);
 
-public sealed class ResearchStore : IDisposable
+public sealed partial class ResearchStore : IDisposable
 {
     public static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { MaxDepth = 64 };
     public string Root { get; }
@@ -34,6 +35,7 @@ public sealed class ResearchStore : IDisposable
             "CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, request_id TEXT NOT NULL UNIQUE, dataset_id TEXT NOT NULL, json TEXT NOT NULL, status TEXT NOT NULL);" +
             "CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, at TEXT NOT NULL, kind TEXT NOT NULL);" +
             "CREATE TABLE IF NOT EXISTS holdout_access(dataset_id TEXT NOT NULL, run_id TEXT NOT NULL UNIQUE, at TEXT NOT NULL);" );
+        InitialiseStudies(db);
         foreach (var run in ListRuns().Where(r => r.Status == "running")) Save(run with { Status = "interrupted", FinishedAt = this.clock.GetUtcNow(), ErrorCode = "process-restarted" }, "restart-interrupted");
     }
     public void Dispose() => lease.Dispose();
@@ -97,11 +99,12 @@ public sealed class ResearchStore : IDisposable
             }
             using var count = db.CreateCommand(); count.Transaction = transaction;
             count.CommandText = "SELECT COUNT(*) FROM runs";
-            if ((long)count.ExecuteScalar()! >= 1000) throw new ResearchException("trial-capacity");
+            if ((long)count.ExecuteScalar()! + ReservedStudySlots() >= 1000) throw new ResearchException("trial-capacity");
             count.CommandText = "SELECT COUNT(*) FROM runs WHERE status IN ('queued','running')";
             if ((long)count.ExecuteScalar()! >= 10) throw new ResearchException("queue-capacity");
             // The initial app deliberately does not expose a final holdout run. Record/review promotion first.
             if (request.Config.EvaluateHoldout) throw new ResearchException("holdout-gate-closed");
+            GuardStudyReservations(panel, request.Config);
             var dataset = Datasets().Single(x => x.Id == request.DatasetId);
             var run = new RunEntry(Guid.NewGuid().ToString("N"), dataset.Id, dataset.Name, dataset.Synthetic, "queued", this.clock.GetUtcNow(),
                 null, null, 0, null, codeCommit, configHash, request.Config, request.Costs, false);
@@ -125,11 +128,23 @@ public sealed class ResearchStore : IDisposable
     {
         lock (gate)
         {
-            var queued = ListRuns().LastOrDefault(x => x.Status == "queued");
-            if (queued is null) return null;
-            var run = queued with { Status = "running", StartedAt = this.clock.GetUtcNow(), WorkerCommit = Environment.GetEnvironmentVariable("TWENTY_COMMIT") ?? "local",
-                EngineSha256 = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(typeof(Backtest).Assembly.Location))) };
-            Save(run, "started"); return run;
+            AdvanceStudies();
+            while (true)
+            {
+                var queued = ListRuns().LastOrDefault(x => x.Status is "queued" or "planned");
+                if (queued is null) return null;
+                try { if (!ValidateStudyStart(queued)) continue; }
+                catch (Exception error) when (error is ResearchException or IOException or InvalidDataException or UnauthorizedAccessException or JsonException)
+                {
+                    var code = error is ResearchException re ? re.Code : "claim-input-unavailable";
+                    Save(queued with { Status = "failed", FinishedAt = clock.GetUtcNow(), ErrorCode = code }, "claim-rejected");
+                    if (queued.StudyId is { } studyId && Study(studyId) is { } study) FailStudy(study, code);
+                    continue;
+                }
+                var run = queued with { Status = "running", StartedAt = this.clock.GetUtcNow(), WorkerCommit = Environment.GetEnvironmentVariable("TWENTY_COMMIT") ?? "local",
+                    EngineSha256 = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(typeof(Backtest).Assembly.Location))) };
+                Save(run, "started"); return run;
+            }
         }
     }
     public void Cancel(string id)
@@ -137,8 +152,8 @@ public sealed class ResearchStore : IDisposable
         lock (gate)
         {
             var run = Find(id) ?? throw new ResearchException("run-not-found");
-            if (run.Status is "queued" or "running") Save(run with { CancelRequested = true, Status = run.Status == "queued" ? "cancelled" : "running",
-                FinishedAt = run.Status == "queued" ? this.clock.GetUtcNow() : null }, "cancel-requested");
+            if (run.Status is "queued" or "planned" or "running") Save(run with { CancelRequested = true, Status = run.Status != "running" ? "cancelled" : "running",
+                FinishedAt = run.Status != "running" ? this.clock.GetUtcNow() : null }, "cancel-requested");
         }
     }
     public void Save(RunEntry run, string kind)
@@ -164,6 +179,7 @@ public sealed class ResearchStore : IDisposable
         {
             var run = Find(id) ?? throw new ResearchException("run-not-found");
             if (run.CancelRequested) throw new OperationCanceledException();
+            ValidateStudyReport(run, report);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(report, Json);
             if (bytes.Length > 8 * 1024 * 1024 || Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories)
                 .Where(p => !p.EndsWith(".app.lock", StringComparison.Ordinal)).Sum(p => new FileInfo(p).Length) + bytes.Length > 256L * 1024 * 1024)

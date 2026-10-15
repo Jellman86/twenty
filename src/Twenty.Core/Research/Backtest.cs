@@ -4,14 +4,18 @@ namespace Twenty.Core.Research;
 
 public sealed record ExperimentConfig(decimal MonthlyGbp = 20m, int TopK = 3, decimal MaximumWeight = 0.5m,
     int TrainMonths = 60, int RefitMonths = 12, int HoldoutMonths = 24, double RidgeAlpha = 10,
-    string Hypothesis = "ridge-relative-return", bool EvaluateHoldout = false, int ForwardYears = 10, int Seed = 212, string AllocationPolicy = "full-rebalance")
+    string Hypothesis = "ridge-relative-return", bool EvaluateHoldout = false, int ForwardYears = 10, int Seed = 212, string AllocationPolicy = "full-rebalance", DateOnly? DevelopmentStart = null, DateOnly? DevelopmentEnd = null)
 {
     public void Validate(MonthlyPanel panel)
     {
         if (MonthlyGbp is < 1 or > 1000 || TopK is < 1 or > 10 || MaximumWeight is <= 0 or > 1 || TrainMonths is < 24 or > 240 ||
             RefitMonths is < 1 or > 24 || HoldoutMonths is < 12 or > 120 || !double.IsFinite(RidgeAlpha) || RidgeAlpha is < 0.01 or > 1000 ||
             AllocationPolicy is not ("full-rebalance" or "contribution-only") || Hypothesis is not ("ridge-relative-return" or "momentum" or "breakout" or "upside-tail") || ForwardYears is < 1 or > 30 || Seed is < 0 or > 1000000 ||
-            panel.Dates.Length - 1 - HoldoutMonths <= MonthlyPanel.Warmup + TrainMonths + LabelHorizon) throw new ResearchException("invalid-experiment-config");
+            panel.Dates.Length - 1 - HoldoutMonths <= MonthlyPanel.Warmup + TrainMonths + LabelHorizon ||
+            DevelopmentStart is { } date && (panel.Dates.IndexOf(date) < MonthlyPanel.Warmup + TrainMonths + LabelHorizon || panel.Dates.IndexOf(date) >= panel.Dates.Length - 1 - HoldoutMonths))
+            throw new ResearchException("invalid-experiment-config");
+        if (DevelopmentEnd is { } end && (panel.Dates.IndexOf(end) <= (DevelopmentStart is { } start ? panel.Dates.IndexOf(start) : MonthlyPanel.Warmup + TrainMonths + LabelHorizon) ||
+            panel.Dates.IndexOf(end) > panel.Dates.Length - 1 - HoldoutMonths)) throw new ResearchException("invalid-experiment-config");
     }
     public int LabelHorizon => Hypothesis == "upside-tail" ? 6 : 1;
 }
@@ -30,7 +34,7 @@ public sealed record BacktestReport(string EngineVersion, string DatasetSha256, 
 
 public static class Backtest
 {
-    public const string Version = "native-monthly-v2";
+    public const string Version = "native-monthly-v3";
     public static readonly ImmutableArray<string> Strategies = ["candidate", "momentum", "equal_weight", "benchmark", "cash"];
     public static Dictionary<string, decimal> Rank(double[] scores, ImmutableArray<string> assets, int topK, decimal cap)
     {
@@ -43,10 +47,10 @@ public static class Backtest
     public static BacktestReport Run(MonthlyPanel panel, ExperimentConfig config, ResearchCosts costs, CancellationToken ct = default, Action<int>? progress = null)
     {
         config.Validate(panel); costs.Validate();
-        var first = MonthlyPanel.Warmup + config.TrainMonths + config.LabelHorizon;
+        var first = config.DevelopmentStart is { } date ? panel.Dates.IndexOf(date) : MonthlyPanel.Warmup + config.TrainMonths + config.LabelHorizon;
         var reserved = panel.Dates.Length - 1 - config.HoldoutMonths;
         var start = config.EvaluateHoldout ? reserved : first;
-        var stop = config.EvaluateHoldout ? panel.Dates.Length - 1 : reserved;
+        var stop = config.EvaluateHoldout ? panel.Dates.Length - 1 : config.DevelopmentEnd is { } end ? panel.Dates.IndexOf(end) : reserved;
         var portfolios = Strategies.ToDictionary(s => s, _ => new NotionalPortfolio());
         var equity = ImmutableArray.CreateBuilder<EquityObservation>();
         var predictions = ImmutableArray.CreateBuilder<Prediction>();
@@ -140,6 +144,6 @@ public static class ForwardProjection
             Array.Sort(balances[year]);
             return new ForwardPoint(year, year * 12 * config.MonthlyGbp, balances[year][29], balances[year][149], balances[year][269]);
         }).ToImmutableArray();
-        return new("Circular 6-month block resampling of candidate net development returns; nominal GBP; 10th/50th/90th path quantiles", paths, block, config.Seed, synthetic, points);
+        return new($"Circular 6-month block resampling of candidate net {(config.EvaluateHoldout ? "reserved-evaluation" : "development")} returns; nominal GBP; 10th/50th/90th path quantiles", paths, block, config.Seed, synthetic, points);
     }
 }

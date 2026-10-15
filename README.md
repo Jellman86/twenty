@@ -27,6 +27,7 @@ The application base is **C#/.NET 10 LTS** with a Svelte 5 workbench and an offl
 - Browser-run C# experiments: relative-return ranking, momentum, return-index breakout and six-month upside-tail ranking, with explicit full-rebalance or contribution-only allocation. Only the matching contribution-only reports can approve the initial buy-only coordinator.
 - Persisted jobs, cancellation, restart recovery, model/report hashes and all attempted trials.
 - Paired candidate-family uncertainty diagnostics with joint month resampling, disclosed excluded trials and approximate simultaneous mean-active-return bands; [scope and assumptions](docs/search-diagnostics.md).
+- [Registered contribution studies](docs/registered-studies.md): all candidate/cost trials declared before work, common dates and a selection gap, automatic frozen policy choice, and one irreversible final base/stress evaluation with no runner-up substitution.
 - Contribution-only share buy plans, durable simulated partial fills/cancellation and a persisted pause.
 - Frozen current-month signal scoring and a separately configured broker coordinator with durable intents, unknown-submission protection and fill reconciliation. See [the execution contract](docs/broker-execution.md).
 - GBP contribution/target calculations using annual effective compounding.
@@ -96,13 +97,13 @@ Features are one- and three-month momentum, intermediate momentum skipping the l
 
 The initial training window is 60 available monthly labels, and subsequent refits expand it. Models refit every 12 months by default. Equal weighting holds all non-benchmark assets, independently of model scores and top-k. All comparisons start on the same date and deposit the same amount at the **start** of each simulated monthly interval. The `project` calculator instead uses **month-end** deposits; its output is a separate mathematical scenario.
 
-The last 24 return intervals are excluded from development evaluation. `--evaluate-holdout` evaluates only that reserved interval and records that decision. Viewing its results consumes the holdout for that research programme; do not tune on it and keep calling it unseen. The code records but cannot prevent repeated holdout use or manual inspection of the input.
+The Python harness excludes the last 24 return intervals from development evaluation. `--evaluate-holdout` evaluates only that reserved interval and records that decision. Viewing its results consumes the holdout for that research programme; do not tune on it and keep calling it unseen. That CLI records but cannot prevent repeated use. The native registered-study workflow additionally enforces a fixed final pair, a one-month selection gap and conservative workspace-wide genuine-data reservation/spend checks. Neither prevents manual inspection or certifies upstream provenance.
 
 ```sh
 uv run twenty backtest --data data/synthetic.csv --evaluate-holdout
 ```
 
-Results appear in `runs/<run-id>/`. Each run records its configuration before fitting; failed attempts can therefore leave a manifest without a completed report. `runs/experiments.jsonl` records attempts within that output root. Do not delete failed/poor trials during strategy selection or hide trials by changing output roots. The native web workbench has scoped candidate-family bootstrap diagnostics; the Python harness does not. Whole-programme correction, PBO/deflated Sharpe and a preregistered promotion workflow remain outstanding.
+Results appear in `runs/<run-id>/`. Each run records its configuration before fitting; failed attempts can therefore leave a manifest without a completed report. `runs/experiments.jsonl` records attempts within that output root. Do not delete failed/poor trials during strategy selection or hide trials by changing output roots. The native workbench has scoped candidate-family diagnostics and a registered first-study/final-pair workflow; the Python harness does not. Whole-programme correction, PBO/deflated Sharpe and genuine prospective promotion remain outstanding.
 
 ## Costs and limits
 

@@ -8,7 +8,14 @@ public sealed class ExperimentWorker(ResearchStore store, ILogger<ExperimentWork
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            var run = store.Claim();
+            RunEntry? run;
+            try { run = store.Claim(); }
+            catch (Exception error) when (error is ResearchException or IOException or InvalidDataException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException or System.Text.Json.JsonException)
+            {
+                // Per-run rejection is persisted by Claim. If the register itself is unavailable, retain the host and retry without selecting work.
+                logger.LogWarning("Research claim unavailable: {Code}", error is ResearchException re ? re.Code : "research-register-unavailable");
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken); continue;
+            }
             if (run is null) { await Task.Delay(500, stoppingToken); continue; }
             using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken); deadline.CancelAfter(TimeSpan.FromMinutes(2));
             try

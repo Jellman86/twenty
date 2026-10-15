@@ -86,6 +86,14 @@ app.MapGet("/api/meta", () =>
 app.MapGet("/api/research/datasets", () => store.Datasets());
 app.MapGet("/api/research/runs", () => store.ListRuns().Take(100));
 app.MapGet("/api/research/trials", () => new { total = store.ListRuns().Count, displayedLimit = 100 });
+app.MapGet("/api/research/studies", () => store.StudyHistory());
+app.MapGet("/api/research/studies/{id}", (string id) => store.Study(id) is { } study ? Results.Ok(study) : Results.NotFound());
+app.MapGet("/api/research/studies/{id}/plan", (string id) => store.StudyPlanJson(id) is { } json ? Results.Content(json, "application/json") : Results.NotFound());
+app.MapGet("/api/research/studies/{id}/events", (string id) => store.StudyEvents(id));
+app.MapPost("/api/research/studies", (StudyRequest request) => Results.Accepted("/api/research/studies", store.RegisterStudy(request, Environment.GetEnvironmentVariable("TWENTY_COMMIT") ?? "local")));
+app.MapPost("/api/research/studies/{id}/evaluate", (string id, StudyEvaluationRequest request) => Results.Accepted("/api/research/studies/" + id,
+    store.EvaluateStudy(id, request, Environment.GetEnvironmentVariable("TWENTY_COMMIT") ?? "local")));
+app.MapPost("/api/research/studies/{id}/cancel", (string id) => store.CancelStudy(id));
 app.MapGet("/api/research/diagnostics", () => diagnostics.History());
 app.MapGet("/api/research/diagnostics/{id}", (string id) => diagnostics.Find(id) is { } result ? Results.Ok(result) : Results.NotFound());
 app.MapPost("/api/research/diagnostics", async (DiagnosticRequest request, CancellationToken ct) => await diagnostics.Create(request, ct));
@@ -98,6 +106,8 @@ app.MapGet("/api/research/capabilities", () =>
     var policy = DisplayPolicy();
     return new { engine = Backtest.Version, nativeCpuTraining = true,
         hypotheses = new[] { "ridge-relative-return", "momentum", "breakout", "upside-tail" }, simultaneousJobs = 1, deadlineSeconds = 120, finalHoldoutEnabled = false,
+        registeredStudyFinalEvaluation = true,
+        registeredStudy = new { protocol = StudyProtocol.Version, codeSha256 = ResearchStore.StudyCodeSha256, finalWindowRequestRequired = true },
         searchDiagnostics = new { method = SearchDiagnostics.Version, pairedCalendarResampling = true, preregisteredPromotion = false },
         broker = new { mode = broker?.Environment.ToString().ToLowerInvariant() ?? "disconnected", credentialsConfigured = broker is not null,
             automaticPurchases = broker is not null && policy is { Enabled: true, Automatic: true }, transportImplemented = true, coordinatorImplemented = true,

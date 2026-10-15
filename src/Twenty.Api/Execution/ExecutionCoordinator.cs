@@ -39,6 +39,7 @@ public sealed class ExecutionCoordinator
         if (run.Status != "succeeded" || run.ReportSha256 != policy.ReportSha256 || run.Config.MonthlyGbp != policy.MonthlyGbp)
             throw new ResearchException("execution-strategy-binding");
         if (run.Config.AllocationPolicy != "contribution-only") throw new ResearchException("execution-backtest-policy-mismatch");
+        research.AssertStudyExecutionRun(run, policy.Environment == "live");
         if (policy.Environment == "live" && (run.Synthetic || policy.SyntheticEvidence)) throw new ResearchException("execution-synthetic-live");
         return policy;
     }

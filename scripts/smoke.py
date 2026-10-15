@@ -1,4 +1,5 @@
 """Exercise the running image: HTTP contracts, durable training and isolated simulated orders."""
+import hashlib
 import json
 import sys
 import time
@@ -102,4 +103,48 @@ assert analysis == post("/api/research/diagnostics", analysis_request)
 assert analysis == json.load(get(f'/api/research/diagnostics/{analysis["id"]}'))
 assert post("/api/research/diagnostics", dict(analysis_request, anchorRunId="0" * 32), 400)["error"] == "request-id-conflict"
 assert json.load(get("/api/research/diagnostics"))["total"] >= 1
-print("HTTP smoke passed: persisted CPU trials, chronology, simulated purchases and paired candidate-family uncertainty diagnostics")
+capabilities = json.load(get("/api/research/capabilities"))
+assert capabilities["registeredStudyFinalEvaluation"] is True
+study_code = capabilities["registeredStudy"]["codeSha256"]
+studies = json.load(get("/api/research/studies"))
+existing = next((s for s in studies if s["synthetic"] and s["codeSha256"] == study_code and s["datasetId"] == payload["datasetId"] and s["status"] == "engineering-complete"), None)
+if existing:
+    study = json.load(get(f'/api/research/studies/{existing["id"]}'))
+else:
+    study_request = {"requestId": str(uuid.uuid4()), "datasetId": payload["datasetId"], "name": "Synthetic HTTP study acceptance", "purpose": "engineering", "monthlyGbp": 20, "costs": {}}
+    study = post("/api/research/studies", study_request, 202)
+    assert post("/api/research/studies", study_request, 202)["id"] == study["id"]
+    assert len(study["developmentRuns"]) == len(study["plan"]["candidates"])
+    for _ in range(360):
+        study = json.load(get(f'/api/research/studies/{study["id"]}'))
+        if study["status"] != "development":
+            break
+        time.sleep(0.5)
+    assert study["status"] == "candidate-frozen", study.get("errorCode")
+    assert len(study["scores"]) == len(study["plan"]["candidates"])
+    final_request = {"requestId": str(uuid.uuid4()), "planSha256": study["planSha256"]}
+    planned = post(f'/api/research/studies/{study["id"]}/evaluate', final_request, 202)
+    assert planned["finalRequestedAt"] and planned["finalBaseRunId"] and planned["finalStressRunId"]
+    assert post(f'/api/research/studies/{study["id"]}/evaluate', final_request, 202)["finalBaseRunId"] == planned["finalBaseRunId"]
+    for _ in range(120):
+        study = json.load(get(f'/api/research/studies/{study["id"]}'))
+        if study["status"] != "final-evaluation":
+            break
+        time.sleep(0.5)
+assert study["status"] == "engineering-complete", study.get("errorCode")
+assert study["plan"]["synthetic"] and study["plan"]["purpose"] == "engineering"
+assert study["plan"]["developmentEnd"] < study["plan"]["reservedStart"]
+assert hashlib.sha256(get(f'/api/research/studies/{study["id"]}/plan').read()).hexdigest() == study["planSha256"]
+assert study["selectionDiagnostics"]["candidates"] == 2 * len(study["plan"]["candidates"])
+assert study["finalBaseReportSha256"] and study["finalStressReportSha256"]
+final = json.load(get(f'/api/research/runs/{study["finalBaseRunId"]}'))
+assert final["studyCandidateId"] == study["selectedCandidateId"]
+assert final["startedAt"] >= study["finalRequestedAt"]
+report = json.load(get(f'/api/research/runs/{final["id"]}/report'))
+assert report["scope"] == "reserved_holdout"
+assert all(f["lastLabelEnd"] < f["decisionDate"] for f in report["folds"])
+assert post(f'/api/research/studies/{study["id"]}/evaluate', {"requestId": study["finalRequestId"], "planSha256": study["planSha256"]}, 202) == study
+assert post(f'/api/research/studies/{study["id"]}/evaluate', {"requestId": str(uuid.uuid4()), "planSha256": study["planSha256"]}, 400)["error"] == "study-holdout-spent"
+events = json.load(get(f'/api/research/studies/{study["id"]}/events'))
+assert [e["kind"] for e in events] == ["registered-before-work", "development-selection-frozen", "holdout-spent-before-work", "final-decision-no-substitute"]
+print("HTTP smoke passed: CPU trials, simulated purchases, candidate-family diagnostics and a finite one-time final study rehearsal")

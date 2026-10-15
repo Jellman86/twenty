@@ -13,6 +13,7 @@ Start with these documents:
 - [Upstream contracts and integration boundaries](upstream-contracts.md): broker request/response semantics, execution gaps, timestamp/FX contracts, terms discrepancy and required fixtures.
 - [Data sourcing and collection design](data-sources.md): primary sources, provider candidates, timestamping, delistings, costs and scraper requirements.
 - [Model and evaluation protocol](evaluation-protocol.md): limited hypothesis families, chronological tests, benchmarks, search correction and forward validation.
+- [Registered contribution studies](registered-studies.md): upfront candidate/cost family, shared development window, frozen selection and one-time final evaluation; synthetic rehearsals remain non-promotable.
 - [Prioritised implementation roadmap](roadmap.md): evidence gates and a clear distinction between implemented and planned work.
 - [C#/.NET architecture direction](architecture.md): .NET 10 application base, native-model options and optional Python research workers.
 - [Development and release workflow](development.md): all work on `dev`, releases on `main`.
