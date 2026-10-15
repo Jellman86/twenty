@@ -1,0 +1,2 @@
+# The research golden hash binds exact CSV + metadata bytes across operating systems.
+fixtures/research/* text eol=lf

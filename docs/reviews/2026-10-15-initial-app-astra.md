@@ -11,3 +11,7 @@ The reviewer reproduced three P2 findings despite 160 passing tests:
 Permanent regression tests cover all three, including the existing-holding fee case and a stalled HTTP stream. Synthetic CSV files were also normalised to LF and their shared input hash updated; numerical reference values are unchanged.
 
 Astra found no demonstrated feature/label lookahead defect and confirmed the web holdout gate remained closed. Svelte check/build passed. The reviewer verified the locally bundled macOS SQLite version as 3.53.3; that does not by itself verify Quark's runtime. The UI correctly separates historical choices, synthetic quotes/fills, optional read-only broker access and inactive real orders. Browser and Quark acceptance checks are separate verification.
+
+## Narrow follow-up
+
+Astra re-reviewed the fixes and confirmed all three P2 findings resolved, with no new material defect in the narrow scope. In its temporary copy it passed 21 execution tests, plus two independent checks covering 10,000 seeded plans with mixed GBP/GBX, pending exposure, fees and limit premiums, and stalled summary/pending-order bodies. These validate supplied bounds, not subsequent price moves or genuine broker payloads. No reviewer edits or external network requests were made.
