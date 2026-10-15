@@ -39,4 +39,4 @@ No release tag is created for the current research foundation. A software releas
 
 The hooks reject ordinary commits on `main` and development commits on other branches. The release merge requires `TWENTY_RELEASE=1`. Hooks can be bypassed and do not intercept every Git reference update or fast-forward, so they are a local guardrail, not enforced server policy. Keep release merges explicit and non-fast-forward.
 
-There is currently no Git remote configured. Commits are local. Once a remote is chosen, use server-side protection to prevent direct development pushes to `main` and require reviewed release changes. This document does not claim those protections already exist.
+The public Git remote is [Jellman86/twenty](https://github.com/Jellman86/twenty), with `dev` as the default branch. CI scans full Git history and checked-out files for secrets before publishing a tested development image. The local hooks do not establish server-side branch protection; reviewed release changes and protection against direct development pushes to `main` remain release requirements.

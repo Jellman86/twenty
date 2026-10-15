@@ -20,7 +20,7 @@ CI scans full Git history and checked-out files with checksum-verified Gitleaks 
 
 Local investment research, starting with a £20 monthly contribution. Twenty trains its own small forecasting models, compares them with simpler strategies and records the evidence. It makes no claim that those contributions will reach £1 million.
 
-The intended application base is **C#/.NET 10 LTS**, reflecting the user's preference, with optional Python model-training workers. The runnable code below is the existing Python research harness; the .NET migration is planned, not implemented. See [the architecture direction](docs/architecture.md).
+The application base is **C#/.NET 10 LTS** with a Svelte 5 workbench and an offline C# dataset validator. Python remains the model-training and backtest research harness described below. The C# portfolio accounting engine and background experiment workers remain planned. See [the architecture direction](docs/architecture.md).
 
 ## What works today
 
@@ -32,7 +32,7 @@ The intended application base is **C#/.NET 10 LTS**, reflecting the user's prefe
 - Costs, minimum order notionals, residual cash, fractional GBP allocations and drawdowns measured without treating deposits as investment gains.
 - Run manifests, input hashes, model parameters, predictions, equity histories and an append-only experiment register.
 
-**This is an offline research prototype. There is no Trading 212 connection, automated deposit, order placement or background training job.** The example dataset is seeded random synthetic data, not a historical backtest or evidence of an investment edge. There is no LLM or filing signal in the implemented model yet.
+**Model training and backtesting run offline; the research workbench is privately deployed on Quark. There is no Trading 212 connection, automated deposit, order placement or background training job.** The example datasets are synthetic, not historical backtests or evidence of an investment edge. There is no LLM or filing signal in the implemented model yet.
 
 ## Run locally
 
@@ -128,6 +128,6 @@ All development and research changes belong on **`dev`**. **`main`** is reserved
 
 ## Quark target
 
-A read-only inspection on 15 October 2026 found an Intel Core Ultra 5 235T (14 CPU cores), approximately 32 GB installed RAM, Arrow Lake-S Intel Graphics (PCI ID `8086:7d67`) and a render node at `/dev/dri/renderD128`. This is an Intel **GPU**, not a Habana **HPU**. No Twenty files, drivers, containers or training jobs have been deployed on Quark.
+A read-only inspection on 15 October 2026 found an Intel Core Ultra 5 235T (14 CPU cores), approximately 32 GB installed RAM, Arrow Lake-S Intel Graphics (PCI ID `8086:7d67`) and a render node at `/dev/dri/renderD128`. This is an Intel **GPU**, not a Habana **HPU**. The research web container is now deployed through Git-backed Dockhand. No GPU drivers or training jobs have been installed for Twenty, and the broker remains disconnected.
 
 Start with CPU training/backtests. Verify the Intel compute runtime and PyTorch XPU device detection in an isolated environment before trying neural training on its iGPU. OpenVINO is a separate potential inference backend, not an implemented training backend. Avoid automatic heavyweight jobs: Quark already hosts other services, and the inspection found substantial existing memory/swap use. Benchmark under explicit CPU/memory and concurrency limits without changing its existing workloads.
