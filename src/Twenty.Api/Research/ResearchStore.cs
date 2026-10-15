@@ -94,7 +94,9 @@ public sealed partial class ResearchStore : IDisposable
             if (lookup.ExecuteScalar() is string existing)
             {
                 var prior = JsonSerializer.Deserialize<RunEntry>(existing, Json)!;
-                if (prior.ConfigSha256 != configHash) throw new ResearchException("request-id-conflict");
+                // Compare resolved semantics across DTO upgrades; retain the original serialized-config hash as historical evidence.
+                if (prior.DatasetId != request.DatasetId || prior.Config != request.Config || prior.Costs != request.Costs)
+                    throw new ResearchException("request-id-conflict");
                 return prior;
             }
             using var count = db.CreateCommand(); count.Transaction = transaction;

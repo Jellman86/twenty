@@ -1,5 +1,9 @@
 using Twenty.Api.Research;
 using Twenty.Core.Research;
+using Microsoft.Data.Sqlite;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json.Nodes;
 
 namespace Twenty.Tests;
 
@@ -21,6 +25,25 @@ public class ResearchStoreTests
         Assert.Equal(a.Id,b.Id);Assert.Single(store.ListRuns());
         Assert.Throws<ResearchException>(()=>store.Enqueue(request with {Config=new(TopK:2)},"test-code"));
         Assert.Equal(data.Sha256,store.Panel(data.Id).Sha256);
+    }
+    [Fact]
+    public void LegacyRequestsKeepTheirIdentityWhenOptionalConfigFieldsAreAdded()
+    {
+        using var w=new Workspace();using var store=new ResearchStore(w.Root);var data=Import(store);
+        var request=new RunRequest(Guid.NewGuid().ToString("D"),data.Id,new(),new());var run=store.Enqueue(request,"older-code");
+        var record=JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(run,ResearchStore.Json))!.AsObject();
+        record["config"]!.AsObject().Remove("developmentStart");record["config"]!.AsObject().Remove("developmentEnd");
+        foreach(var field in new[]{"studyId","studyCandidateId","studyStage"})record.Remove(field);
+        var original=new JsonObject { ["datasetId"]=data.Id,["config"]=record["config"]!.DeepClone(),["costs"]=record["costs"]!.DeepClone() };
+        var legacyHash=Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(original.ToJsonString(ResearchStore.Json))));
+        record["configSha256"]=legacyHash;
+        using(var db=new SqliteConnection(new SqliteConnectionStringBuilder{DataSource=Path.Combine(w.Root,"research.db"),Pooling=false}.ToString()))
+        {
+            db.Open();using var update=db.CreateCommand();update.CommandText="UPDATE runs SET json=$json WHERE id=$id";
+            update.Parameters.AddWithValue("$json",record.ToJsonString(ResearchStore.Json));update.Parameters.AddWithValue("$id",run.Id);Assert.Equal(1,update.ExecuteNonQuery());
+        }
+        var replay=store.Enqueue(request,"newer-code");Assert.Equal(run.Id,replay.Id);Assert.Equal(legacyHash,replay.ConfigSha256);Assert.Single(store.ListRuns());
+        Assert.Equal("request-id-conflict",Assert.Throws<ResearchException>(()=>store.Enqueue(request with{Config=new(TopK:2)},"newer-code")).Code);
     }
     [Fact]
     public void RestartPreservesQueuedTrialsAndMarksRunningTrialInterrupted()
