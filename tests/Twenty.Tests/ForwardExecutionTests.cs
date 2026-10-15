@@ -255,14 +255,14 @@ public sealed class ForwardExecutionTests
         public MonthlyPanel Panel;public DatasetEntry Dataset;public RunEntry Run;public BacktestReport Report;public ExecutionPolicy Policy;
         public FakeGateway Gateway;public ExecutionCoordinator Coordinator;private readonly bool realFlags;
         public BrokerAccountState Account=>Ledger.Find(Policy.AccountKey)!;
-        public Fixture(string hypothesis="ridge-relative-return",bool stress=false,bool realFlags=false)
+        public Fixture(string hypothesis="ridge-relative-return",bool stress=false,bool realFlags=false,string allocationPolicy="contribution-only")
         {
             this.realFlags=realFlags;
             Store=new(Root,Clock);var name=stress?"stress":"demo";var csv=File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory,name+".csv"));var metadata=File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory,name+".metadata.json"));
             if(realFlags)metadata=Encoding.UTF8.GetBytes(Encoding.UTF8.GetString(metadata).Replace("\"synthetic\": true","\"synthetic\": false"));
             Panel=MonthlyPanel.Read(csv,metadata);Dataset=Store.Import(csv,metadata,"authored fixture");
-            Run=Store.Enqueue(new(Guid.NewGuid().ToString("D"),Dataset.Id,new(Hypothesis:hypothesis),new()),"test");Store.Claim();
-            Report=Backtest.Run(Panel,new(Hypothesis:hypothesis),new());Store.Complete(Run.Id,Report);Run=Store.Find(Run.Id)!;
+            Run=Store.Enqueue(new(Guid.NewGuid().ToString("D"),Dataset.Id,new(Hypothesis:hypothesis,AllocationPolicy:allocationPolicy),new()),"test");Store.Claim();
+            Report=Backtest.Run(Panel,new(Hypothesis:hypothesis,AllocationPolicy:allocationPolicy),new());Store.Complete(Run.Id,Report);Run=Store.Find(Run.Id)!;
             var evidenceFile=Path.Combine(Root,"authored-evidence.txt");File.WriteAllText(evidenceFile,"Authored test evidence only; not actual broker/account verification.");
             var reference=new EvidenceReference(evidenceFile,Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(File.ReadAllBytes(evidenceFile))));
             Policy=new(true,false,"demo",42,"demo-invest",Run.Id,Run.ReportSha256!,20,new("negative-debit",true,"positive-charge"),reference,reference,reference,reference,Path.Combine(Root,"quotes.json"),Dataset.Id,!realFlags);

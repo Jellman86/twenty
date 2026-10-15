@@ -24,7 +24,7 @@ The application base is **C#/.NET 10 LTS** with a Svelte 5 workbench and an offl
 
 ## What works today
 
-- Browser-run C# experiments: relative-return ranking, momentum, return-index breakout and six-month upside-tail ranking.
+- Browser-run C# experiments: relative-return ranking, momentum, return-index breakout and six-month upside-tail ranking, with explicit full-rebalance or contribution-only allocation. Only the matching contribution-only reports can approve the initial buy-only coordinator.
 - Persisted jobs, cancellation, restart recovery, model/report hashes and all attempted trials.
 - Contribution-only share buy plans, durable simulated partial fills/cancellation and a persisted pause.
 - Frozen current-month signal scoring and a separately configured broker coordinator with durable intents, unknown-submission protection and fill reconciliation. See [the execution contract](docs/broker-execution.md).

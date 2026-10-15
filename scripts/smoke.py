@@ -40,10 +40,10 @@ assert 0.25 < result["requiredAnnualReturn"] < 0.27
 post("/api/projections", {"monthly": -1, "years": 30, "annualReturn": 0.07}, 400)
 post("/api/research/runs", {}, 403, {"Content-Type": "application/json"})
 post("/api/research/runs", {}, 403, {"Content-Type": "application/json", "X-Twenty-Request": "1", "Origin": "https://untrusted.example"})
-post("/api/research/runs", {"requestId": str(uuid.uuid4()), "datasetId": None, "config": {}, "costs": {}}, 404)
+post("/api/research/runs", {"requestId": str(uuid.uuid4()), "datasetId": None, "config": {"allocationPolicy": "contribution-only"}, "costs": {}}, 404)
 datasets = json.load(get("/api/research/datasets"))
 assert len(datasets) >= 2
-payload = {"requestId": str(uuid.uuid4()), "datasetId": next(d["id"] for d in datasets if "growth" in d["name"]), "config": {}, "costs": {}}
+payload = {"requestId": str(uuid.uuid4()), "datasetId": next(d["id"] for d in datasets if "growth" in d["name"]), "config": {"allocationPolicy": "contribution-only"}, "costs": {}}
 run = post("/api/research/runs", payload, 202)
 assert post("/api/research/runs", payload, 202)["id"] == run["id"]
 conflict = dict(payload, config={"topK": 2})
@@ -58,6 +58,8 @@ assert json.load(get("/api/research/trials"))["total"] >= 1
 assert state["engineSha256"] and state["reportSha256"] and state["workerCommit"]
 report = json.load(get(f'/api/research/runs/{run["id"]}/report'))
 assert report["synthetic"] is True
+assert report["config"]["allocationPolicy"] == "contribution-only"
+assert all(t["side"] == "buy" for e in report["equity"] for t in e["state"]["trades"])
 assert len(report["summaries"]) == 5
 assert all(f["lastLabelEnd"] < f["decisionDate"] for f in report["folds"])
 assert report["evaluationEnd"] <= report["reservedPeriodStart"]

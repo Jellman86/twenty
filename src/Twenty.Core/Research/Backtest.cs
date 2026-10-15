@@ -4,13 +4,13 @@ namespace Twenty.Core.Research;
 
 public sealed record ExperimentConfig(decimal MonthlyGbp = 20m, int TopK = 3, decimal MaximumWeight = 0.5m,
     int TrainMonths = 60, int RefitMonths = 12, int HoldoutMonths = 24, double RidgeAlpha = 10,
-    string Hypothesis = "ridge-relative-return", bool EvaluateHoldout = false, int ForwardYears = 10, int Seed = 212)
+    string Hypothesis = "ridge-relative-return", bool EvaluateHoldout = false, int ForwardYears = 10, int Seed = 212, string AllocationPolicy = "full-rebalance")
 {
     public void Validate(MonthlyPanel panel)
     {
         if (MonthlyGbp is < 1 or > 1000 || TopK is < 1 or > 10 || MaximumWeight is <= 0 or > 1 || TrainMonths is < 24 or > 240 ||
             RefitMonths is < 1 or > 24 || HoldoutMonths is < 12 or > 120 || !double.IsFinite(RidgeAlpha) || RidgeAlpha is < 0.01 or > 1000 ||
-            Hypothesis is not ("ridge-relative-return" or "momentum" or "breakout" or "upside-tail") || ForwardYears is < 1 or > 30 || Seed is < 0 or > 1000000 ||
+            AllocationPolicy is not ("full-rebalance" or "contribution-only") || Hypothesis is not ("ridge-relative-return" or "momentum" or "breakout" or "upside-tail") || ForwardYears is < 1 or > 30 || Seed is < 0 or > 1000000 ||
             panel.Dates.Length - 1 - HoldoutMonths <= MonthlyPanel.Warmup + TrainMonths + LabelHorizon) throw new ResearchException("invalid-experiment-config");
     }
     public int LabelHorizon => Hypothesis == "upside-tail" ? 6 : 1;
@@ -30,7 +30,7 @@ public sealed record BacktestReport(string EngineVersion, string DatasetSha256, 
 
 public static class Backtest
 {
-    public const string Version = "native-monthly-v1";
+    public const string Version = "native-monthly-v2";
     public static readonly ImmutableArray<string> Strategies = ["candidate", "momentum", "equal_weight", "benchmark", "cash"];
     public static Dictionary<string, decimal> Rank(double[] scores, ImmutableArray<string> assets, int topK, decimal cap)
     {
@@ -83,7 +83,13 @@ public static class Backtest
             };
             for (var a = 0; a < panel.Assets.Length; a++) predictions.Add(new(panel.Dates[t], panel.Dates[t - 1], panel.Assets[a], scores[a], candidate.GetValueOrDefault(panel.Assets[a])));
             var returns = panel.Returns(t);
-            foreach (var strategy in Strategies) equity.Add(new(panel.Dates[t], panel.Dates[t + 1], strategy, portfolios[strategy].Step(config.MonthlyGbp, allocations[strategy], returns, costs)));
+            foreach (var strategy in Strategies)
+            {
+                var slots = strategy is "candidate" or "momentum" ? config.TopK : strategy == "equal_weight" ? panel.Assets.Length : 1;
+                var cap = strategy is "candidate" or "momentum" ? config.MaximumWeight : strategy == "equal_weight" ? EqualFraction(panel.Assets.Length) : 1m;
+                equity.Add(new(panel.Dates[t], panel.Dates[t + 1], strategy, portfolios[strategy].Step(config.MonthlyGbp, allocations[strategy], returns, costs,
+                    config.AllocationPolicy == "contribution-only", slots, cap)));
+            }
             progress?.Invoke((t - start + 1) * 100 / (stop - start));
         }
         var summaries = Strategies.Select(s =>
@@ -104,6 +110,7 @@ public static class Backtest
             ["Fixed-universe GBP total-return indices; missing delistings/eligibility can bias results. No point-in-time provider coverage is certified.",
              "Fractional GBP notionals, flat per-side costs and cash at zero interest approximate execution; these are not broker quantities/fills.",
              "Concentration and hypothesis settings are research choices, not optimised or approved for real investing.",
+             config.AllocationPolicy == "contribution-only" ? "Contribution-only policy retains holdings, respects occupied slots and cannot sell to follow rotating ranks; unused cash remains uninvested." : "Full-rebalance research sells holdings to follow new targets; this report cannot approve the initial buy-only broker coordinator.",
              "Conditional bootstrap scenarios assume the sampled return regime repeats; bands are not calibrated investment probabilities.",
              "Synthetic inputs demonstrate software only; no alpha, millionaire probability or live-trading approval is established."]);
     }

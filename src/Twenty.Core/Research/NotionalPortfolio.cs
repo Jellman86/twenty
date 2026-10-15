@@ -28,9 +28,12 @@ public sealed class NotionalPortfolio
     public decimal MaxDrawdown { get; private set; }
     public decimal Equity => Cash + holdings.Values.Sum();
     public IReadOnlyDictionary<string, decimal> Holdings => holdings.ToImmutableDictionary(StringComparer.Ordinal);
-    public PortfolioStep Step(decimal monthly, IReadOnlyDictionary<string, decimal> weights, IReadOnlyDictionary<string, decimal> returns, ResearchCosts costs)
+    public PortfolioStep Step(decimal monthly, IReadOnlyDictionary<string, decimal> weights, IReadOnlyDictionary<string, decimal> returns, ResearchCosts costs,
+        bool contributionOnly = false, int maximumHoldings = 100, decimal maximumWeight = 1m)
     {
         costs.Validate();
+        if (contributionOnly && (maximumHoldings is < 1 or > 100 || maximumWeight is <= 0 or > 1 || weights.Values.Any(w => w > maximumWeight)))
+            throw new ResearchException("invalid-contribution-policy");
         if (monthly < 0 || monthly > 100000 || weights.Any(x => x.Value < 0) || weights.Values.Sum() > 1m || returns.Any(x => x.Value < -1m) ||
             weights.Keys.Concat(holdings.Keys).Any(s => !returns.ContainsKey(s))) throw new ResearchException("invalid-portfolio-step");
         // Compute privately before committing: invalid data/arithmetic cannot half-mutate a portfolio.
@@ -38,6 +41,32 @@ public sealed class NotionalPortfolio
         var cash = Cash + monthly;
         var before = cash + next.Values.Sum();
         var target = weights.ToDictionary(x => x.Key, x => before * x.Value, StringComparer.Ordinal);
+        if (contributionOnly)
+        {
+            // Retain all existing exposure. This is the notional research analogue of the buy-only broker policy.
+            target = new Dictionary<string, decimal>(next, StringComparer.Ordinal);
+            var floor = before - cash * costs.BuyRate / (1 + costs.BuyRate);
+            var slots = Math.Max(0, maximumHoldings - next.Values.Count(v => v > 0));
+            var remaining = cash;
+            if (next.Values.All(v => v <= floor * maximumWeight))
+            {
+                var eligible = new List<KeyValuePair<string, decimal>>();
+                foreach (var item in weights.Where(w => w.Value > 0))
+                {
+                    if (next.GetValueOrDefault(item.Key) <= 0)
+                    { if (slots == 0) continue; slots--; }
+                    eligible.Add(item);
+                }
+                foreach (var (symbol, weight) in eligible.OrderByDescending(w => w.Value).ThenBy(w => w.Key, StringComparer.Ordinal))
+                {
+                    var budget = Math.Min(remaining, Math.Max(0, floor * weight - next.GetValueOrDefault(symbol)));
+                    var notional = budget / (1 + costs.BuyRate);
+                    if (notional <= 0 || notional < costs.MinimumOrderGbp) continue;
+                    target[symbol] = next.GetValueOrDefault(symbol) + notional;
+                    remaining -= notional * (1 + costs.BuyRate);
+                }
+            }
+        }
         var trades = ImmutableArray.CreateBuilder<NotionalTrade>();
         foreach (var (symbol, held) in next.ToArray())
         {
@@ -64,7 +93,8 @@ public sealed class NotionalPortfolio
         // Only decimal residue at the precision limit may be normalised; no economic borrowing.
         if (cash < -0.00000000000000000001m) throw new ResearchException("portfolio-borrowing");
         cash = Math.Max(0, cash);
-        next = next.Where(x => x.Value > 0).ToDictionary(x => x.Key, x => x.Value * (1 + returns[x.Key]), StringComparer.Ordinal);
+        next = next.Where(x => x.Value > 0).ToDictionary(x => x.Key, x => x.Value * (1 + returns[x.Key]), StringComparer.Ordinal)
+            .Where(x => x.Value > 0).ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
         var equity = cash + next.Values.Sum();
         var periodReturn = before > 0 ? equity / before - 1 : 0;
         var unit = UnitPrice * (1 + periodReturn);
