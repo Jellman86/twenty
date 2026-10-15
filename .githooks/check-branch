@@ -1,0 +1,20 @@
+#!/bin/sh
+set -eu
+branch=$(git symbolic-ref --quiet --short HEAD) || {
+    echo "Twenty: commits require the dev branch, or an explicit release on main." >&2
+    exit 1
+}
+case "$branch" in
+    dev) exit 0 ;;
+    main)
+        if [ "${TWENTY_RELEASE:-0}" = "1" ]; then
+            exit 0
+        fi
+        echo "Twenty: main is reserved for releases. Develop on dev; see docs/development.md." >&2
+        exit 1
+        ;;
+    *)
+        echo "Twenty: development belongs on dev (current branch: $branch)." >&2
+        exit 1
+        ;;
+esac

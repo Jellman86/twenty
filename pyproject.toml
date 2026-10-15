@@ -1,0 +1,19 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "project-twenty"
+version = "0.1.0"
+description = "Local model training and cost-aware investment research for small GBP portfolios"
+requires-python = ">=3.12"
+dependencies = ["numpy>=2.2,<3"]
+
+[project.optional-dependencies]
+neural = ["torch>=2.8,<3"]
+
+[project.scripts]
+twenty = "twenty.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/twenty"]

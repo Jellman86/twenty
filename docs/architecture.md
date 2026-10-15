@@ -1,0 +1,50 @@
+# Architecture direction: C#/.NET application, optional Python research
+
+Decision date: 15 October 2026. Based on the user's preference for C#/.NET. **Recommended application foundation: .NET 10 LTS.** The current runnable code is still the Python research prototype; no .NET application or Quark deployment has been created by this document.
+
+Microsoft lists .NET 10 as an active LTS release supported until November 2028. The local machine already has the .NET 10.0.302 SDK. At implementation, pin an appropriate supported SDK and keep servicing updates current rather than selecting a preview. [Official support policy](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core).
+
+## Component responsibilities
+
+| Component | Initial technology | Responsibility |
+|---|---|---|
+| Portfolio/research domain | C# class library | Money, contributions, constraints, allocation and reference backtesting |
+| Application host | ASP.NET Core with hosted workers | Local/private API, job lifecycle, cancellation, collection and experiment orchestration |
+| Structured state | SQLite initially | Dataset/run metadata, ingestion cursors, model registry and later paper-account ledger |
+| Original/large data | Immutable files; columnar format where justified | Filing originals, versioned datasets, feature snapshots and model artifacts |
+| First native trained models | ML.NET candidate | CPU regression/tree baselines under Twenty's chronological evaluation contract |
+| Neural/text experiments | Existing Python environment, optional worker | PyTorch and specialised research libraries, including prospective Intel XPU tests |
+| Exported-model inference | ONNX Runtime C# where export is supported | Score compatible frozen models without a Python process |
+| Optional dashboard | Blazor | Private research monitoring after data/model foundations work |
+| Tests | .NET tests plus existing Python tests | Accounting/timing invariants and shared cross-language fixtures |
+
+Begin with a domain library, application host and tests in one repository, rather than distributing a small system across multiple network services. A Python training job can be a bounded subprocess with versioned file inputs/outputs; it does not initially need an HTTP service. Keep schema contracts independent of a particular framework.
+
+ASP.NET Core supports hosted/background workers, but durable job state, concurrency limits and cancellation behaviour must be implemented explicitly. Long training jobs must not block API startup or hold the money/accounting lock. [Official hosted-services documentation](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/host/hosted-services?view=aspnetcore-10.0).
+
+## Training our own models
+
+An all-C# first model is viable: ML.NET exposes regression and ranking tree trainers, including LightGBM. Native runtime/OS/architecture dependencies still need verification on both the development Mac and Quark. Select a CPU trainer first and apply the same train-only preprocessing, chronological folds and cost model as the Python harness. Do not use a random train/test split just because an API example does. [ML.NET trainer API](https://learn.microsoft.com/en-us/dotnet/api/microsoft.ml.lightgbmextensions.lightgbm?view=ml-dotnet-4.0), [official repository](https://github.com/dotnet/machinelearning).
+
+Keep Python available for experiments where it materially improves library access, especially neural/text models and Intel GPU training. That does not move portfolio rules or broker authority into a notebook. Model workers output predictions/artifacts; the C# domain owns allocations, budgets and eventual order constraints.
+
+ONNX Runtime provides C# inference bindings, but export compatibility is model/operator dependent. The current JSON model snapshots are not ONNX exports. A conversion stage needs preprocessing metadata, feature ordering, input shapes and prediction-parity tests. Do not assume every model or fitted preprocessing pipeline exports faithfully. [Official C# API](https://onnxruntime.ai/docs/get-started/with-csharp).
+
+## Quark and Intel GPU
+
+The Intel PyTorch backend is `xpu`; Intel Gaudi's `hpu` is unrelated to Quark's integrated graphics. Establish a working isolated Python XPU runtime before choosing GPU neural training. The existing device flag is not compatibility evidence. [PyTorch Intel GPU guide](https://docs.pytorch.org/docs/stable/notes/get_start_xpu.html).
+
+OpenVINO is a possible inference accelerator, not the required application base. ONNX Runtime's OpenVINO documentation describes a custom NuGet build for C# integration, so this is not promised as a one-package switch. CPU inference is the initial portable path; add OpenVINO only after profiling and numerical parity tests. TorchSharp is not selected for Intel acceleration without a separate backend compatibility proof. [Official ONNX/OpenVINO provider documentation](https://onnxruntime.ai/docs/reference/execution-providers/OpenVINO-ExecutionProvider.html).
+
+Backtesting is an application calculation, not automatically a neural GPU workload. Implement the C# reference with explicit currency precision and deterministic fixtures, then profile independent scenarios/feature calculations before optimising. Use decimal amounts where appropriate for cash/order accounting and documented floating-point arithmetic for statistical arrays; conversion, rounding and minimum checks require tests.
+
+## Migration sequence
+
+1. Preserve the working Python research harness and its versioned tests.
+2. Add the .NET domain/host/test solution on `dev`; port contribution scenarios and accounting with shared golden fixtures before adding providers.
+3. Establish SQLite metadata and immutable dataset contracts; implement collection/timestamp audits.
+4. Add the native CPU model challenger and/or a bounded Python training adapter. Keep research comparisons model- and language-independent.
+5. Add validated ONNX inference and an optional Blazor monitoring interface only when useful.
+6. Consider a separately reviewed Quark deployment and later broker adapter after the evidence/engineering gates.
+
+The critical literature and data requirements do not change with programming language. No profitability claim, dataset purchase, remote deployment or main-branch release follows from this architecture choice.
