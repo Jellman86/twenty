@@ -20,12 +20,12 @@ Track delivery in the [public Twenty project](https://github.com/users/Jellman86
 
 # Research-driven roadmap
 
-15 October 2026. The current state is a tested local prototype with synthetic inputs. Papers motivate the roadmap; no entry means that a profitable strategy has been established.
+15 October 2026. The current state is a privately deployed research workbench, an offline dataset foundation and a local model/backtest harness with synthetic inputs. Papers motivate the roadmap; no entry means that a profitable strategy has been established.
 
 | Priority | Deliverable | Completion evidence | Current state |
 |---|---|---|---|
 | P0 | Versioned research and development workflow | Critical literature notes, data/protocol decisions, commits on `dev`; releases reserved for `main` | Implemented in this research pack |
-| P0 | C#/.NET application foundation | .NET 10 domain/host/tests; shared accounting/timing fixtures against the Python harness | Architecture documented; implementation not started |
+| P0 | C#/.NET application foundation | .NET 10 domain/host/tests; shared accounting/timing fixtures against the Python harness | Web host, contribution parity and dataset contracts implemented; portfolio accounting/timing parity remains #6 |
 | P0 | Reference simulator and numerical controls | Cash-flow, costs, minimums, future-price and train-label timing tests; fair benchmarks | Implemented for the documented simplified monthly model |
 | P0 | Historical-data acceptance | Primary source/contract review; sampled corporate actions/delistings; GBP and timestamp audit | Provider candidates reviewed; no full-market vendor selected |
 | P0 | Changing-universe simulation | Historical listing/eligibility, terminal losses/payouts and executable-price handling | Not implemented; blocks credible stock-selection results |
