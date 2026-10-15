@@ -53,3 +53,7 @@ Small-model CPU training was faster than Apple MPS in the synthetic smoke worklo
 Keep investments, research expenses and time costs explicit. Do not buy subscriptions or new hardware because a simulator has a promising synthetic result. If a real-data candidate does not improve on simpler alternatives after costs and uncertainty, retain the useful analysis software and decline the trading hypothesis. If good historical data cannot be obtained within an agreed research budget, limit claims to exploratory/forward paper research rather than quietly using a biased surviving-stock panel.
 
 The £1 million aspiration stays in deterministic scenario tools. It is not a release criterion, training reward or justification for leverage/concentration. Any genuine software release is prepared on `dev` and promoted to `main` using the documented release procedure.
+
+## Dataset foundation implementation
+
+Issue #3 has an offline C# schema, validation/selection guards, immutable archive and synthetic leakage fixtures; see [contract v1](data-contract-v1.md). Source collection, vendor coverage and backtest/ledger integration remain separate issues.

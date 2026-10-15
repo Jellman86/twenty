@@ -1,0 +1,17 @@
+{
+  "description": "Illustrative mini-calendar fixture, not a complete exchange calendar.",
+  "calendars": [
+    {
+      "id": "fixture-london",
+      "timeZone": "Europe/London",
+      "session": "2024-01-02",
+      "close": "2024-01-02T16:30:00Z"
+    },
+    {
+      "id": "fixture-new-york",
+      "timeZone": "America/New_York",
+      "session": "2024-02-01",
+      "close": "2024-02-02T00:30:00Z"
+    }
+  ]
+}

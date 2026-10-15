@@ -15,3 +15,9 @@ node_modules/
 web/dist/
 src/Twenty.Api/wwwroot/
 *.user
+
+# Authored synthetic fixtures and C# sources are not generated account datasets.
+!src/Twenty.Core/Data/
+!src/Twenty.Core/Data/*.cs
+!fixtures/data/
+!fixtures/data/*.json

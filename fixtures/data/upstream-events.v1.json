@@ -1,0 +1,567 @@
+{
+  "description": "Twenty-authored synthetic upstream events; not historical market data.",
+  "observations": [
+    {
+      "kind": "listing",
+      "id": "listing-a-original",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-01-01T00:00:00Z",
+        "availableAt": "2024-01-01T00:00:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": null
+      },
+      "securityId": "security-a",
+      "listingId": "listing-a",
+      "companyId": "company-a",
+      "symbol": "OLD",
+      "venue": "XLON",
+      "denomination": {
+        "currency": "GBP",
+        "unit": "pence"
+      },
+      "calendarId": "fixture-london",
+      "effectiveFrom": "2024-01-01T00:00:00Z",
+      "effectiveUntil": null,
+      "status": "active",
+      "assetClass": "stock",
+      "providerIds": [
+        {
+          "namespace": "fixture.ticker",
+          "value": "OLD"
+        },
+        {
+          "namespace": "fixture.isin",
+          "value": "FICTIONAL-A"
+        }
+      ]
+    },
+    {
+      "kind": "listing",
+      "id": "listing-a-old-closed",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-03-15T10:00:00Z",
+        "availableAt": "2024-03-15T10:00:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": "listing-a-original"
+      },
+      "securityId": "security-a",
+      "listingId": "listing-a",
+      "companyId": "company-a",
+      "symbol": "OLD",
+      "venue": "XLON",
+      "denomination": {
+        "currency": "GBP",
+        "unit": "pence"
+      },
+      "calendarId": "fixture-london",
+      "effectiveFrom": "2024-01-01T00:00:00Z",
+      "effectiveUntil": "2024-04-01T00:00:00Z",
+      "status": "active",
+      "assetClass": "stock",
+      "providerIds": [
+        {
+          "namespace": "fixture.ticker",
+          "value": "OLD"
+        },
+        {
+          "namespace": "fixture.isin",
+          "value": "FICTIONAL-A"
+        }
+      ]
+    },
+    {
+      "kind": "listing",
+      "id": "listing-a-new",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-03-15T10:00:00Z",
+        "availableAt": "2024-03-15T10:00:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": null
+      },
+      "securityId": "security-a",
+      "listingId": "listing-a",
+      "companyId": "company-a",
+      "symbol": "NEW",
+      "venue": "XLON",
+      "denomination": {
+        "currency": "GBP",
+        "unit": "pence"
+      },
+      "calendarId": "fixture-london",
+      "effectiveFrom": "2024-04-01T00:00:00Z",
+      "effectiveUntil": null,
+      "status": "active",
+      "assetClass": "stock",
+      "providerIds": [
+        {
+          "namespace": "fixture.ticker",
+          "value": "NEW"
+        },
+        {
+          "namespace": "fixture.isin",
+          "value": "FICTIONAL-A"
+        }
+      ]
+    },
+    {
+      "kind": "listing",
+      "id": "listing-a-new-closed",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-06-04T10:00:00Z",
+        "availableAt": "2024-06-04T10:00:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": "listing-a-new"
+      },
+      "securityId": "security-a",
+      "listingId": "listing-a",
+      "companyId": "company-a",
+      "symbol": "NEW",
+      "venue": "XLON",
+      "denomination": {
+        "currency": "GBP",
+        "unit": "pence"
+      },
+      "calendarId": "fixture-london",
+      "effectiveFrom": "2024-04-01T00:00:00Z",
+      "effectiveUntil": "2024-06-01T00:00:00Z",
+      "status": "active",
+      "assetClass": "stock",
+      "providerIds": [
+        {
+          "namespace": "fixture.ticker",
+          "value": "NEW"
+        },
+        {
+          "namespace": "fixture.isin",
+          "value": "FICTIONAL-A"
+        }
+      ]
+    },
+    {
+      "kind": "listing",
+      "id": "listing-a-delisted",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-06-04T10:00:00Z",
+        "availableAt": "2024-06-04T10:00:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": null
+      },
+      "securityId": "security-a",
+      "listingId": "listing-a",
+      "companyId": "company-a",
+      "symbol": "NEW",
+      "venue": "XLON",
+      "denomination": {
+        "currency": "GBP",
+        "unit": "pence"
+      },
+      "calendarId": "fixture-london",
+      "effectiveFrom": "2024-06-01T00:00:00Z",
+      "effectiveUntil": null,
+      "status": "delisted",
+      "assetClass": "stock",
+      "providerIds": [
+        {
+          "namespace": "fixture.ticker",
+          "value": "NEW"
+        },
+        {
+          "namespace": "fixture.isin",
+          "value": "FICTIONAL-A"
+        }
+      ]
+    },
+    {
+      "kind": "listing",
+      "id": "listing-b",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-01-20T00:00:00Z",
+        "availableAt": "2024-01-20T00:00:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": null
+      },
+      "securityId": "security-b",
+      "listingId": "listing-b",
+      "companyId": "company-b",
+      "symbol": "TESTB",
+      "venue": "XNAS",
+      "denomination": {
+        "currency": "USD",
+        "unit": "major"
+      },
+      "calendarId": "fixture-new-york",
+      "effectiveFrom": "2024-02-01T00:00:00Z",
+      "effectiveUntil": null,
+      "status": "active",
+      "assetClass": "stock",
+      "providerIds": [
+        {
+          "namespace": "fixture.ticker",
+          "value": "TESTB"
+        },
+        {
+          "namespace": "fixture.isin",
+          "value": "FICTIONAL-B"
+        }
+      ]
+    },
+    {
+      "kind": "membership",
+      "id": "member-a",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-01-01T00:00:00Z",
+        "availableAt": "2024-01-01T00:00:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": null
+      },
+      "universeId": "synthetic-isa",
+      "listingId": "listing-a",
+      "effectiveFrom": "2024-01-01T00:00:00Z",
+      "effectiveUntil": null,
+      "eligible": true
+    },
+    {
+      "kind": "membership",
+      "id": "member-a-closed",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-06-04T10:00:00Z",
+        "availableAt": "2024-06-04T10:00:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": "member-a"
+      },
+      "universeId": "synthetic-isa",
+      "listingId": "listing-a",
+      "effectiveFrom": "2024-01-01T00:00:00Z",
+      "effectiveUntil": "2024-06-01T00:00:00Z",
+      "eligible": true
+    },
+    {
+      "kind": "membership",
+      "id": "member-a-exit",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-06-04T10:00:00Z",
+        "availableAt": "2024-06-04T10:00:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": null
+      },
+      "universeId": "synthetic-isa",
+      "listingId": "listing-a",
+      "effectiveFrom": "2024-06-01T00:00:00Z",
+      "effectiveUntil": null,
+      "eligible": false
+    },
+    {
+      "kind": "membership",
+      "id": "member-b",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-01-20T00:00:00Z",
+        "availableAt": "2024-01-20T00:00:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": null
+      },
+      "universeId": "synthetic-isa",
+      "listingId": "listing-b",
+      "effectiveFrom": "2024-02-01T00:00:00Z",
+      "effectiveUntil": null,
+      "eligible": true
+    },
+    {
+      "kind": "priceBar",
+      "id": "raw-jan2",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-01-02T16:32:00Z",
+        "availableAt": "2024-01-02T16:32:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": null
+      },
+      "listingId": "listing-a",
+      "sessionDate": "2024-01-02",
+      "sessionCloseAt": "2024-01-02T16:30:00Z",
+      "denomination": {
+        "currency": "GBP",
+        "unit": "pence"
+      },
+      "basis": "raw",
+      "open": 1000,
+      "high": 1100,
+      "low": 900,
+      "close": 1050,
+      "volume": 100
+    },
+    {
+      "kind": "priceBar",
+      "id": "adjusted-jan2-original",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-01-02T16:32:00Z",
+        "availableAt": "2024-01-02T16:32:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": null
+      },
+      "listingId": "listing-a",
+      "sessionDate": "2024-01-02",
+      "sessionCloseAt": "2024-01-02T16:30:00Z",
+      "denomination": {
+        "currency": "GBP",
+        "unit": "pence"
+      },
+      "basis": "totalReturnAdjusted",
+      "open": 1000,
+      "high": 1100,
+      "low": 900,
+      "close": 1050,
+      "volume": 100
+    },
+    {
+      "kind": "priceBar",
+      "id": "adjusted-jan2-split",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-02-02T16:32:00Z",
+        "availableAt": "2024-02-02T16:32:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": "adjusted-jan2-original"
+      },
+      "listingId": "listing-a",
+      "sessionDate": "2024-01-02",
+      "sessionCloseAt": "2024-01-02T16:30:00Z",
+      "denomination": {
+        "currency": "GBP",
+        "unit": "pence"
+      },
+      "basis": "totalReturnAdjusted",
+      "open": 500.0,
+      "high": 550.0,
+      "low": 450.0,
+      "close": 525.0,
+      "volume": 100
+    },
+    {
+      "kind": "fundamentalFact",
+      "id": "profit-original",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-02-15T10:00:00Z",
+        "availableAt": "2024-02-15T10:00:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": null
+      },
+      "companyId": "company-a",
+      "accession": "filing-001",
+      "concept": "OperatingProfit",
+      "unit": "GBP",
+      "periodStart": "2023-10-01",
+      "periodEnd": "2023-12-31",
+      "value": 100
+    },
+    {
+      "kind": "fundamentalFact",
+      "id": "profit-restated",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-05-15T10:00:00Z",
+        "availableAt": "2024-05-15T10:00:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": "profit-original"
+      },
+      "companyId": "company-a",
+      "accession": "filing-002",
+      "concept": "OperatingProfit",
+      "unit": "GBP",
+      "periodStart": "2023-10-01",
+      "periodEnd": "2023-12-31",
+      "value": 60
+    },
+    {
+      "kind": "filing",
+      "id": "filing-original",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-02-14T12:05:00Z",
+        "availableAt": "2024-02-14T12:05:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": null
+      },
+      "companyId": "company-a",
+      "accession": "filing-001",
+      "form": "10-K",
+      "periodEnd": "2023-12-31",
+      "acceptedAt": "2024-02-14T12:00:00Z",
+      "documentSha256": "ab558cd2c7c07f4c184abf0564ecc7e58451164334c10a9ff314161b8109a132",
+      "amendsAccession": null
+    },
+    {
+      "kind": "filing",
+      "id": "filing-amendment",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-05-14T12:05:00Z",
+        "availableAt": "2024-05-14T12:05:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": null
+      },
+      "companyId": "company-a",
+      "accession": "filing-002",
+      "form": "10-K/A",
+      "periodEnd": "2023-12-31",
+      "acceptedAt": "2024-05-14T12:00:00Z",
+      "documentSha256": "e9ff2efb3a73b68676343eca8fcdeda087e6736911646b874fd88b7da9d1fee8",
+      "amendsAccession": "filing-001"
+    },
+    {
+      "kind": "corporateAction",
+      "id": "split",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-01-31T10:00:00Z",
+        "availableAt": "2024-01-31T10:00:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": null
+      },
+      "listingId": "listing-a",
+      "actionId": "split-event",
+      "action": "split",
+      "effectiveAt": "2024-02-02T08:00:00Z",
+      "splitRatio": 2,
+      "cashPerShare": null,
+      "cashCurrency": null,
+      "newSymbol": null,
+      "successorListingId": null,
+      "terminalOutcome": "notApplicable"
+    },
+    {
+      "kind": "corporateAction",
+      "id": "dividend",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-02-15T10:00:00Z",
+        "availableAt": "2024-02-15T10:00:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": null
+      },
+      "listingId": "listing-a",
+      "actionId": "dividend-event",
+      "action": "dividend",
+      "effectiveAt": "2024-03-01T08:00:00Z",
+      "splitRatio": null,
+      "cashPerShare": 0.05,
+      "cashCurrency": "GBP",
+      "newSymbol": null,
+      "successorListingId": null,
+      "terminalOutcome": "notApplicable"
+    },
+    {
+      "kind": "corporateAction",
+      "id": "rename",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-03-15T10:00:00Z",
+        "availableAt": "2024-03-15T10:00:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": null
+      },
+      "listingId": "listing-a",
+      "actionId": "rename-event",
+      "action": "symbolChange",
+      "effectiveAt": "2024-04-01T00:00:00Z",
+      "splitRatio": null,
+      "cashPerShare": null,
+      "cashCurrency": null,
+      "newSymbol": "NEW",
+      "successorListingId": null,
+      "terminalOutcome": "notApplicable"
+    },
+    {
+      "kind": "corporateAction",
+      "id": "delisting",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-06-04T10:00:00Z",
+        "availableAt": "2024-06-04T10:00:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": null
+      },
+      "listingId": "listing-a",
+      "actionId": "delisting-event",
+      "action": "delisting",
+      "effectiveAt": "2024-06-01T00:00:00Z",
+      "splitRatio": null,
+      "cashPerShare": null,
+      "cashCurrency": null,
+      "newSymbol": null,
+      "successorListingId": null,
+      "terminalOutcome": "missing"
+    },
+    {
+      "kind": "fxRate",
+      "id": "usd-gbp",
+      "evidence": {
+        "sourceId": "fixture-source",
+        "publishedAt": "2024-01-02T16:02:00Z",
+        "availableAt": "2024-01-02T16:02:00Z",
+        "availabilityEvidence": "archivedPublication",
+        "precision": "second",
+        "policyReference": null,
+        "revisionOf": null
+      },
+      "baseCurrency": "USD",
+      "quoteCurrency": "GBP",
+      "quoteUnitsPerBase": 0.8,
+      "observedAt": "2024-01-02T16:00:00Z",
+      "purpose": "reference"
+    }
+  ]
+}
