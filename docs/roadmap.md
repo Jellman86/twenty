@@ -29,7 +29,7 @@ Track delivery in the [public Twenty project](https://github.com/users/Jellman86
 | P0 | Reference simulator and numerical controls | Cash-flow, costs, minimums, future-price and train-label timing tests; fair benchmarks | Implemented for the documented simplified monthly model |
 | P0 | Historical-data acceptance | Primary source/contract review; sampled corporate actions/delistings; GBP and timestamp audit | Provider candidates reviewed; no full-market vendor selected |
 | P0 | Changing-universe simulation | Historical listing/eligibility, terminal losses/payouts and executable-price handling | Not implemented; blocks credible stock-selection results |
-| P1 | Statement/filing archive | Idempotent collection, source hashes, disclosure/availability/revision timestamps and comparable sections | Design complete; collector not implemented |
+| P1 | Statement/filing archive | Idempotent collection, source hashes, disclosure/availability/revision timestamps and comparable sections | Bounded CLI, originals/cache/quarantine and offline tests implemented; live SEC validation pending (#4) |
 | P1 | Formal numeric comparison | Ridge/tree/MLP versus equal-weight, momentum and broad exposure; identical realistic costs and registered inner/outer splits | Ridge/MLP scaffold implemented; historical study and tree model outstanding |
 | P1 | Search-aware evaluation | Preserved candidate returns, dependence-aware intervals, disclosed multiple-testing diagnostics and holdout accesses | Local trial registry implemented; statistical controls outstanding |
 | P2 | First disclosure-change experiment | Deterministic difference baseline, labelled extraction checks and incremental net-value test | Hypothesis defined; unimplemented |

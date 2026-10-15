@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -20,8 +20,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Twenty.Core\Twenty.Core.csproj" />
+    <ProjectReference Include="../../src/Twenty.Ingestion/Twenty.Ingestion.csproj" />
   </ItemGroup>
 
 <ItemGroup><None Include="../../fixtures/projections.json" Link="projections.json" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 <ItemGroup><None Include="../../fixtures/data/*.json" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
+  <ItemGroup><None Include="../../fixtures/sec/*.json" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" /></ItemGroup>
 </Project>

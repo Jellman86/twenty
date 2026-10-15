@@ -55,7 +55,7 @@ FX selection requires explicit direction, purpose and maximum age. It never inve
 
 ## Upstream boundary and validation depth
 
-Trading 212 instrument and EOD price DTOs retain provider optionality separately from domain records. A missing vendor close remains null. SEC recent-filing DTOs require complete equal-length parallel arrays and essential identity/timing entries; malformed arrays return structured rejection issues rather than being zipped/truncated. Rejected records cannot enter a validated snapshot; persistent raw-payload quarantine belongs to the collector. These are wire-shape foundations, not HTTP clients or complete SEC/XBRL parsers. ECB's wire format remains unvalidated and is deliberately not invented here.
+Trading 212 instrument and EOD price DTOs retain provider optionality separately from domain records. A missing vendor close remains null. SEC recent-filing DTOs require complete equal-length parallel arrays and essential identity/timing entries; malformed arrays return structured rejection issues rather than being zipped/truncated. Rejected records cannot enter a validated snapshot. The separate [SEC collector](sec-collector.md) now implements bounded HTTP collection and persistent raw-payload quarantine, tested offline; it is not a complete SEC/XBRL parser. ECB's wire format remains unvalidated and is deliberately not invented here.
 
 Structural validation is distinct from point-in-time query validation: unresolved interval overlap, price/listing unit mismatch and unknown terminal proceeds also fail when the affected selection is requested. Neither validation certifies investment performance. No historical vendor data or broker account has been tested by this milestone.
 

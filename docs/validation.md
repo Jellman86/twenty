@@ -1,6 +1,10 @@
 # Validation record
 
-## Current foundation validation
+## SEC collector implementation
+
+The bounded SEC collector adds offline HTTP/archive tests for linked history, amendments, first-seen timing, caching and restart, retries/rate limits, cancellation, storage bounds, quarantine, unsafe URLs and integrity failures. Local validation on 15 October 2026 passed 89 .NET tests (43 added for this collector), 22 Python tests with optional neural dependencies, Svelte checking/build and Ruff. These tests use authored synthetic responses; no live SEC request or real-data coverage audit has been completed. See [collector scope and operating limits](sec-collector.md).
+
+## Dataset foundation validation
 
 The C#/.NET and Svelte workbench is implemented. Dataset foundation commit [`65ac919`](https://github.com/Jellman86/twenty/commit/65ac91986892ff9f7b5119e26e79062fc485141b) adds the [versioned data contract](data-contract-v1.md), point-in-time selectors, immutable archive and offline validation CLI.
 
@@ -10,7 +14,7 @@ The C#/.NET and Svelte workbench is implemented. Dataset foundation commit [`65a
 - [CI run 38764570834](https://github.com/Jellman86/twenty/actions/runs/38764570834) passed .NET, Svelte and Python checks, full-history/file secret scanning with a deliberate fake-secret rejection control, and the container smoke test before image publication.
 - The research web container was deployed through Dockhand on Quark and passed the HTTP smoke checks; its metadata reported commit `65ac919` and `brokerConnected: false`.
 
-These checks use synthetic data and an illustrative calendar fixture. They do not establish historical coverage, source availability accuracy, licensing rights, trading profitability or accelerator support. Real provider collection, persistent quarantine and complete exchange calendars remain future work. No broker integration or GPU training job was deployed.
+These checks use synthetic data and an illustrative calendar fixture. They do not establish historical coverage, source availability accuracy, licensing rights, trading profitability or accelerator support. At this milestone, provider collection, persistent quarantine and complete exchange calendars were future work; the subsequent SEC collector is described above. No broker integration or GPU training job was deployed.
 
 ## Initial Python validation (historical)
 

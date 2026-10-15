@@ -3,6 +3,7 @@
     <Project Path="src/Twenty.Api/Twenty.Api.csproj" />
     <Project Path="src/Twenty.Core/Twenty.Core.csproj" />
     <Project Path="src/Twenty.Data/Twenty.Data.csproj" />
+    <Project Path="src/Twenty.Ingestion/Twenty.Ingestion.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Twenty.Tests/Twenty.Tests.csproj" />

@@ -1,0 +1,44 @@
+{
+  "cik": "0000000001",
+  "name": "AUTHORED SYNTHETIC ISSUER \u2014 NOT REAL SEC DATA",
+  "filings": {
+    "recent": {
+      "accessionNumber": [
+        "0000000001-24-000002",
+        "0000000001-24-000001"
+      ],
+      "acceptanceDateTime": [
+        "2024-03-02T17:00:00Z",
+        "2024-02-01T17:00:00Z"
+      ],
+      "filingDate": [
+        "2024-03-02",
+        "2024-02-01"
+      ],
+      "reportDate": [
+        "2023-12-31",
+        "2023-12-31"
+      ],
+      "form": [
+        "10-K/A",
+        "10-K"
+      ],
+      "primaryDocument": [
+        "amendment.htm",
+        "annual.htm"
+      ],
+      "unrecognisedUpstreamField": [
+        "retained in original",
+        "not domain data"
+      ]
+    },
+    "files": [
+      {
+        "name": "CIK0000000001-submissions-001.json",
+        "filingCount": 1,
+        "filingFrom": "2023-02-01",
+        "filingTo": "2023-02-01"
+      }
+    ]
+  }
+}

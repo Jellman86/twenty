@@ -29,7 +29,7 @@ public sealed record SecRecentFilingsDto(ImmutableArray<string?> AccessionNumber
 }
 public static class UpstreamJson
 {
-    // Unknown upstream fields are retained as raw private originals by a future collector.
+    // Unknown upstream fields are retained as raw private originals by the SEC collector.
     // Unlike our versioned dataset file, upstream additions must not silently become domain defaults.
     public static T? Read<T>(string json) => JsonSerializer.Deserialize<T>(json, new JsonSerializerOptions
     {

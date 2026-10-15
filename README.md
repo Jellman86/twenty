@@ -12,7 +12,7 @@ dotnet run --project src/Twenty.Api --no-launch-profile --urls http://127.0.0.1:
 
 Open http://127.0.0.1:8788. For frontend development, run `npm run dev --prefix web` alongside the API; Vite proxies `/api` to port 8788.
 
-Offline dataset validation and point-in-time selection now have a [versioned C# contract](docs/data-contract-v1.md), synthetic fixtures and an immutable archive. Validate the example with `dotnet run --project src/Twenty.Data -- validate fixtures/data/point-in-time.v1.json`. Real provider ingestion remains planned.
+Offline dataset validation and point-in-time selection now have a [versioned C# contract](docs/data-contract-v1.md), synthetic fixtures and an immutable archive. Validate the example with `dotnet run --project src/Twenty.Data -- validate fixtures/data/point-in-time.v1.json`. A [bounded SEC filing collector](docs/sec-collector.md) now archives metadata/history and primary reports through an explicit CLI, with offline HTTP tests. Live SEC validation awaits a privately configured monitored contact; historical market/FX ingestion remains planned.
 
 CI scans full Git history and checked-out files with checksum-verified Gitleaks before any image publication. Never commit secrets, account data, private `.agents` files or generated datasets. All development belongs on `dev`; `main` is releases only.
 

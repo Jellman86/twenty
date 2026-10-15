@@ -7,6 +7,7 @@ Reviewed 15 October 2026. The initial code is a research foundation; none of the
 Start with these documents:
 
 - [Critical review of 24 academic studies](literature-review.md): findings, conflicting evidence, relevance to a small ISA, source links and the extent actually reviewed.
+- [SEC filing collector](sec-collector.md): bounded collection, immutable originals, first-observation timing, caching and quarantine; live validation pending.
 - [Implemented dataset contract v1](data-contract-v1.md): offline validation, original/revision selection, identity/currency checks and immutable snapshots.
 - [Upstream contracts and integration boundaries](upstream-contracts.md): broker request/response semantics, execution gaps, timestamp/FX contracts, terms discrepancy and required fixtures.
 - [Data sourcing and collection design](data-sources.md): primary sources, provider candidates, timestamping, delistings, costs and scraper requirements.
@@ -52,7 +53,7 @@ Keep money/accounting calculations on the CPU reference implementation. Benchmar
 
 ## Primary data and broker references
 
-- [SEC data APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces): potential filings/fundamentals source; no collector implemented yet.
+- [SEC data APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces): filings collector implemented and tested with offline fixtures; live validation and Company Facts ingestion remain outstanding.
 - [ALFRED vintage data](https://fred.stlouisfed.org/docs/api/fred/alfred.html): use historical releases rather than revised macroeconomic values if macro features are added.
 - [Trading 212 API](https://docs.trading212.com/api) and [supported account/order types](https://helpcentre.trading212.com/hc/en-us/articles/14584770928157-Trading-212-API-key): live automation is technically possible, but no broker adapter is implemented here.
 - [Trading 212 ISA fees](https://www.trading212.com/terms/isa) and [HMRC share purchase taxes](https://www.gov.uk/tax-buy-shares): validate actual instrument costs before using any backtest to inform execution.
