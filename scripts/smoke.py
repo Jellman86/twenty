@@ -83,4 +83,23 @@ assert runtime["accounts"] == []
 assert post("/api/execution/broker/cycle")["code"] == "execution-private-configuration-required"
 assert post("/api/execution/broker/capture", expected=400)["error"] == "broker-credentials-missing"
 assert post("/api/execution/signals", {"runId": run["id"], "datasetId": payload["datasetId"]}, 400)["error"] == "signal-current-panel-required"
-print("HTTP smoke passed: input/origin rejection, persisted CPU training, chronology, idempotent funding and reconciled simulated purchases")
+challenger = post("/api/research/runs", dict(payload, requestId=str(uuid.uuid4()), config={"allocationPolicy": "contribution-only", "hypothesis": "momentum", "topK": 1}), 202)
+for _ in range(120):
+    challenger = json.load(get(f'/api/research/runs/{challenger["id"]}'))
+    if challenger["status"] not in ("queued", "running"):
+        break
+    time.sleep(0.5)
+assert challenger["status"] == "succeeded", challenger
+analysis_request = {"requestId": str(uuid.uuid4()), "anchorRunId": run["id"]}
+analysis = post("/api/research/diagnostics", analysis_request)
+assert analysis["status"] == "succeeded" and analysis["synthetic"] is True
+assert analysis["diagnosticEngineSha256"] and analysis["registrySnapshotAt"]
+assert {run["id"], challenger["id"]} <= {t["runId"] for t in analysis["trials"] if t["included"]}
+assert analysis["report"]["months"] >= 24
+assert analysis["report"]["comparisons"] == analysis["report"]["candidates"] * 4
+assert [s["expectedBlockMonths"] for s in analysis["report"]["sensitivities"]] == [3, 6, 12]
+assert analysis == post("/api/research/diagnostics", analysis_request)
+assert analysis == json.load(get(f'/api/research/diagnostics/{analysis["id"]}'))
+assert post("/api/research/diagnostics", dict(analysis_request, anchorRunId="0" * 32), 400)["error"] == "request-id-conflict"
+assert json.load(get("/api/research/diagnostics"))["total"] >= 1
+print("HTTP smoke passed: persisted CPU trials, chronology, simulated purchases and paired candidate-family uncertainty diagnostics")

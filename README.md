@@ -26,6 +26,7 @@ The application base is **C#/.NET 10 LTS** with a Svelte 5 workbench and an offl
 
 - Browser-run C# experiments: relative-return ranking, momentum, return-index breakout and six-month upside-tail ranking, with explicit full-rebalance or contribution-only allocation. Only the matching contribution-only reports can approve the initial buy-only coordinator.
 - Persisted jobs, cancellation, restart recovery, model/report hashes and all attempted trials.
+- Paired candidate-family uncertainty diagnostics with joint month resampling, disclosed excluded trials and approximate simultaneous mean-active-return bands; [scope and assumptions](docs/search-diagnostics.md).
 - Contribution-only share buy plans, durable simulated partial fills/cancellation and a persisted pause.
 - Frozen current-month signal scoring and a separately configured broker coordinator with durable intents, unknown-submission protection and fill reconciliation. See [the execution contract](docs/broker-execution.md).
 - GBP contribution/target calculations using annual effective compounding.
@@ -101,7 +102,7 @@ The last 24 return intervals are excluded from development evaluation. `--evalua
 uv run twenty backtest --data data/synthetic.csv --evaluate-holdout
 ```
 
-Results appear in `runs/<run-id>/`. Each run records its configuration before fitting; failed attempts can therefore leave a manifest without a completed report. `runs/experiments.jsonl` records attempts within that output root. Do not delete failed/poor trials during strategy selection or hide trials by changing output roots. Statistical multiple-testing corrections are still to be implemented.
+Results appear in `runs/<run-id>/`. Each run records its configuration before fitting; failed attempts can therefore leave a manifest without a completed report. `runs/experiments.jsonl` records attempts within that output root. Do not delete failed/poor trials during strategy selection or hide trials by changing output roots. The native web workbench has scoped candidate-family bootstrap diagnostics; the Python harness does not. Whole-programme correction, PBO/deflated Sharpe and a preregistered promotion workflow remain outstanding.
 
 ## Costs and limits
 

@@ -48,7 +48,7 @@ Report ending GBP value, contributions, net profit, time-weighted compound retur
 
 Use date-block resampling or other justified dependence-aware inference for active returns; individual stocks on the same date are not independent market histories. Report intervals and power limitations rather than selecting a significant-looking point estimate. Stress observed crisis/rebound periods and leave-sector/region tests where the data support them; label added windows as new research choices.
 
-Maintain complete candidate return streams and trial metadata. Plan deflated Sharpe and probability-of-overfitting diagnostics with explicit assumptions about dependent trials and non-normal returns. A single reported adjusted statistic must not approve the strategy automatically. These statistics are not currently implemented and cannot fix survivorship or future-information leakage.
+Maintain complete candidate return streams and trial metadata. The [candidate-family diagnostic](search-diagnostics.md) now supplies paired stationary-bootstrap mean-active-return ranges and approximate simultaneous bands within a disclosed compatible family. It retains excluded/failed attempts and fixed block-length sensitivities; it is retrospective and does not correct unrecorded or excluded searches. Plan deflated Sharpe and probability-of-overfitting diagnostics with explicit assumptions about dependent trials and non-normal returns. Those named statistics remain unimplemented. A single adjusted statistic must not approve the strategy automatically or be treated as a repair for survivorship/future-information leakage.
 
 ## Falsification and cost checks
 

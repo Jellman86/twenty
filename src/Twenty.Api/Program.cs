@@ -36,6 +36,7 @@ var ledger = new PaperLedger(store);
 builder.Services.AddSingleton(ledger);
 var broker = BrokerConfiguration.Create(builder.Configuration, store.Root);
 var signals = new SignalStore(store);
+var diagnostics = new DiagnosticStore(store);
 var brokerLedger = new BrokerLedger(store);
 var execution = new ExecutionCoordinator(brokerLedger, signals, store, broker,
     () => ExecutionPolicy.Load(builder.Configuration["TWENTY_EXECUTION_CONFIG_FILE"]));
@@ -85,6 +86,9 @@ app.MapGet("/api/meta", () =>
 app.MapGet("/api/research/datasets", () => store.Datasets());
 app.MapGet("/api/research/runs", () => store.ListRuns().Take(100));
 app.MapGet("/api/research/trials", () => new { total = store.ListRuns().Count, displayedLimit = 100 });
+app.MapGet("/api/research/diagnostics", () => diagnostics.History());
+app.MapGet("/api/research/diagnostics/{id}", (string id) => diagnostics.Find(id) is { } result ? Results.Ok(result) : Results.NotFound());
+app.MapPost("/api/research/diagnostics", async (DiagnosticRequest request, CancellationToken ct) => await diagnostics.Create(request, ct));
 app.MapPost("/api/research/runs", (RunRequest request) => Results.Accepted("/api/research/runs", store.Enqueue(request, Environment.GetEnvironmentVariable("TWENTY_COMMIT") ?? "local")));
 app.MapGet("/api/research/runs/{id}", (string id) => store.Find(id) is { } run ? Results.Ok(run) : Results.NotFound());
 app.MapGet("/api/research/runs/{id}/report", (string id) => store.Report(id) is { } report ? Results.Ok(report) : Results.NotFound());
@@ -94,6 +98,7 @@ app.MapGet("/api/research/capabilities", () =>
     var policy = DisplayPolicy();
     return new { engine = Backtest.Version, nativeCpuTraining = true,
         hypotheses = new[] { "ridge-relative-return", "momentum", "breakout", "upside-tail" }, simultaneousJobs = 1, deadlineSeconds = 120, finalHoldoutEnabled = false,
+        searchDiagnostics = new { method = SearchDiagnostics.Version, pairedCalendarResampling = true, preregisteredPromotion = false },
         broker = new { mode = broker?.Environment.ToString().ToLowerInvariant() ?? "disconnected", credentialsConfigured = broker is not null,
             automaticPurchases = broker is not null && policy is { Enabled: true, Automatic: true }, transportImplemented = true, coordinatorImplemented = true,
             gates = new[] { "Account-bound ISA identity", "Verified raw prices and quantity rules", "A validated current strategy",

@@ -12,6 +12,8 @@ Every strategy receives identical start-of-month contributions: candidate, momen
 
 Forward scenarios resample six-month blocks of the candidate's net development returns with a recorded seed. The plotted 10th/50th/90th path quantiles are conditional scenarios, not calibrated confidence intervals, millionaire probabilities or expected returns. Reusing observed net account returns at a different balance/contribution path also approximates state-dependent minimum-order and cash effects.
 
+A separate [candidate-family diagnostic](search-diagnostics.md) resamples paired calendar-month return vectors across all compatible locally completed trials. It shows pointwise mean-active-return ranges and approximate simultaneous bands, with 3/6/12-month dependence sensitivities and explicit exclusions. These are scoped retrospective diagnostics; they do not open the holdout, select a champion or approve a broker policy. Every admitted analysis attempt remains in a bounded durable journal.
+
 ## State and operational boundaries
 
 SQLite under `TWENTY_DATA_ROOT` stores datasets, all run attempts, events, paper accounts and the persisted pause. Exact input bytes and SHA-addressed report files accompany it. A process lease prevents two hosts opening the same workspace. Running jobs become interrupted after restart; queued jobs remain queued. Cancelled and failed attempts remain visible. Every completed run binds its configuration hash, input hash, queued commit, actual worker commit, core assembly hash and report hash.
