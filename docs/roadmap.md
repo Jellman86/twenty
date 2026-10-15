@@ -1,3 +1,21 @@
+# Issue-based roadmap
+
+Track delivery in the [public Twenty project](https://github.com/users/Jellman86/projects/1) and [repository issues](https://github.com/Jellman86/twenty/issues). Development stays on `dev`; `main` is releases only.
+
+- [M1 · Research workbench · #1: Ship the .NET 10 and Svelte 5 research workbench](https://github.com/Jellman86/twenty/issues/1)
+- [M1 · Research workbench · #2: Deploy Twenty through Git-backed Dockhand with private HTTPS](https://github.com/Jellman86/twenty/issues/2)
+- [M2 · Trustworthy data · #3: Establish dataset provenance and point-in-time schema](https://github.com/Jellman86/twenty/issues/3)
+- [M2 · Trustworthy data · #4: Implement a bounded SEC filings collector](https://github.com/Jellman86/twenty/issues/4)
+- [M2 · Trustworthy data · #5: Select and validate historical market and FX data](https://github.com/Jellman86/twenty/issues/5)
+- [M3 · Evidence and models · #6: Build the decimal accounting and paper backtest reference in C#](https://github.com/Jellman86/twenty/issues/6)
+- [M3 · Evidence and models · #7: Create a durable experiment registry and chronological evaluation jobs](https://github.com/Jellman86/twenty/issues/7)
+- [M3 · Evidence and models · #8: Train CPU baselines and test filing-change features](https://github.com/Jellman86/twenty/issues/8)
+- [M3 · Evidence and models · #9: Benchmark Intel iGPU acceleration on Quark](https://github.com/Jellman86/twenty/issues/9)
+- [M4 · Paper portfolio · #10: Implement a persistent paper portfolio and broker capability audit](https://github.com/Jellman86/twenty/issues/10)
+- [M4 · Paper portfolio · #11: Define evidence gates and the first release on main](https://github.com/Jellman86/twenty/issues/11)
+
+## Research planning context
+
 # Research-driven roadmap
 
 15 October 2026. The current state is a tested local prototype with synthetic inputs. Papers motivate the roadmap; no entry means that a profitable strategy has been established.

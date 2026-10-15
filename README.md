@@ -1,3 +1,19 @@
+# Twenty research workbench
+
+[Public project roadmap](https://github.com/users/Jellman86/projects/1) · [Issues](https://github.com/Jellman86/twenty/issues) · [Critical literature review](docs/literature-review.md)
+
+C#/.NET 10 + Svelte 5, TypeScript and Vite. A private research dashboard with deterministic contribution scenarios, roadmap and evidence review. Python remains the offline training/backtest harness. No broker is connected and no live orders can be placed.
+
+```sh
+npm ci --prefix web
+npm run build --prefix web
+dotnet run --project src/Twenty.Api --no-launch-profile --urls http://127.0.0.1:8788
+```
+
+Open http://127.0.0.1:8788. For frontend development, run `npm run dev --prefix web` alongside the API; Vite proxies `/api` to port 8788.
+
+CI scans full Git history and checked-out files with checksum-verified Gitleaks before any image publication. Never commit secrets, account data, private `.agents` files or generated datasets. All development belongs on `dev`; `main` is releases only.
+
 # Twenty
 
 Local investment research, starting with a £20 monthly contribution. Twenty trains its own small forecasting models, compares them with simpler strategies and records the evidence. It makes no claim that those contributions will reach £1 million.

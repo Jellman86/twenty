@@ -1,0 +1,51 @@
+[
+  {
+    "monthly": 20,
+    "years": 30,
+    "annualReturn": 0.07,
+    "balance": 23389.052065732023,
+    "requiredReturn": 0.25741241894926636
+  },
+  {
+    "monthly": 20,
+    "years": 40,
+    "annualReturn": 0,
+    "balance": 9600,
+    "requiredReturn": 0.1773542254297651
+  },
+  {
+    "monthly": 20,
+    "years": 30,
+    "annualReturn": -0.2,
+    "balance": 1084.2279474133989,
+    "requiredReturn": 0.25741241894926636
+  },
+  {
+    "monthly": 20,
+    "years": 60,
+    "annualReturn": 1,
+    "balance": 3.8777716398023954e+20,
+    "requiredReturn": 0.10602946566999003
+  },
+  {
+    "monthly": 1000,
+    "years": 20,
+    "annualReturn": 1e-09,
+    "balance": 240000.00238999998,
+    "requiredReturn": 0.12771944672506702
+  },
+  {
+    "monthly": 20,
+    "years": 1,
+    "annualReturn": 0.07,
+    "balance": 247.605942910228,
+    "requiredReturn": null
+  },
+  {
+    "monthly": 500,
+    "years": 30,
+    "annualReturn": 0.1,
+    "balance": 1031421.6570141229,
+    "requiredReturn": 0.09839981305545425
+  }
+]

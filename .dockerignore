@@ -1,0 +1,16 @@
+.git
+.github
+.agents
+**/.env*
+.venv
+**/bin
+**/obj
+**/node_modules
+**/wwwroot
+data
+runs
+.research-cache
+**/__pycache__
+*.pem
+*.key
+*.p12

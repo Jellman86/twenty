@@ -1,0 +1,68 @@
+[
+  {
+    "number": 1,
+    "title": "Ship the .NET 10 and Svelte 5 research workbench",
+    "url": "https://github.com/Jellman86/twenty/issues/1",
+    "milestone": "M1 \u00b7 Research workbench"
+  },
+  {
+    "number": 2,
+    "title": "Deploy Twenty through Git-backed Dockhand with private HTTPS",
+    "url": "https://github.com/Jellman86/twenty/issues/2",
+    "milestone": "M1 \u00b7 Research workbench"
+  },
+  {
+    "number": 3,
+    "title": "Establish dataset provenance and point-in-time schema",
+    "url": "https://github.com/Jellman86/twenty/issues/3",
+    "milestone": "M2 \u00b7 Trustworthy data"
+  },
+  {
+    "number": 4,
+    "title": "Implement a bounded SEC filings collector",
+    "url": "https://github.com/Jellman86/twenty/issues/4",
+    "milestone": "M2 \u00b7 Trustworthy data"
+  },
+  {
+    "number": 5,
+    "title": "Select and validate historical market and FX data",
+    "url": "https://github.com/Jellman86/twenty/issues/5",
+    "milestone": "M2 \u00b7 Trustworthy data"
+  },
+  {
+    "number": 6,
+    "title": "Build the decimal accounting and paper backtest reference in C#",
+    "url": "https://github.com/Jellman86/twenty/issues/6",
+    "milestone": "M3 \u00b7 Evidence and models"
+  },
+  {
+    "number": 7,
+    "title": "Create a durable experiment registry and chronological evaluation jobs",
+    "url": "https://github.com/Jellman86/twenty/issues/7",
+    "milestone": "M3 \u00b7 Evidence and models"
+  },
+  {
+    "number": 8,
+    "title": "Train CPU baselines and test filing-change features",
+    "url": "https://github.com/Jellman86/twenty/issues/8",
+    "milestone": "M3 \u00b7 Evidence and models"
+  },
+  {
+    "number": 9,
+    "title": "Benchmark Intel iGPU acceleration on Quark",
+    "url": "https://github.com/Jellman86/twenty/issues/9",
+    "milestone": "M3 \u00b7 Evidence and models"
+  },
+  {
+    "number": 10,
+    "title": "Implement a persistent paper portfolio and broker capability audit",
+    "url": "https://github.com/Jellman86/twenty/issues/10",
+    "milestone": "M4 \u00b7 Paper portfolio"
+  },
+  {
+    "number": 11,
+    "title": "Define evidence gates and the first release on main",
+    "url": "https://github.com/Jellman86/twenty/issues/11",
+    "milestone": "M4 \u00b7 Paper portfolio"
+  }
+]

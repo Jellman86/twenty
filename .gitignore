@@ -9,3 +9,9 @@ runs/
 .pytest_cache/
 .ruff_cache/
 .research-cache/
+**/bin/
+**/obj/
+node_modules/
+web/dist/
+src/Twenty.Api/wwwroot/
+*.user

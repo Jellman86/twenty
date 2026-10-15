@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Twenty.Api/Twenty.Api.csproj" />
+    <Project Path="src/Twenty.Core/Twenty.Core.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Twenty.Tests/Twenty.Tests.csproj" />
+  </Folder>
+</Solution>
