@@ -12,7 +12,7 @@ Key availability establishes a technical capability; it does not override the AP
 
 ## Private application configuration
 
-Twenty currently supports an optional **read-only account summary connection**. The limit-order transport is implemented but is not exposed as a web order endpoint or scheduled trader. The default deployment has no credentials and makes no broker calls.
+Twenty currently supports an optional **read-only account summary connection**. The durable coordinator and optional automatic worker are implemented but disabled without explicit private execution configuration, evidence and compatible demo validation. See [the coordinator setup](broker-execution.md). The default deployment has no credentials and makes no broker calls.
 
 Create two private, read-only files outside the checkout and data archive, containing the key and secret separately. Set the following private container configuration:
 
@@ -39,7 +39,7 @@ Use Dockhand's encrypted settings and read-only secret mounts for deployment. Do
 
 The implemented planner initially accepts GBP/GBX purchases only. It rounds quantities down and reserves a maximum fee. Foreign-currency buys require a verified conversion/fee bound before they can provide a GBP spending cap. An unrestricted quantity market order cannot guarantee spending at most £20.
 
-The transport implements Basic key/secret authentication, fixed demo/live origins, paced requests, quantity-limit submission, pending-order lookup and cancellation requests. It does not retry POSTs. Timeouts, unexpected responses and malformed acknowledgements become **unknown**, requiring reconciliation rather than replay. A pending-order 404 and accepted cancellation both require further fill/history investigation. [Official request/response contract](https://docs.trading212.com/_bundle/api.json?download=).
+The transport implements Basic key/secret authentication, fixed demo/live origins, paced requests with rate-reset handling, quantity-limit submission, positions/pending orders, bounded history and cancellation requests. Exact bodies are archived privately without authentication headers. It does not retry POSTs. Timeouts, unexpected responses and malformed acknowledgements become **unknown**, requiring reconciliation rather than replay. A pending-order 404 and accepted cancellation both require further fill/history investigation. [Official request/response contract](https://docs.trading212.com/_bundle/api.json?download=).
 
 ## What can be exercised now
 
@@ -47,6 +47,7 @@ The transport implements Basic key/secret authentication, fixed demo/live origin
 2. In Decisions & orders, create that run's simulated monthly contribution and buy plan.
 3. Simulate partial fills, complete them or cancel the remainder. Repeated reconciliation cannot duplicate cash debits or holdings.
 4. Pause new simulated decisions; the pause, funding history and fills survive restarts.
-5. With private credentials configured, explicitly request a read-only account summary.
+5. With private credentials configured, explicitly request a read-only account summary or capture actual history/positions evidence before configuring wallet interpretation.
+6. With independently verified private inputs, configure the separate demo coordinator. Synthetic receipts cannot enable live; [full operating contract](broker-execution.md).
 
-The simulator uses unrelated, labelled synthetic raw quotes and a separate account per run. It tests the software path, not investability, execution quality, current stock recommendations or future profit. Full live coordination, broker-history/fill reconciliation and validated current market data remain tracked work in issue #10 and the data issues.
+The simulator uses unrelated, labelled synthetic raw quotes and a separate account per run. It tests the software path, not investability, execution quality, current stock recommendations or future profit. The coordinator, broker-history/fill reconciliation and frozen current-signal path are implemented and tested with authored fixtures. Authenticated acceptance, current market/quote feeds and a defensible selected strategy remain tracked work in issue #10 and the data issues.

@@ -2,7 +2,7 @@
 
 [Public project roadmap](https://github.com/users/Jellman86/projects/1) · [Issues](https://github.com/Jellman86/twenty/issues) · [Critical literature review](docs/literature-review.md)
 
-C#/.NET 10 + Svelte 5, TypeScript and Vite. A working private growth research lab: native C# model training, speculative strategy backtests, conditional forward scenarios and durable simulated stock purchases. Python remains an independent offline research reference. Real orders are not exposed; private credentials can enable a read-only Trading 212 summary. See [the initial application](docs/initial-application.md) and [API setup instructions](docs/trading212-setup.md).
+C#/.NET 10 + Svelte 5, TypeScript and Vite. A working private growth research lab: native C# model training, speculative strategy backtests, conditional forward scenarios and durable simulated stock purchases. Python remains an independent offline research reference. A durable Trading 212 coordinator is implemented and disabled by default. Private credentials enable read-only capture; explicit account/strategy/quote/wallet evidence and compatible demo validation are required before real execution. See [the initial application](docs/initial-application.md) and [API setup instructions](docs/trading212-setup.md).
 
 ```sh
 npm ci --prefix web
@@ -27,6 +27,7 @@ The application base is **C#/.NET 10 LTS** with a Svelte 5 workbench and an offl
 - Browser-run C# experiments: relative-return ranking, momentum, return-index breakout and six-month upside-tail ranking.
 - Persisted jobs, cancellation, restart recovery, model/report hashes and all attempted trials.
 - Contribution-only share buy plans, durable simulated partial fills/cancellation and a persisted pause.
+- Frozen current-month signal scoring and a separately configured broker coordinator with durable intents, unknown-submission protection and fill reconciliation. See [the execution contract](docs/broker-execution.md).
 - GBP contribution/target calculations using annual effective compounding.
 - A locally trained ridge regressor, plus an optional small PyTorch neural network.
 - Explicit CPU, Apple GPU (`mps`), NVIDIA GPU (`cuda`) or Intel GPU (`xpu`) selection for neural training. `auto` detects CUDA, then XPU, then MPS, then CPU. XPU needs a compatible Intel installation; local implementation checks do not establish support on Quark. HPU is an experimental adapter requiring a separate Intel Gaudi environment; it has not been tested.
@@ -35,7 +36,7 @@ The application base is **C#/.NET 10 LTS** with a Svelte 5 workbench and an offl
 - Costs, minimum order notionals, residual cash, fractional GBP allocations and drawdowns measured without treating deposits as investment gains.
 - Run manifests, input hashes, model parameters, predictions, equity histories and an append-only experiment register.
 
-**Training and backtesting run through the private web workbench or the offline Python harness. The default deployment has no credentials or broker connection. There are no real orders, automated deposits or periodic trading/training schedules.** The example datasets are synthetic, not historical backtests or evidence of an investment edge. There is no LLM or filing signal in the implemented model yet.
+**Training and backtesting run through the private web workbench or the offline Python harness. The default deployment has no credentials or broker connection. No real order has been placed by the project. There are no automated deposits or periodic training jobs. The optional execution worker is disabled unless independently configured privately; deployment does not activate it.** The example datasets are synthetic, not historical backtests or evidence of an investment edge. There is no LLM or filing signal in the implemented model yet.
 
 ## Run locally
 
@@ -121,7 +122,7 @@ Data/hosting/electricity costs, instrument-specific taxes, foreign withholding, 
 3. Archive SEC/company filings with public availability and first-seen timestamps. Train/evaluate a filing-change feature extractor against simple text-difference baselines; save supporting passages. Historical LLM contamination must be addressed separately.
 4. Profile data loading, feature generation, training and simulation independently. Add vectorised scenario batches or compiled accounting only where measurements justify it, retaining a reference simulator for parity checks.
 5. Freeze a candidate; collect forward paper predictions and compare them with the same contribution benchmarks.
-6. Complete the Trading 212 live coordinator and broker-history/fill reconciliation around the implemented transport and quantity planner; validate current signals and account/instrument inputs before enabling real execution.
+6. Validate the implemented Trading 212 coordinator against authenticated demo evidence, genuine current signals and independently inspected account/instrument inputs before enabling real execution.
 
 See [the research pack](docs/research.md) for the critical review of 24 academic studies, source/data decisions, evaluation protocol and roadmap.
 

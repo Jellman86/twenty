@@ -32,6 +32,7 @@
   let result = $state<Scenario | null>(null);
   let issues = $state<Issue[]>([]);
   let commit = $state('local');
+  let executionMode = $state('Research only');
   let busy = $state(false);
   let error = $state('');
   let roadmapError = $state(false);
@@ -100,11 +101,11 @@
       })
       .then((data) => (issues = data))
       .catch(() => (roadmapError = true));
-    fetch('/api/meta')
-      .then((r) => r.json())
-      .then((data) => (commit = data.commit.slice(0, 7)))
-      .catch(() => {});
-    return () => window.removeEventListener('hashchange', navigate);
+    const refreshMode = () => { void fetch('/api/meta').then(r=>r.json()).then(data=>{commit=data.commit.slice(0,7);executionMode=data.mode;}).catch(()=>{}); };
+    refreshMode();
+    const modeTimer=setInterval(refreshMode,15000);
+    return () => { window.removeEventListener('hashchange', navigate);clearInterval(modeTimer); };
+
   });
 </script>
 
@@ -139,7 +140,7 @@
       >
     </nav>
     <div class="sidebar-note">
-      <span class="status-dot"></span>Research only
+      <span class="status-dot"></span>{executionMode}
       <p>Build the evidence.<br />Then test the strategy.</p>
     </div>
     <a class="source-link" href="https://github.com/Jellman86/twenty"
@@ -504,7 +505,7 @@
         <span
           >TWENTY <span class="slash">/</span> £20 is the starting point. Evidence
           is the method.</span
-        ><span>Research only · No live trading</span>
+        ><span>{executionMode}</span>
       </footer>
     </main>
   </div>

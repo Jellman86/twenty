@@ -86,7 +86,7 @@ public sealed partial class MonthlyPanel
         Enumerable.Range(t - 13, 12).Max(i => Index(i, s)) - 1m)).ToArray();
     public double[][] Features(int t)
     {
-        if (t < Warmup || t >= Dates.Length - 1) throw new ResearchException("feature-window");
+        if (t < Warmup || t > Dates.Length) throw new ResearchException("feature-window");
         var market = (double)(Index(t - 1, Benchmark) / Index(t - 4, Benchmark) - 1m);
         return Assets.Select(s =>
         {

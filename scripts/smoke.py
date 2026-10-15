@@ -75,4 +75,10 @@ assert abs(filled["cashGbp"] + sum(o["progress"]["debitGbp"] for o in filled["or
 capabilities = json.load(get("/api/research/capabilities"))
 assert capabilities["broker"]["automaticPurchases"] is False
 assert capabilities["finalHoldoutEnabled"] is False
+runtime = json.load(get("/api/execution/broker"))
+assert runtime["configured"] is False and runtime["enabled"] is False and runtime["credentialsConfigured"] is False
+assert runtime["accounts"] == []
+assert post("/api/execution/broker/cycle")["code"] == "execution-private-configuration-required"
+assert post("/api/execution/broker/capture", expected=400)["error"] == "broker-credentials-missing"
+assert post("/api/execution/signals", {"runId": run["id"], "datasetId": payload["datasetId"]}, 400)["error"] == "signal-current-panel-required"
 print("HTTP smoke passed: input/origin rejection, persisted CPU training, chronology, idempotent funding and reconciled simulated purchases")

@@ -52,3 +52,7 @@ The critical literature and data requirements do not change with programming lan
 ## External contracts
 
 Implement adapters against the [upstream contract audit](upstream-contracts.md). In particular, the broker accepts quantity orders rather than cash budgets and explicitly warns that order-creation retries can duplicate orders. The existing cash-notional harness is an idealised research reference. A future execution ledger needs quantity precision, cost reserves, partial-fill accounting and unknown-submission reconciliation. The linked terms also explicitly restrict Algorithmic Trading. Development continues under the user’s instruction; [the setup audit](trading212-setup.md) records the restriction and precise technical inputs still missing.
+
+## Broker coordinator checkpoint
+
+The [account-bound coordinator](broker-execution.md) now implements frozen current-month signals, an independent broker sleeve, durable pre-submit markers, history/fill reconciliation, private exact evidence capture and code/contract-bound demo receipts. Its optional worker remains disabled without explicit private configuration; Quark is not activated for broker trading. Authenticated payload/quote/account acceptance is still external work.

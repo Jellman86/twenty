@@ -26,13 +26,13 @@ A separate decimal share-quantity planner translates a frozen historical allocat
 
 The durable simulator stores intents before fills, funds each run's account once per simulated month, supports partial cumulative fills/cancellation and survives restarts. Its raw prices are explicitly synthetic and unrelated to return indices. This is an operational rehearsal using historical choices, not a current forward-paper strategy.
 
-An actual Trading 212 HTTP transport exists with fixed origins, bounded responses, paced requests and no POST retry. Optional private credentials enable an explicitly requested read-only account summary. Real order submission is not exposed by this initial web app. [Setup, upstream restriction and remaining input contracts](trading212-setup.md).
+An actual Trading 212 HTTP transport exists with fixed origins, bounded responses, paced requests and no POST retry. Optional private credentials enable an explicitly requested read-only account summary. The [subsequent coordinator](broker-execution.md) implements gated order endpoints and an optional private automatic worker. Neither is activated by default; authenticated acceptance remains pending. [Setup, upstream restriction and remaining input contracts](trading212-setup.md).
 
 ## Data and evidence still required
 
 The two bundled panels are deterministic synthetic fixtures. An administrator can import an appropriately licensed fixed-universe monthly GBP panel using `--import-panel`; stop the app first because the workspace has one writer. That path is exploratory and does not certify survivorship, delisting returns, corporate-action treatment or historical ISA eligibility. The stricter point-in-time dataset-v1 archive remains a separate ingestion foundation and has not been silently converted into monthly prices.
 
-Useful next experiments need point-in-time small-company universes, failed/delisted companies, raw execution prices and instrument-level costs. Add profitability/disclosure-change features only after availability timing is evidenced. Compare them with price-only/ranking baselines; use a tree challenger and dependence-aware/search-aware uncertainty analysis before selecting a champion. Prospective frozen predictions and broker reconciliation tests follow. Intel XPU acceleration remains unverified and unnecessary for this small CPU baseline.
+Useful next experiments need point-in-time small-company universes, failed/delisted companies, raw execution prices and instrument-level costs. Add profitability/disclosure-change features only after availability timing is evidenced. Compare them with price-only/ranking baselines; use a tree challenger and dependence-aware/search-aware uncertainty analysis before selecting a champion. Frozen prospective scoring and authored broker reconciliation tests are now implemented in the separate coordinator; actual current-data and authenticated acceptance remain pending. Intel XPU acceleration remains unverified and unnecessary for this small CPU baseline.
 
 ## Validation
 

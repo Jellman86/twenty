@@ -34,7 +34,13 @@ if (args.Length == 2 && args[0] == "--import-panel")
 }
 var ledger = new PaperLedger(store);
 builder.Services.AddSingleton(ledger);
-var broker = BrokerConfiguration.Create(builder.Configuration);
+var broker = BrokerConfiguration.Create(builder.Configuration, store.Root);
+var signals = new SignalStore(store);
+var brokerLedger = new BrokerLedger(store);
+var execution = new ExecutionCoordinator(brokerLedger, signals, store, broker,
+    () => ExecutionPolicy.Load(builder.Configuration["TWENTY_EXECUTION_CONFIG_FILE"]));
+builder.Services.AddSingleton(execution);
+builder.Services.AddHostedService<ExecutionWorker>();
 builder.Services.AddSingleton(store);
 builder.Services.AddHostedService<ExperimentWorker>();
 builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 16384);
@@ -67,9 +73,15 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 app.MapGet("/health/live", () => Results.Ok(new { status = "ok" }));
 app.MapGet("/health/ready", () => Results.Ok(new { status = "ready", mode = "research" }));
-app.MapGet("/api/meta", () => new { name = "Twenty", mode = "Research only", brokerConnected = false,
-    dataset = "No historical dataset connected", commit = Environment.GetEnvironmentVariable("TWENTY_COMMIT") ?? "local",
-    roadmap = "https://github.com/users/Jellman86/projects/1" });
+ExecutionPolicy? DisplayPolicy() { try { return execution.Policy(); } catch (ResearchException) { return null; } }
+app.MapGet("/api/meta", () =>
+{
+    var policy = DisplayPolicy();
+    return new { name = "Twenty", mode = policy is { Enabled: true } ? policy.Environment == "live" ? "Live execution configured" : "Demo execution configured" : "Research only",
+        brokerConnected = broker is not null && policy is { Enabled: true }, brokerCredentialsConfigured = broker is not null,
+        dataset = store.Datasets().Any(d => !d.Synthetic) ? "Imported exploratory data; coverage unverified" : "No historical dataset connected",
+        commit = Environment.GetEnvironmentVariable("TWENTY_COMMIT") ?? "local", roadmap = "https://github.com/users/Jellman86/projects/1" };
+});
 app.MapGet("/api/research/datasets", () => store.Datasets());
 app.MapGet("/api/research/runs", () => store.ListRuns().Take(100));
 app.MapGet("/api/research/trials", () => new { total = store.ListRuns().Count, displayedLimit = 100 });
@@ -77,12 +89,16 @@ app.MapPost("/api/research/runs", (RunRequest request) => Results.Accepted("/api
 app.MapGet("/api/research/runs/{id}", (string id) => store.Find(id) is { } run ? Results.Ok(run) : Results.NotFound());
 app.MapGet("/api/research/runs/{id}/report", (string id) => store.Report(id) is { } report ? Results.Ok(report) : Results.NotFound());
 app.MapPost("/api/research/runs/{id}/cancel", (string id) => { store.Cancel(id); return Results.Accepted(); });
-app.MapGet("/api/research/capabilities", () => new { engine = Backtest.Version, nativeCpuTraining = true,
-    hypotheses = new[] { "ridge-relative-return", "momentum", "breakout", "upside-tail" },
-    simultaneousJobs = 1, deadlineSeconds = 120, finalHoldoutEnabled = false,
-    broker = new { mode = broker?.Environment.ToString().ToLowerInvariant() ?? "disconnected", credentialsConfigured = broker is not null,
-        automaticPurchases = false, transportImplemented = true,
-        gates = new[] { "Account-bound ISA identity", "Verified raw prices and quantity rules", "A validated current strategy", "Live execution coordinator and history/fill reconciliation" } } });
+app.MapGet("/api/research/capabilities", () =>
+{
+    var policy = DisplayPolicy();
+    return new { engine = Backtest.Version, nativeCpuTraining = true,
+        hypotheses = new[] { "ridge-relative-return", "momentum", "breakout", "upside-tail" }, simultaneousJobs = 1, deadlineSeconds = 120, finalHoldoutEnabled = false,
+        broker = new { mode = broker?.Environment.ToString().ToLowerInvariant() ?? "disconnected", credentialsConfigured = broker is not null,
+            automaticPurchases = broker is not null && policy is { Enabled: true, Automatic: true }, transportImplemented = true, coordinatorImplemented = true,
+            gates = new[] { "Account-bound ISA identity", "Verified raw prices and quantity rules", "A validated current strategy",
+                "Verified wallet sample profile and genuine demo receipt", "Explicit private execution configuration" } } };
+});
 app.MapGet("/api/execution/paper", () => new { mode = "simulation", paused = ledger.Paused, accounts = ledger.Accounts() });
 app.MapPost("/api/execution/paper", (RehearsalRequest request) => Results.Accepted("/api/execution/paper", ledger.Rehearse(request)));
 app.MapPost("/api/execution/paper/{id}/reconcile", (string id, bool? partial) => ledger.Reconcile(id, partial ?? false));
@@ -100,6 +116,41 @@ app.MapGet("/api/execution/broker/summary", async (CancellationToken ct) =>
     catch (Exception error) when (error is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException)
     { return Results.BadRequest(new { error = "broker-read-unavailable" }); }
 });
+app.MapPost("/api/execution/broker/capture", async (CancellationToken ct) =>
+{
+    if (broker is null) return Results.BadRequest(new { error = "broker-credentials-missing" });
+    using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct); deadline.CancelAfter(TimeSpan.FromMinutes(2));
+    try
+    {
+        var summary = await broker.Summary(deadline.Token);
+        var positions = await broker.Positions(deadline.Token);
+        var pending = await broker.PendingOrders(deadline.Token);
+        var history = await broker.History(deadline.Token);
+        return Results.Ok(new { environment = broker.Environment.ToString().ToLowerInvariant(), account = "…" + (summary.Id % 10000).ToString("D4"),
+            summary.Currency, summary.Cash, positions = positions.Length, pendingOrders = pending.Length,
+            historyRows = history.Items.Length, history.Complete, samples = history.Items.Take(10), archivedPrivately = true });
+    }
+    catch (Exception error) when (error is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException)
+    { return Results.BadRequest(new { error = "broker-capture-unavailable" }); }
+});
+app.MapGet("/api/execution/signals", () => signals.List().Take(100));
+app.MapPost("/api/execution/signals", (SignalRequest request) => signals.Create(request));
+app.MapGet("/api/execution/broker", () =>
+{
+    ExecutionPolicy? policy = null; string? code = null;
+    try { policy = execution.Policy(); } catch (ResearchException error) { code = error.Code; }
+    return Results.Ok(new { configured = policy is not null, enabled = policy?.Enabled ?? false, automatic = policy?.Automatic ?? false,
+        environment = policy?.Environment ?? "disconnected", monthlyAllowanceGbp = policy?.MonthlyGbp,
+        credentialsConfigured = broker is not null, paused = brokerLedger.Paused, codeSha256 = execution.CodeSha256, configurationError = code,
+        accounts = brokerLedger.Accounts().Select(a => new { a.Key, a.Environment, account = "…" + (a.AccountId % 10000).ToString("D4"),
+            allocatedCapitalGbp = a.ContributionsGbp, a.CashGbp, reservedGbp = a.Intents.Sum(i => i.Progress.RemainingReserve), a.Holdings,
+            a.Batches, a.Intents, a.BlockCode }), demoReceipts = brokerLedger.DemoReceipts() });
+});
+app.MapPost("/api/execution/broker/cycle", async (CancellationToken ct) => await execution.Run(ct));
+app.MapPost("/api/execution/broker/{key}/{id}/cancel", async (string key, string id, CancellationToken ct) =>
+{ await execution.Cancel(key, id, ct); return Results.Accepted(); });
+app.MapPost("/api/execution/broker/{key}/{id}/bind", async (string key, string id, long orderId, CancellationToken ct) =>
+{ await execution.BindUnknown(key, id, orderId, ct); return Results.Accepted(); });
 app.MapGet("/api/roadmap", () => Results.File(Path.Combine(app.Environment.ContentRootPath, "roadmap.json"), "application/json"));
 app.MapPost("/api/projections", (ProjectionRequest request) =>
 {

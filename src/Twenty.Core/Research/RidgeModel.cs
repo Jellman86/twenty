@@ -7,6 +7,15 @@ public sealed class RidgeModel
 {
     public RidgeSnapshot Snapshot { get; }
     private RidgeModel(RidgeSnapshot snapshot) => Snapshot = snapshot;
+    public static RidgeModel Restore(RidgeSnapshot snapshot)
+    {
+        if (snapshot is null || snapshot.Mean.IsDefault || snapshot.Scale.IsDefault || snapshot.Weights.IsDefault ||
+            snapshot.Mean.Length != 5 || snapshot.Scale.Length != 5 || snapshot.Weights.Length != 5 ||
+            snapshot.Mean.Concat(snapshot.Scale).Concat(snapshot.Weights).Any(v => !double.IsFinite(v)) ||
+            snapshot.Scale.Any(v => v <= 0) || !double.IsFinite(snapshot.TargetMean) || !double.IsFinite(snapshot.Alpha) || snapshot.Alpha <= 0)
+            throw new ResearchException("ridge-snapshot");
+        return new(snapshot);
+    }
     public static RidgeModel Fit(double[][] x, double[] y, double alpha = 10)
     {
         if (x.Length < 2 || x.Length != y.Length || x.Any(r => r.Length != 5 || r.Any(v => !double.IsFinite(v))) ||

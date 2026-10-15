@@ -6,7 +6,7 @@ using Twenty.Core.Research;
 
 namespace Twenty.Api.Research;
 
-public sealed record DatasetEntry(string Id, string Name, string Sha256, bool Synthetic, int Months, int Assets, DateOnly Start, DateOnly End);
+public sealed record DatasetEntry(string Id, string Name, string Sha256, bool Synthetic, int Months, int Assets, DateOnly Start, DateOnly End, DateTimeOffset? RegisteredAt = null);
 public sealed record RunRequest(string RequestId, string DatasetId, ExperimentConfig Config, ResearchCosts Costs);
 public sealed record RunEntry(string Id, string DatasetId, string DatasetName, bool Synthetic, string Status, DateTimeOffset CreatedAt,
     DateTimeOffset? StartedAt, DateTimeOffset? FinishedAt, int Progress, string? ErrorCode, string CodeCommit, string ConfigSha256,
@@ -19,8 +19,10 @@ public sealed class ResearchStore : IDisposable
     private readonly string connectionString;
     private readonly FileStream lease;
     private readonly object gate = new();
-    public ResearchStore(string root)
+    private readonly TimeProvider clock;
+    public ResearchStore(string root, TimeProvider? clock = null)
     {
+        this.clock = clock ?? TimeProvider.System;
         Root = Path.GetFullPath(root);
         Directory.CreateDirectory(Root);
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(Root, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
@@ -32,7 +34,7 @@ public sealed class ResearchStore : IDisposable
             "CREATE TABLE IF NOT EXISTS runs(id TEXT PRIMARY KEY, request_id TEXT NOT NULL UNIQUE, dataset_id TEXT NOT NULL, json TEXT NOT NULL, status TEXT NOT NULL);" +
             "CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, at TEXT NOT NULL, kind TEXT NOT NULL);" +
             "CREATE TABLE IF NOT EXISTS holdout_access(dataset_id TEXT NOT NULL, run_id TEXT NOT NULL UNIQUE, at TEXT NOT NULL);" );
-        foreach (var run in ListRuns().Where(r => r.Status == "running")) Save(run with { Status = "interrupted", FinishedAt = DateTimeOffset.UtcNow, ErrorCode = "process-restarted" }, "restart-interrupted");
+        foreach (var run in ListRuns().Where(r => r.Status == "running")) Save(run with { Status = "interrupted", FinishedAt = this.clock.GetUtcNow(), ErrorCode = "process-restarted" }, "restart-interrupted");
     }
     public void Dispose() => lease.Dispose();
     private SqliteConnection Open() { var db = new SqliteConnection(connectionString); db.Open(); return db; }
@@ -46,11 +48,18 @@ public sealed class ResearchStore : IDisposable
             if (Datasets().Count >= 20 && Datasets().All(x => x.Id != panel.Sha256)) throw new ResearchException("dataset-capacity");
             var directory = Path.Combine(Root, "datasets", panel.Sha256); Directory.CreateDirectory(directory);
             ImmutableWrite(Path.Combine(directory, "prices.csv"), csv); ImmutableWrite(Path.Combine(directory, "prices.metadata.json"), metadata);
-            var entry = new DatasetEntry(panel.Sha256, name, panel.Sha256, panel.Synthetic, panel.Dates.Length, panel.Assets.Length, panel.Dates[0], panel.Dates[^1]);
+            var entry = new DatasetEntry(panel.Sha256, name, panel.Sha256, panel.Synthetic, panel.Dates.Length, panel.Assets.Length, panel.Dates[0], panel.Dates[^1], this.clock.GetUtcNow());
             using var db = Open(); using var command = db.CreateCommand();
             command.CommandText = "INSERT OR IGNORE INTO datasets(id,json) VALUES($id,$json)";
             command.Parameters.AddWithValue("$id", entry.Id); command.Parameters.AddWithValue("$json", JsonSerializer.Serialize(entry, Json)); command.ExecuteNonQuery();
-            return entry;
+            var stored = Datasets().Single(d => d.Id == entry.Id);
+            if (stored.RegisteredAt is null)
+            {
+                stored = stored with { RegisteredAt = entry.RegisteredAt };
+                using var update = db.CreateCommand(); update.CommandText = "UPDATE datasets SET json=$json WHERE id=$id";
+                update.Parameters.AddWithValue("$json", JsonSerializer.Serialize(stored, Json)); update.Parameters.AddWithValue("$id", stored.Id); update.ExecuteNonQuery();
+            }
+            return stored;
         }
     }
     public List<DatasetEntry> Datasets()
@@ -94,7 +103,7 @@ public sealed class ResearchStore : IDisposable
             // The initial app deliberately does not expose a final holdout run. Record/review promotion first.
             if (request.Config.EvaluateHoldout) throw new ResearchException("holdout-gate-closed");
             var dataset = Datasets().Single(x => x.Id == request.DatasetId);
-            var run = new RunEntry(Guid.NewGuid().ToString("N"), dataset.Id, dataset.Name, dataset.Synthetic, "queued", DateTimeOffset.UtcNow,
+            var run = new RunEntry(Guid.NewGuid().ToString("N"), dataset.Id, dataset.Name, dataset.Synthetic, "queued", this.clock.GetUtcNow(),
                 null, null, 0, null, codeCommit, configHash, request.Config, request.Costs, false);
             using var insert = db.CreateCommand(); insert.Transaction = transaction;
             insert.CommandText = "INSERT INTO runs(id,request_id,dataset_id,json,status) VALUES($id,$request,$dataset,$json,'queued')";
@@ -118,7 +127,7 @@ public sealed class ResearchStore : IDisposable
         {
             var queued = ListRuns().LastOrDefault(x => x.Status == "queued");
             if (queued is null) return null;
-            var run = queued with { Status = "running", StartedAt = DateTimeOffset.UtcNow, WorkerCommit = Environment.GetEnvironmentVariable("TWENTY_COMMIT") ?? "local",
+            var run = queued with { Status = "running", StartedAt = this.clock.GetUtcNow(), WorkerCommit = Environment.GetEnvironmentVariable("TWENTY_COMMIT") ?? "local",
                 EngineSha256 = Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(typeof(Backtest).Assembly.Location))) };
             Save(run, "started"); return run;
         }
@@ -129,7 +138,7 @@ public sealed class ResearchStore : IDisposable
         {
             var run = Find(id) ?? throw new ResearchException("run-not-found");
             if (run.Status is "queued" or "running") Save(run with { CancelRequested = true, Status = run.Status == "queued" ? "cancelled" : "running",
-                FinishedAt = run.Status == "queued" ? DateTimeOffset.UtcNow : null }, "cancel-requested");
+                FinishedAt = run.Status == "queued" ? this.clock.GetUtcNow() : null }, "cancel-requested");
         }
     }
     public void Save(RunEntry run, string kind)
@@ -143,11 +152,11 @@ public sealed class ResearchStore : IDisposable
             Event(db, tx, run.Id, kind); tx.Commit();
         }
     }
-    private static void Event(SqliteConnection db, SqliteTransaction tx, string id, string kind)
+    private void Event(SqliteConnection db, SqliteTransaction tx, string id, string kind)
     {
         using var cmd = db.CreateCommand(); cmd.Transaction = tx;
         cmd.CommandText = "INSERT INTO events(run_id,at,kind) VALUES($id,$at,$kind)"; cmd.Parameters.AddWithValue("$id", id);
-        cmd.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.ToString("O")); cmd.Parameters.AddWithValue("$kind", kind); cmd.ExecuteNonQuery();
+        cmd.Parameters.AddWithValue("$at", this.clock.GetUtcNow().ToString("O")); cmd.Parameters.AddWithValue("$kind", kind); cmd.ExecuteNonQuery();
     }
     public void Complete(string id, BacktestReport report)
     {
@@ -161,7 +170,7 @@ public sealed class ResearchStore : IDisposable
                 throw new ResearchException("artifact-capacity");
             var directory = Path.Combine(Root, "runs", run.Id); Directory.CreateDirectory(directory);
             ImmutableWrite(Path.Combine(directory, "report.json"), bytes);
-            Save(run with { Status = "succeeded", Progress = 100, FinishedAt = DateTimeOffset.UtcNow,
+            Save(run with { Status = "succeeded", Progress = 100, FinishedAt = this.clock.GetUtcNow(),
                 ReportSha256 = Convert.ToHexStringLower(SHA256.HashData(bytes)) }, "succeeded");
         }
     }

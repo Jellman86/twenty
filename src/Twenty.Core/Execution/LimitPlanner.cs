@@ -72,5 +72,5 @@ public sealed record OrderProgress(decimal Requested, decimal Filled, decimal De
             throw new ResearchException("fill-reconciliation");
         return this with { Filled = cumulativeFilled, DebitGbp = cumulativeDebit, Status = status };
     }
-    public decimal RemainingReserve => Status is "filled" or "cancelled" or "rejected" ? 0 : ReservedGbp - DebitGbp;
+    public decimal RemainingReserve => Status is "filled" or "cancelled" or "rejected" ? 0 : Math.Max(0, ReservedGbp - DebitGbp);
 }

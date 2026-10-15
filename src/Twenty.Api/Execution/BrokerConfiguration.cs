@@ -4,7 +4,7 @@ namespace Twenty.Api.Execution;
 
 public static class BrokerConfiguration
 {
-    public static Trading212Client? Create(IConfiguration configuration)
+    public static Trading212Client? Create(IConfiguration configuration, string? workspaceRoot = null)
     {
         var keyFile = configuration["TWENTY_T212_KEY_FILE"];
         var secretFile = configuration["TWENTY_T212_SECRET_FILE"];
@@ -26,6 +26,6 @@ public static class BrokerConfiguration
             { throw new ResearchException("broker-credential-file"); }
         }
         var handler = new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false };
-        return new(new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) }, environment, Read(keyFile), Read(secretFile));
+        return new(new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(15) }, environment, Read(keyFile), Read(secretFile), evidence: workspaceRoot is null ? null : new BrokerEvidenceArchive(workspaceRoot));
     }
 }
