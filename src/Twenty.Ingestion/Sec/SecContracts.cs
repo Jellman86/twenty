@@ -54,7 +54,11 @@ public static partial class SecIdentity
     }
     public static void Document(string value)
     {
-        if (!DocumentPattern().IsMatch(value) || value.Contains("..", StringComparison.Ordinal))
+        // SEC non-target forms can use relative XSL paths (e.g. xslF345X05/ownership.xml).
+        // Keep every segment constrained; absolute URLs, escapes and traversal are not filenames.
+        var segments = value.Split('/');
+        if (value.Length > 400 || segments.Length > 4 ||
+            segments.Any(segment => !DocumentPattern().IsMatch(segment) || segment.Contains("..", StringComparison.Ordinal)))
             throw new SecCollectionException("invalid-document-name");
     }
     public static string UserAgent(string contact)

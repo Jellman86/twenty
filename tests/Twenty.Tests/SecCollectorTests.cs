@@ -446,6 +446,38 @@ public class SecCollectorTests
         Assert.Equal("history-range-mismatch", error.Code);
     }
 
+    [Fact]
+    public async Task NonTargetForm4WithRelativeXslPathDoesNotBlockAnnualReports()
+    {
+        var page = Change(x =>
+        {
+            var rows = x["filings"]!["recent"]!;
+            rows["form"]![0] = "4";
+            rows["primaryDocument"]![0] = "xslF345X05/ownership.xml";
+        });
+        using var rig = new Rig(request => request.RequestUri!.Host == "www.sec.gov"
+            ? Response(Encoding.UTF8.GetBytes("<html>AUTHORED SYNTHETIC ANNUAL REPORT</html>"), "text/html")
+            : Response(request.RequestUri.AbsolutePath.Contains("-submissions-", StringComparison.Ordinal) ? Fixture("history") : page));
+        var result = await rig.Collect();
+        Assert.Equal(2, result.Filings.Length);
+        Assert.All(result.Filings, x => Assert.Equal("10-K", x.Metadata.Form));
+        Assert.DoesNotContain(rig.Requests, x => x.Uri.AbsolutePath.Contains("xslF345X05", StringComparison.Ordinal));
+        Assert.Equal("https://www.sec.gov/Archives/edgar/data/1/000000000124000001/xslF345X05/ownership.xml",
+            SecIdentity.PrimaryDocument("1", "0000000001-24-000001", "xslF345X05/ownership.xml").AbsoluteUri);
+    }
+
+    [Theory]
+    [InlineData("../report.htm")]
+    [InlineData("xsl/../../report.htm")]
+    [InlineData("xsl//report.htm")]
+    [InlineData("/report.htm")]
+    [InlineData("https://evil.invalid/report.htm")]
+    [InlineData("xsl/%2e%2e/report.htm")]
+    [InlineData("xsl/report.htm?token=redacted")]
+    [InlineData("xsl\\report.htm")]
+    public void RelativeDocumentPathsStillRejectEscapesAndAmbiguousNames(string document) =>
+        Assert.Throws<SecCollectionException>(() => SecIdentity.PrimaryDocument("1", "0000000001-24-000001", document));
+
     [Theory]
     [InlineData("mismatch")]
     [InlineData("traversal")]

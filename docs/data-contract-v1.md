@@ -37,7 +37,7 @@ Feature definitions and their availability rules are versioned metadata inside t
 
 ## Two clocks and revision semantics
 
-Every observation carries publication time, available-at time, availability evidence, timing precision and an optional policy reference. Availability is either archived/observed publication evidence or an explicit conservative policy. Unknown availability fails validation. Date-precision and conservative availability require a policy reference. Observed availability also requires first-seen evidence. Conservative policy labels do not claim an actual public dissemination timestamp.
+Every observation carries publication time, available-at time, availability evidence, timing precision and an optional policy reference. Availability is either archived/observed publication evidence or an explicit conservative policy. Unknown availability fails validation. Date-precision and conservative availability require a policy reference. Observed availability also requires nondefault first-seen evidence and `firstSeenAt <= availableAt`; importing a later observation cannot backdate it into earlier decisions. Conservative policy labels do not claim an actual public dissemination timestamp.
 
 A market decision can use only records with `availableAt <= decisionAt`. Decision time cannot exceed the archived snapshot's creation cutoff. Retrospective retrieval may be later than a historical decision if original publication/availability evidence is preserved; requiring every historical fact to have been downloaded by Twenty before its historical date would make legitimate backfill impossible. Online collection should retain actual first-seen evidence rather than fabricate it for old records.
 

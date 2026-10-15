@@ -366,4 +366,37 @@ public class DataContractTests
         finally { if (Directory.Exists(root)) Directory.Delete(root, recursive: true); }
     }
 
+    [Theory]
+    [InlineData("2024-12-01T00:00:00Z")]
+    [InlineData("0001-01-01T00:00:00Z")]
+    public void ObservedPublicationCannotBeBackdatedBeforeFirstSeenOrUseDefaultEvidence(string firstSeen)
+    {
+        var file = Fixture();
+        file = file with
+        {
+            Manifest = file.Manifest with { Sources = file.Manifest.Sources.Select(x => x with { FirstSeenAt = At(firstSeen) }).ToImmutableArray() },
+            Observations = file.Observations.Select(x => x.Id == "profit-original"
+                ? x with { Evidence = x.Evidence with { AvailabilityEvidence = AvailabilityEvidence.ObservedPublication } } : x).ToImmutableArray()
+        };
+        HasIssue(file, "availability-evidence");
+        Assert.Throws<InvalidDatasetException>(() => new PointInTimeDataset(file));
+    }
+
+    [Fact]
+    public void ObservedAvailabilityMayFollowFirstSeenWithoutLeakingIntoEarlierDecisions()
+    {
+        var file = Fixture();
+        var seen = At("2024-02-16T12:00:00Z");
+        var available = seen.AddDays(1);
+        file = file with
+        {
+            Manifest = file.Manifest with { Sources = file.Manifest.Sources.Select(x => x with { FirstSeenAt = seen }).ToImmutableArray() },
+            Observations = file.Observations.Select(x => x.Id == "profit-original"
+                ? x with { Evidence = x.Evidence with { AvailabilityEvidence = AvailabilityEvidence.ObservedPublication, AvailableAt = available } } : x).ToImmutableArray()
+        };
+        Assert.True(DatasetValidator.Validate(file).IsValid);
+        Assert.Empty(new PointInTimeDataset(file).AsOf(available.AddTicks(-1)).Fundamentals("company-a"));
+        Assert.Equal(100m, new PointInTimeDataset(file).AsOf(available).Fundamentals("company-a").Single().Value);
+    }
+
 }

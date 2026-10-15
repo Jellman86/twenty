@@ -98,8 +98,8 @@ public static partial class DatasetValidator
             if (source is not null)
                 Check(e.PublishedAt <= source.RetrievedAt && (e.AvailabilityEvidence == AvailabilityEvidence.ConservativePolicy || e.AvailableAt <= source.RetrievedAt) &&
                     (e.AvailabilityEvidence != AvailabilityEvidence.ObservedPublication ||
-                        (source.FirstSeenAt is not null && source.FirstSeenAt >= e.AvailableAt)),
-                    "availability-evidence", p, "Publication must precede retrieval; observed availability needs first-seen evidence.");
+                        (source.FirstSeenAt is not null && source.FirstSeenAt != default(DateTimeOffset) && source.FirstSeenAt <= e.AvailableAt)),
+                    "availability-evidence", p, "Publication must precede retrieval; observed availability cannot precede nondefault first-seen evidence.");
             switch (r)
             {
                 case Listing x:
