@@ -16,7 +16,9 @@ Key availability establishes a technical capability; it does not override the AP
 
 Twenty currently supports an optional **read-only account summary connection**. The durable coordinator and optional automatic worker are implemented but disabled without explicit private execution configuration, evidence and compatible demo validation. See [the coordinator setup](broker-execution.md). The default deployment has no credentials and makes no broker calls.
 
-Create two private, read-only files outside the checkout and data archive, containing the key and secret separately. Set the following private container configuration:
+Supply the key and secret **either** as Dockhand encrypted secrets passed to the container as `TWENTY_T212_KEY` and `TWENTY_T212_SECRET` (the Quark deployment does this), **or** as two private read-only mounted files named by the `_FILE` settings below. Setting both kinds is refused. Environment values are visible to anyone who can run `docker inspect` on the host; files are plain text on the host disk.
+
+For the file route, create two private, read-only files outside the checkout and data archive, containing the key and secret separately. Set the following private container configuration:
 
 | Setting | Value / purpose |
 |---|---|

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using System.Text.Json;
 using Twenty.Api.Execution;
 using Twenty.Core.Execution;
@@ -81,4 +82,25 @@ public sealed class BrokerReadFailureTests
     [InlineData(System.Net.HttpStatusCode.BadGateway, "broker-read-unavailable")]
     public void ReadFailuresSayWhetherTheKeyOrTheServiceIsAtFault(System.Net.HttpStatusCode status, string code) =>
         Assert.Equal(code, Twenty.Api.Execution.Trading212Client.ReadFailure(status));
+}
+
+public sealed class BrokerConfigurationTests
+{
+    private static Twenty.Api.Execution.Trading212Client? Create(params (string Key, string Value)[] values) =>
+        Twenty.Api.Execution.BrokerConfiguration.Create(new Microsoft.Extensions.Configuration.ConfigurationBuilder()
+            .AddInMemoryCollection(values.Select(v => new KeyValuePair<string, string?>(v.Key, v.Value))).Build());
+
+    [Fact]
+    public void CredentialsComeFromFilesOrTheEnvironmentButNeverBoth()
+    {
+        Assert.Null(Create());
+        Assert.Equal(Twenty.Api.Execution.BrokerEnvironment.Demo,
+            Create(("TWENTY_T212_ENVIRONMENT", "demo"), ("TWENTY_T212_KEY", "k"), ("TWENTY_T212_SECRET", "s"))!.Environment);
+        Assert.Equal("broker-environment-required", Assert.Throws<Twenty.Core.Research.ResearchException>(() =>
+            Create(("TWENTY_T212_KEY", "k"), ("TWENTY_T212_SECRET", "s"))).Code);
+        Assert.Equal("broker-credential-value", Assert.Throws<Twenty.Core.Research.ResearchException>(() =>
+            Create(("TWENTY_T212_ENVIRONMENT", "live"), ("TWENTY_T212_KEY", "k"))).Code);
+        Assert.Equal("broker-credential-source-ambiguous", Assert.Throws<Twenty.Core.Research.ResearchException>(() =>
+            Create(("TWENTY_T212_ENVIRONMENT", "live"), ("TWENTY_T212_KEY", "k"), ("TWENTY_T212_SECRET", "s"), ("TWENTY_T212_KEY_FILE", "/run/key"))).Code);
+    }
 }
