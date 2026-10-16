@@ -56,7 +56,15 @@ Use a declared contact-bearing User-Agent and a shared request limiter below the
 
 ## Scraping policy and failure handling
 
-Use APIs/feeds first. Scraping is justified only for a permitted source with relevant information unavailable in a structured form. Respect access policies, rate limits and licences; do not bypass authentication, paywalls or access controls. Prefer company filings and announcements over social-media sentiment for the initial experiment.
+Use APIs/feeds first. Scrape only for relevant information unavailable in a structured form. Prefer company filings and announcements over social-media sentiment for the initial experiment.
+
+**Owner decision, 16 October 2026:** Twenty uses free data only, and the owner accepts the risk of scraping sources whose terms or robots.txt forbid automated collection. A site's terms are therefore no longer a filter. Each source's terms are still quoted in [market-data selection](market-data-selection.md), as information for the owner. This replaces the earlier rule to scrape only "a permitted source" and to respect licences. These limits still apply:
+
+1. **Public, unauthenticated pages only.** Never defeat a login, paywall, CAPTCHA, Cloudflare or other bot challenge. Never use challenge-solving tools (for example Byparr or FlareSolverr). Never rotate IPs or proxies to evade a ban. A source behind a challenge is unavailable.
+2. **Slow, cached and backed off.** Use per-source pacing well below any published limit, conditional or cached requests, and exponential back-off that stops on 403/429 rather than retrying harder.
+3. **Scraped data never enters the public repository or the published image.** Raw captures and anything derived that could reproduce them stay in Quark's private store. This is the main real exposure.
+
+Collectors for sources with restrictive terms run on one disposable VPS, not on Quark's home IP, so that a ban does not hit the home network. See [collector hosting](market-data-selection.md#collector-hosting).
 
 Collectors need retry limits, source-specific pacing, idempotent event keys, duplicate/revision detection, schema-change checks and a quarantine queue. Missing or stale critical data should prevent a new signal rather than silently becoming zero or an optimistic forecast. External document text remains untrusted data and must never execute instructions or acquire broker credentials.
 

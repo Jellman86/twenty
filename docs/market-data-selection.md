@@ -1,6 +1,8 @@
 # Market-data selection for issue #5 (free sources only)
 
-Reviewed 16 October 2026. **Constraint set by the owner on 16 October 2026: Twenty uses free data only. No paid tier, trial or card on file. Scraping is acceptable where the source permits it.** Scraping follows the [scraping policy](data-sources.md#scraping-policy-and-failure-handling): no bypassing of logins, paywalls, rate limits or access controls, and robots.txt and site terms are respected.
+Reviewed 16 October 2026. **Constraints set by the owner on 16 October 2026:** Twenty uses free data only, with no paid data tier, trial or card on file for data. The owner also accepts the risk of scraping against a site's terms. Terms and robots.txt are quoted below as information, not as a filter. The remaining limits are in the [scraping policy](data-sources.md#scraping-policy-and-failure-handling): public unauthenticated pages only, no defeating logins, paywalls, CAPTCHAs or bot challenges, no IP rotation, slow and backed-off collection, and no scraped data in the public repository or image. A source behind a bot challenge is **unavailable**.
+
+The question that matters for each source is whether it **keeps the price history of delisted tickers**. That is the survivorship gap. Scraping a source that drops delisted tickers gives a survivor-only panel for the past. It is useful only for capturing prices *forward*, before tickers disappear.
 
 This is a review of providers' own documentation, terms and robots.txt files, plus a few documented public samples:
 
@@ -26,9 +28,9 @@ The paid options reviewed earlier (Sharadar, EODHD, Norgate, Tiingo Power, Massi
 | **Nasdaq Trader symbol directory** ([definitions](https://www.nasdaqtrader.com/trader.aspx?id=symboldirdefs)) | `nasdaqlisted.txt` and `otherlisted.txt`, "updated periodically through-out each day", with a `File Creation Time` trailer | **Current listings only.** Past versions not documented | No robots.txt (404). The disclaimer page also returns 404, so terms are **unverified** | Daily forward snapshots of the full US listed universe, which are survivorship-free by construction from the first day collected |
 | **Tiingo `supported_tickers.zip`** ([overview](https://www.tiingo.com/documentation/general/overview)) | Public list, "updated daily", with ticker, exchange, asset type, currency, `startDate`, `endDate` | Contains ended tickers: 8,175 NYSE, Nasdaq or AMEX stocks with an `endDate` before September 2026 in the sample. See the coverage bound below | Overview: "data is for internal and personal use only" and "You may not redistribute the data in any form" | Cross-check of delisting dates and price-history spans |
 | **ECB reference FX** | Already implemented ([ECB FX](ecb-fx.md)) | n/a | Public | USD→GBP reporting conversion |
-| **ClinicalTrials.gov API v2** | Live API (version 2.0.5, data timestamp 2026-10-15). Its OpenAPI says it provides "the most recent version of the clinical trials" | n/a. **No record history through the API**, so a field edited after an outcome leaks it | robots.txt has `Disallow: /api/` for all user agents, while the API is documented for programmatic use. Terms page not readable without JavaScript (**unverified**). See owner decision 4 | Family B, collected forward |
-| **Stooq** | Bulk historical files (contents **unverified**) | Not documented | robots.txt: `User-agent: *` / `Disallow: /`; only Googlebot and Bingbot are allowed | **Automated retrieval prohibited.** Not used |
-| **Yahoo Finance** (including libraries such as `yfinance` that call it) | n/a | n/a | [Terms](https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html) §2(d): you may not "access or collect data … using any automated means", including "scrapers", nor build "any database, archive … data feed". robots.txt also blocks `anthropic-ai` and `ClaudeBot` entirely | **Prohibited.** Not used |
+| **ClinicalTrials.gov API v2** | Live API (version 2.0.5, data timestamp 2026-10-15). Its OpenAPI says it provides "the most recent version of the clinical trials" | n/a. **No record history through the API**, so a field edited after an outcome leaks it | robots.txt has `Disallow: /api/` for all user agents, while the API is documented for programmatic use. Terms page not readable without JavaScript (**unverified**). Under the owner's decision, use the documented API | Family B, collected forward |
+| **Stooq** | Bulk historical daily files and per-symbol pages. Markets, including UK, **unverified** | **Unknown.** Stooq documents nothing about delisted tickers; it must be sampled with known delistings before relying on it | robots.txt: `User-agent: *` / `Disallow: /`; only Googlebot and Bingbot are allowed. **Automated collection is prohibited**; the owner accepts this risk. Whether bulk downloads sit behind a CAPTCHA is **unverified**. If they do, Stooq is unavailable | Candidate for current US and UK daily prices captured forward, and for past history if sampling shows it keeps delisted tickers |
+| **Yahoo Finance** (including libraries such as `yfinance` that call it) | Daily OHLC, dividends and splits for currently listed symbols, US and LSE | **No.** A maintainer of the `yahoo-finance2` library: when a stock is delisted, "ALL DATA will no longer be available", including periods when it was listed ([library docs](https://github.com/gadicc/node-yahoo-finance2/blob/devel/docs/modules/historical.md)). Not verified by Twenty | [Terms](https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html) §2(d): you may not "access or collect data … using any automated means", including "scrapers", nor build "any database, archive … data feed". robots.txt also blocks `anthropic-ai` and `ClaudeBot` entirely. **Automated collection is prohibited**; the owner accepts this risk. Consent pages or bot challenges from a datacentre IP make it unavailable | **Forward capture only.** Cannot fill the past gap. A daily capture of every listed US and UK symbol keeps prices for tickers that delist later. The only free route to UK prices found so far |
 
 ### Group 2: free account or API key needed (owner decision 2)
 
@@ -58,9 +60,9 @@ Even after 2015, Tiingo's free tier is rationed (about 33 months to backfill), a
 
 No free source gives what holders received. Every delisting starts as `TerminalOutcome = Missing`. It may be resolved only from SEC deal filings (cash or stock terms) or a confirmed liquidation.
 
-### No UK coverage
+### No UK delisted history
 
-No free UK source with delistings was found. Stooq, the usual free option, prohibits automated retrieval, and Yahoo prohibits it outright. **UK research is out of scope** until a permitted source is found.
+No free UK source that keeps delisted tickers was found. Yahoo drops them. Stooq is unknown until sampled. UK prices can be captured **forward** from Yahoo or Stooq, so a UK universe becomes survivorship-free only from the first day of collection. **UK backtests are out of scope**. UK forward collection is in scope.
 
 ### Bounding the bias that remains
 
@@ -91,21 +93,40 @@ This changes the growth plan's order: Family C first, then the forward collector
 5. **Prices from Tiingo (if approved).** Store a `Raw` bar from `open/high/low/close/volume` and `CorporateAction` dividends and splits from `divCash` and `splitFactor`. Do **not** turn `adjClose` into a `TotalReturnAdjusted` bar: v1 forbids it. Calculate returns locally and use `adjClose` as a cross-check. `ConservativePolicy` availability (next session open) for the backfill; `ObservedPublication` going forward. Tiingo puts its token in a header or query string; it must be redacted from URLs and logs either way.
 6. **Clinical trials.** Each daily ClinicalTrials.gov pull is an immutable snapshot. A study's field change becomes a new revision available from that snapshot's `FirstSeenAt`. A new observation kind (trial record) is needed. It is out of v1's scope and belongs with Family B's own contract.
 
+## Collector hosting
+
+Collectors for sources whose terms forbid automation (Yahoo and Stooq, and any later scraped site) run on **one disposable VPS**, proposed as Oracle Cloud Always Free, not on Quark's home IP. Collectors for public-sector APIs (SEC, ClinicalTrials.gov, openFDA, ECB, French, Shiller) can stay on Quark.
+
+What Oracle documents ([Always Free resources](https://docs.oracle.com/en-us/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm)):
+
+- Up to two `VM.Standard.E2.1.Micro` instances (1/8 OCPU, 1 GB), or Ampere A1 equivalent to 2 OCPUs and 12 GB. 200 GB block storage, 20 GB object storage, 10 TB a month outbound.
+- **Reclamation:** "Idle Always Free compute instances may be reclaimed by Oracle". An instance counts as idle if, over 7 days, 95th-percentile CPU is below 20%, network below 20%, and (A1 only) memory below 20%. A slow collector will meet that definition, so **expect reclamation**. Do not pad utilisation to avoid it; rebuild instead.
+- **Card verification:** Oracle's [sign-up guide](https://docs.cloud.oracle.com/iaas/Content/GSG/Tasks/signingup_topic-Sign_Up_for_Free_Oracle_Cloud_Promotion.htm) has the user add a credit card for verification. It says there may be a small temporary charge and that the card is not charged unless the account is upgraded. Only the owner can do this.
+
+Design:
+
+1. **Stateless and rebuildable.** A cloud-init script and a pinned container image recreate the collector from scratch. The schedule, source list and pacing live in the repository; the API keys and the tunnel key are provisioned by the owner, never committed.
+2. **The VPS never holds the only copy.** Each capture is written as an immutable, timestamped raw object with its SHA-256. It is pushed to a drop directory in Quark's private store over an authenticated tunnel (WireGuard, or SSH with a key that can only write to that directory). Quark recomputes the hash, moves the object into its immutable store and acknowledges. The VPS deletes its local copy only after that acknowledgement. If the VPS disappears, at most the unacknowledged captures are lost, and a gap is recorded rather than backfilled from guesses.
+3. **Slow and backed off.** One request at a time per source, pacing far below any published limit, conditional requests and caching. Exponential back-off that **stops** on 403/429 or a challenge page and raises an alert. No retries from another IP.
+4. **Challenges mean unavailable.** If a source starts serving a CAPTCHA, Cloudflare or other bot challenge, or a consent wall that needs a login, the collector marks the source unavailable and records the date. There is no challenge-solving (Byparr, FlareSolverr or similar) and no proxy or IP rotation. Datacentre IPs are challenged more often than home IPs, so Yahoo may be unavailable from the VPS. That is an accepted outcome, not a problem to engineer around.
+5. **Nothing reaches public artefacts.** Neither the VPS nor Quark publishes captures, and the repository and published image contain only collector code and synthetic fixtures.
+
 ## Ingestion order
 
 1. **French library and Shiller → `returnSeries`** (needs contract change 1). This unblocks Family C entirely, with no account and no contact needed.
 2. **Daily forward listing snapshots** from Nasdaq Trader and Tiingo's public ticker list. Cheap, and every day not collected is lost survivorship-free history. Start as soon as possible.
 3. **SEC Financial Statement Data Sets and Form 25 events** through the existing SEC collector. Blocked only on the owner supplying a monitored SEC contact for the User-Agent. Then run the Form 25 coverage audit against Tiingo's `endDate` counts.
-4. **ClinicalTrials.gov daily snapshots and openFDA Drugs@FDA**, after the robots.txt question (owner decision 4) is settled.
-5. **Tiingo free-key price backfill from 2015**, if the owner approves a free account. Ration 500 symbols a month, prioritising delisted and small-cap tickers flagged by Form 25, because that is where survivorship bias concentrates.
-6. **FRED/ALFRED** and **Alpha Vantage `LISTING_STATUS`**: optional, only when a feature or cross-check needs them.
+4. **ClinicalTrials.gov daily snapshots and openFDA Drugs@FDA.**
+5. **Daily forward price capture** for every listed US symbol (from step 2's snapshots) and for UK symbols, from Yahoo or Stooq, on the VPS collector. Prices for tickers that delist later are kept from the first capture onward. Sample Stooq first with ten known US and UK delistings. If it keeps their history, it also becomes a past-history source.
+6. **Tiingo free-key price backfill from 2015**, if the owner approves a free account. Ration 500 symbols a month, prioritising delisted and small-cap tickers flagged by Form 25, because that is where survivorship bias concentrates.
+7. **FRED/ALFRED** and **Alpha Vantage `LISTING_STATUS`**: optional, only when a feature or cross-check needs them.
 
 ## Decisions for the owner
 
-1. **Accept the limits.** Family A cannot be backtested credibly on free data. It becomes a 2015+ descriptive census plus forward paper predictions, with first 5-year outcomes in 2031. Family C is credible now at portfolio level. UK research is out of scope.
+1. **Accept the limits.** Family A cannot be backtested credibly on free data. It becomes a 2015+ descriptive census plus forward paper predictions, with first 5-year outcomes in 2031. Family C is credible now at portfolio level. UK work is forward collection only. Scraping more sites does not change this: the sites found so far drop delisted tickers or are unverified.
 2. **Free accounts (Group 2).** Approve or refuse a free Tiingo key, the only free source of individual prices, and optionally a FRED key. The owner creates any account. Twenty never creates accounts or enters credentials.
 3. **SEC contact.** Supply a genuine monitored contact for the SEC User-Agent, kept out of Git. Without it, EDGAR returns `403`, as it did during this review.
-4. **ClinicalTrials.gov.** Its robots.txt disallows `/api/` for every user agent, while the API is documented for programmatic use. Choose between treating the documented API as permitted (the API is the intended route; robots.txt typically governs crawlers), or asking NLM first and holding Family B collection until it answers. The scraping policy leans towards asking.
+4. **VPS account.** Oracle Cloud sign-up requires card verification even for Always Free resources (see [collector hosting](#collector-hosting)). Only the owner can do this, and it is the one place a card is involved.
 5. **Contract change.** Approve adding `returnSeries` (and later a trial-record kind) to the data contract.
 
 ## Paid options reviewed and set aside
