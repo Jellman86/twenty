@@ -11,11 +11,23 @@ public sealed record SetupRequest(string? SetupCode, string? Username, string? P
 public sealed record LoginRequest(string? Username, string? Password);
 public sealed record PasswordRequest(string? CurrentPassword, string? NewPassword);
 
-// Every endpoint requires the operator session unless it opts out with AllowAnonymous.
+// Every endpoint requires the operator session unless it opts out with AllowAnonymous, or sign-in is switched off.
 public static class AuthModule
 {
     public const string StampClaim = "twenty:stamp";
     public const string RateLimitPolicy = "auth";
+
+    /// <summary>TWENTY_AUTH=off removes the sign-in requirement. It is refused while a live broker credential is configured.</summary>
+    public static bool Disabled(IConfiguration configuration)
+    {
+        var value = (configuration["TWENTY_AUTH"] ?? "on").Trim().ToLowerInvariant();
+        if (value is not ("on" or "off")) throw new AuthException("auth-setting-invalid");
+        if (value == "on") return false;
+        var live = string.Equals(configuration["TWENTY_T212_ENVIRONMENT"]?.Trim(), "live", StringComparison.OrdinalIgnoreCase);
+        var credentials = new[] { "TWENTY_T212_KEY", "TWENTY_T212_SECRET", "TWENTY_T212_KEY_FILE", "TWENTY_T212_SECRET_FILE" }.Any(k => !string.IsNullOrWhiteSpace(configuration[k]));
+        if (live && credentials) throw new AuthException("auth-required-for-live-broker");
+        return true;
+    }
 
     public static AccountStore Add(WebApplicationBuilder builder, string root, int? iterations = null, TimeProvider? clock = null)
     {
@@ -41,7 +53,8 @@ public static class AuthModule
                 { context.RejectPrincipal(); await context.HttpContext.SignOutAsync(CookieAuthenticationDefaults.AuthenticationScheme); }
             };
         });
-        builder.Services.AddAuthorizationBuilder().SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
+        if (Disabled(builder.Configuration)) builder.Services.AddAuthorization();
+        else builder.Services.AddAuthorizationBuilder().SetFallbackPolicy(new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build());
         builder.Services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = 429;
@@ -52,15 +65,21 @@ public static class AuthModule
         return store;
     }
 
-    public static void Map(IEndpointRouteBuilder endpoints, AccountStore store)
+    public static void Map(IEndpointRouteBuilder endpoints, AccountStore store, bool disabled = false)
     {
         var auth = endpoints.MapGroup("/api/auth");
+        if (disabled)
+        {
+            auth.MapGet("/state", () => new { authenticated = true, username = "operator", setupRequired = false, passwordChangedAt = (DateTimeOffset?)null, authDisabled = true });
+            return;
+        }
         auth.MapGet("/state", (ClaimsPrincipal user) => new
         {
             authenticated = user.Identity?.IsAuthenticated == true,
             username = user.Identity?.IsAuthenticated == true ? user.Identity.Name : null,
             setupRequired = store.SetupRequired,
             passwordChangedAt = user.Identity?.IsAuthenticated == true ? store.Account?.PasswordChangedAt : null,
+            authDisabled = false,
         }).AllowAnonymous();
         auth.MapPost("/setup", async (SetupRequest request, HttpContext context) =>
         {

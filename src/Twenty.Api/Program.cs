@@ -77,7 +77,9 @@ app.UseStaticFiles();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
-if (accounts.SetupRequired)
+var signInDisabled = AuthModule.Disabled(builder.Configuration);
+if (signInDisabled) app.Logger.LogWarning("Sign-in is OFF (TWENTY_AUTH=off). Anyone who can reach this address can use the app; keep the route private.");
+else if (accounts.SetupRequired)
 {
     if (string.IsNullOrWhiteSpace(builder.Configuration["TWENTY_SETUP_CODE"]))
         app.Logger.LogWarning("No operator account exists. One-time setup code: {SetupCode}. It is replaced on each restart until setup completes.", accounts.SetupCode);
@@ -85,7 +87,7 @@ if (accounts.SetupRequired)
 }
 app.MapGet("/health/live", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 app.MapGet("/health/ready", () => Results.Ok(new { status = "ready", mode = "research" })).AllowAnonymous();
-AuthModule.Map(app, accounts);
+AuthModule.Map(app, accounts, signInDisabled);
 CollectorModule.Map(app, collection, captures);
 ExecutionPolicy? DisplayPolicy() { try { return execution.Policy(); } catch (ResearchException) { return null; } }
 app.MapGet("/api/meta", () =>

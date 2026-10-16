@@ -5,7 +5,7 @@
   import Login from './Login.svelte';
   import Portfolio from './Portfolio.svelte';
   import Settings from './Settings.svelte';
-  type AuthState = { authenticated: boolean; username: string | null; setupRequired: boolean; passwordChangedAt: string | null };
+  type AuthState = { authenticated: boolean; username: string | null; setupRequired: boolean; passwordChangedAt: string | null; authDisabled?: boolean };
   let auth = $state<AuthState | null>(null);
   let authError = $state(false);
   type Point = { year: number; contributions: number; balance: number };
@@ -204,7 +204,7 @@
       {:else if section === 'portfolio'}
         <Portfolio />
       {:else if section === 'settings'}
-        <Settings username={auth.username ?? ''} passwordChangedAt={auth.passwordChangedAt} onSignOut={() => void checkAuth()} />
+        <Settings username={auth.username ?? ''} passwordChangedAt={auth.passwordChangedAt} authDisabled={auth.authDisabled === true} onSignOut={() => void checkAuth()} />
       {:else if section === 'execution'}
     <ExecutionLab />
     {:else if section === 'workbench'}

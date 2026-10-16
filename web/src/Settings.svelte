@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  let { username, passwordChangedAt, onSignOut }: { username: string; passwordChangedAt: string | null; onSignOut: () => void } = $props();
+  let { username, passwordChangedAt, authDisabled = false, onSignOut }: { username: string; passwordChangedAt: string | null; authDisabled?: boolean; onSignOut: () => void } = $props();
   type Runtime = { configured: boolean; enabled: boolean; automatic: boolean; environment: string; monthlyAllowanceGbp: number | null; credentialsConfigured: boolean; paused: boolean; configurationError: string | null; demoReceipts: { synthetic: boolean }[] };
   type Meta = { commit: string; dataset: string; mode: string };
   type Source = { id: string; title: string; defaultHost: string; cadenceHours: number; collectedHere: boolean; lastSuccessAt: string | null; lastAttemptAt: string | null; pausedUntil: string | null; lastError: string | null; observations: number; lastCollector: string | null };
@@ -82,12 +82,19 @@
     <h1>Account, execution<br /><em>and deployment.</em></h1>
     <p class="intro">Credentials and the execution policy live in private files on the server.<br class="desktop-break" /> They are shown here, never typed here.</p>
   </div>
-  <div class="mode-stamp"><span>SIGNED IN AS</span><strong>{username}</strong><small>{passwordChangedAt ? `Password set ${new Date(passwordChangedAt).toLocaleDateString('en-GB')}` : ''}</small></div>
+  <div class="mode-stamp"><span>{authDisabled ? 'SIGN-IN' : 'SIGNED IN AS'}</span><strong>{authDisabled ? 'Off' : username}</strong><small>{passwordChangedAt ? `Password set ${new Date(passwordChangedAt).toLocaleDateString('en-GB')}` : ''}</small></div>
 </div>
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 {#if notice}<p class="notice" role="status">{notice}</p>{/if}
 
 <div class="bottom-grid settings-grid">
+  {#if authDisabled}
+  <section class="panel compact" aria-labelledby="account-title">
+    <p class="eyebrow">ACCOUNT</p>
+    <h2 id="account-title">Sign-in is off</h2>
+    <p>Anyone who can reach this address can use the app, so keep the route private. Turn sign-in back on by removing <code>TWENTY_AUTH=off</code> from the stack in Dockhand. The app refuses to run with sign-in off while a live Trading 212 key is configured.</p>
+  </section>
+  {:else}
   <section class="panel compact" aria-labelledby="account-title">
     <p class="eyebrow">ACCOUNT</p>
     <h2 id="account-title">Change password</h2>
@@ -101,6 +108,7 @@
     <p class="dataset-note">Changing the password signs out every other device. Five wrong passwords lock sign-in for 15 minutes.</p>
     <button class="secondary" onclick={() => void signOut()}>Sign out</button>
   </section>
+  {/if}
 
   <section class="panel compact" aria-labelledby="execution-title">
     <p class="eyebrow">EXECUTION</p>

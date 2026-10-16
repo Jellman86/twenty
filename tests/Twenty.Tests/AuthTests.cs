@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Twenty.Api.Auth;
 
@@ -91,6 +92,23 @@ public sealed class AuthTests
         finally { Directory.Delete(root, true); }
     }
 
+    [Fact]
+    public async Task SignInCanBeSwitchedOffButNotWithALiveBrokerKey()
+    {
+        await using var f = await Host.Start(true, ("TWENTY_AUTH", "off"), ("TWENTY_T212_ENVIRONMENT", "demo"), ("TWENTY_T212_KEY", "k"), ("TWENTY_T212_SECRET", "s"));
+        Assert.Equal(HttpStatusCode.OK, (await f.Client.GetAsync("/api/private")).StatusCode);
+        var state = await f.Client.GetFromJsonAsync<Dictionary<string, object>>("/api/auth/state");
+        Assert.Equal("True", state!["authDisabled"].ToString());
+
+        static bool Disabled(params (string Key, string Value)[] values) => AuthModule.Disabled(
+            new Microsoft.Extensions.Configuration.ConfigurationBuilder().AddInMemoryCollection(values.Select(v => new KeyValuePair<string, string?>(v.Key, v.Value))).Build());
+        Assert.False(Disabled());
+        Assert.True(Disabled(("TWENTY_AUTH", "off"), ("TWENTY_T212_ENVIRONMENT", "live")));
+        Assert.Equal("auth-required-for-live-broker", Assert.Throws<AuthException>(() =>
+            Disabled(("TWENTY_AUTH", "off"), ("TWENTY_T212_ENVIRONMENT", "live"), ("TWENTY_T212_KEY", "k"))).Code);
+        Assert.Equal("auth-setting-invalid", Assert.Throws<AuthException>(() => Disabled(("TWENTY_AUTH", "maybe"))).Code);
+    }
+
     private static async Task<string?> Error(HttpResponseMessage response) =>
         (await response.Content.ReadFromJsonAsync<Dictionary<string, object>>())?["error"]?.ToString();
 
@@ -112,20 +130,21 @@ public sealed class AuthTests
         public required string Root { get; init; }
         private readonly List<HttpClient> clients = [];
 
-        public static async Task<Host> Start(bool insecure = true)
+        public static async Task<Host> Start(bool insecure = true, params (string Key, string Value)[] settings)
         {
             var root = Path.Combine(Path.GetTempPath(), "twenty-auth-" + Guid.NewGuid().ToString("N"));
             var builder = WebApplication.CreateBuilder();
             builder.Logging.ClearProviders(); builder.WebHost.UseUrls("http://127.0.0.1:0");
             builder.Configuration["TWENTY_SETUP_CODE"] = Code;
             builder.Configuration["TWENTY_INSECURE_COOKIES"] = insecure ? "true" : "false";
+            foreach (var (key, value) in settings) builder.Configuration[key] = value;
             var clock = new ManualClock();
             var accounts = AuthModule.Add(builder, root, iterations: 1000, clock: clock);
             var app = builder.Build();
             app.UseAuthentication(); app.UseAuthorization(); app.UseRateLimiter();
             app.MapGet("/health", () => "ok").AllowAnonymous();
             app.MapGet("/api/private", () => "secret");
-            AuthModule.Map(app, accounts);
+            AuthModule.Map(app, accounts, AuthModule.Disabled(builder.Configuration));
             await app.StartAsync();
             var host = new Host { App = app, Accounts = accounts, Clock = clock, Root = root };
             host.Client = host.NewClient();
