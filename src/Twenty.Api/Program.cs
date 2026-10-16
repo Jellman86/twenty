@@ -2,6 +2,7 @@ using Twenty.Core;
 using Twenty.Core.Research;
 using Twenty.Research;
 using Twenty.Api.Execution;
+using Twenty.Api.Auth;
 
 if (args.Contains("--health-check"))
 {
@@ -27,6 +28,7 @@ if (args.Length == 2 && args[0] == "--import-panel")
     catch (Exception error) when (error is ResearchException or IOException or UnauthorizedAccessException)
     { Console.Error.WriteLine("Panel import rejected; source files were not registered."); store.Dispose(); return 1; }
 }
+var accounts = AuthModule.Add(builder, root);
 var ledger = new PaperLedger(store);
 builder.Services.AddSingleton(ledger);
 var broker = BrokerConfiguration.Create(builder.Configuration, store.Root);
@@ -66,8 +68,18 @@ app.Use(async (context, next) =>
 });
 app.UseDefaultFiles();
 app.UseStaticFiles();
-app.MapGet("/health/live", () => Results.Ok(new { status = "ok" }));
-app.MapGet("/health/ready", () => Results.Ok(new { status = "ready", mode = "research" }));
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseRateLimiter();
+if (accounts.SetupRequired)
+{
+    if (string.IsNullOrWhiteSpace(builder.Configuration["TWENTY_SETUP_CODE"]))
+        app.Logger.LogWarning("No operator account exists. One-time setup code: {SetupCode}. It is replaced on each restart until setup completes.", accounts.SetupCode);
+    else app.Logger.LogWarning("No operator account exists. Complete setup with the privately configured TWENTY_SETUP_CODE.");
+}
+app.MapGet("/health/live", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
+app.MapGet("/health/ready", () => Results.Ok(new { status = "ready", mode = "research" })).AllowAnonymous();
+AuthModule.Map(app, accounts);
 ExecutionPolicy? DisplayPolicy() { try { return execution.Policy(); } catch (ResearchException) { return null; } }
 app.MapGet("/api/meta", () =>
 {
@@ -119,6 +131,7 @@ app.MapPost("/api/execution/broker/capture", async (CancellationToken ct) =>
     catch (Exception error) when (error is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException)
     { return Results.BadRequest(new { error = "broker-capture-unavailable" }); }
 });
+app.MapGet("/api/portfolio", async (CancellationToken ct) => await PortfolioView.Build(broker, brokerLedger, ledger, ct));
 app.MapGet("/api/execution/signals", () => signals.List().Take(100));
 app.MapPost("/api/execution/signals", (SignalRequest request) => signals.Create(request));
 app.MapGet("/api/execution/broker", () =>
@@ -144,7 +157,7 @@ app.MapPost("/api/projections", (ProjectionRequest request) =>
     catch (ArgumentException error) { return Results.BadRequest(new { error = error.Message }); }
 });
 app.MapFallback("/api/{**path}", () => Results.NotFound());
-app.MapFallbackToFile("index.html");
+app.MapFallbackToFile("index.html").AllowAnonymous();
 app.Run();
 return 0;
 

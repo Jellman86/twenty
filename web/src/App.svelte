@@ -1,7 +1,13 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import ResearchLab from './ResearchLab.svelte';
   import ExecutionLab from './ExecutionLab.svelte';
+  import Login from './Login.svelte';
+  import Portfolio from './Portfolio.svelte';
+  import Settings from './Settings.svelte';
+  type AuthState = { authenticated: boolean; username: string | null; setupRequired: boolean; passwordChangedAt: string | null };
+  let auth = $state<AuthState | null>(null);
+  let authError = $state(false);
   type Point = { year: number; contributions: number; balance: number };
   type Scenario = {
     assumptions: {
@@ -86,13 +92,36 @@
       busy = false;
     }
   }
+  async function checkAuth() {
+    try {
+      const response = await fetch('/api/auth/state');
+      if (!response.ok) throw new Error();
+      auth = await response.json();
+      authError = false;
+    } catch {
+      authError = true;
+    }
+  }
   onMount(() => {
     const navigate = () => {
       const hash = location.hash.slice(1);
-      section = ['roadmap', 'evidence', 'workbench', 'execution'].includes(hash) ? hash : 'research';
+      section = ['roadmap', 'evidence', 'workbench', 'execution', 'portfolio', 'settings'].includes(hash) ? hash : 'research';
     };
     navigate();
     window.addEventListener('hashchange', navigate);
+    const expired = () => { if (auth?.authenticated) auth = { ...auth, authenticated: false }; void checkAuth(); };
+    window.addEventListener('twenty:unauthorized', expired);
+    void checkAuth();
+    return () => { window.removeEventListener('hashchange', navigate); window.removeEventListener('twenty:unauthorized', expired); };
+  });
+  // Load the signed-in workspace only after the session is confirmed, and stop polling when it ends.
+  const signedIn = $derived(auth?.authenticated === true);
+  $effect(() => {
+    if (!signedIn) return;
+    // untrack: calculate() reads the scenario inputs, which must not restart the workspace on every keystroke.
+    return untrack(startWorkspace);
+  });
+  function startWorkspace() {
     void calculate();
     fetch('/api/roadmap')
       .then((r) => {
@@ -104,11 +133,17 @@
     const refreshMode = () => { void fetch('/api/meta').then(r=>r.json()).then(data=>{commit=data.commit.slice(0,7);executionMode=data.mode;}).catch(()=>{}); };
     refreshMode();
     const modeTimer=setInterval(refreshMode,15000);
-    return () => { window.removeEventListener('hashchange', navigate);clearInterval(modeTimer); };
-
-  });
+    return () => clearInterval(modeTimer);
+  }
 </script>
 
+{#if !auth}
+  <div class="auth-screen">
+    {#if authError}<p class="error" role="alert">Twenty is not responding. <button class="secondary small-button" onclick={() => void checkAuth()}>Try again</button></p>{:else}<p class="loading">Loading…</p>{/if}
+  </div>
+{:else if !auth.authenticated}
+  <Login setupRequired={auth.setupRequired} onAuthenticated={() => void checkAuth()} />
+{:else}
 <div class="shell">
   <aside>
     <a class="brand" href="#workbench" aria-label="Twenty workbench"
@@ -119,6 +154,7 @@
     <div class="workspace-label">YOUR WORKSPACE</div>
     <nav aria-label="Main navigation">
       <a href="#research" class:active={section === 'research'} aria-current={section === 'research' ? 'page' : undefined}><span class="nav-icon">⌁</span>Growth lab</a>
+      <a href="#portfolio" class:active={section === 'portfolio'} aria-current={section === 'portfolio' ? 'page' : undefined}><span class="nav-icon">◫</span>Portfolio</a>
       <a href="#execution" class:active={section === 'execution'} aria-current={section === 'execution' ? 'page' : undefined}><span class="nav-icon">⇢</span>Decisions & orders</a>
       <a
         href="#workbench"
@@ -138,6 +174,7 @@
         aria-current={section === 'evidence' ? 'page' : undefined}
         ><span class="nav-icon">⌕</span>Evidence</a
       >
+      <a href="#settings" class:active={section === 'settings'} aria-current={section === 'settings' ? 'page' : undefined}><span class="nav-icon">⚙</span>Settings</a>
     </nav>
     <div class="sidebar-note">
       <span class="status-dot"></span>{executionMode}
@@ -152,7 +189,7 @@
     <header>
       <span
         >PROJECT TWENTY <span class="slash">/</span>
-        {section === 'research' ? 'Speculative growth lab' : section === 'execution' ? 'Decisions & orders' : section === 'workbench'
+        {section === 'research' ? 'Speculative growth lab' : section === 'portfolio' ? 'Portfolio' : section === 'settings' ? 'Settings' : section === 'execution' ? 'Decisions & orders' : section === 'workbench'
           ? 'Contribution scenarios'
           : section === 'roadmap'
             ? 'Project roadmap'
@@ -164,6 +201,10 @@
     <main id="main">
       {#if section === 'research'}
         <ResearchLab />
+      {:else if section === 'portfolio'}
+        <Portfolio />
+      {:else if section === 'settings'}
+        <Settings username={auth.username ?? ''} passwordChangedAt={auth.passwordChangedAt} onSignOut={() => void checkAuth()} />
       {:else if section === 'execution'}
     <ExecutionLab />
     {:else if section === 'workbench'}
@@ -510,3 +551,4 @@
     </main>
   </div>
 </div>
+{/if}

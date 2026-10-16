@@ -10,7 +10,7 @@ npm run build --prefix web
 dotnet run --project src/Twenty.Api --no-launch-profile --urls http://127.0.0.1:8788
 ```
 
-Open http://127.0.0.1:8788. For frontend development, run `npm run dev --prefix web` alongside the API; Vite proxies `/api` to port 8788.
+Open http://127.0.0.1:8788 and create the operator account with the setup code printed in the console (set `TWENTY_INSECURE_COOKIES=true` if your browser rejects secure cookies over plain HTTP). For frontend development, run `npm run dev --prefix web` alongside the API; Vite proxies `/api` to port 8788.
 
 Offline dataset validation and point-in-time selection now have a [versioned C# contract](docs/data-contract-v1.md), synthetic fixtures and an immutable archive. Validate the example with `dotnet run --project src/Twenty.Data -- validate fixtures/data/point-in-time.v1.json`. A [bounded SEC filing collector](docs/sec-collector.md) now archives metadata/history and primary reports through an explicit CLI, with offline HTTP tests. Live SEC validation awaits a privately configured monitored contact. The [ECB reference-FX parser and sample audit](docs/ecb-fx.md) are implemented; historical market ingestion and FX availability-policy import remain planned.
 
@@ -28,6 +28,8 @@ The application base is **C#/.NET 10 LTS** with a Svelte 5 workbench and an offl
 - Persisted jobs, cancellation, restart recovery, model/report hashes and all attempted trials.
 - Paired candidate-family uncertainty diagnostics with joint month resampling, disclosed excluded trials and approximate simultaneous mean-active-return bands; [scope and assumptions](docs/search-diagnostics.md).
 - [Registered contribution studies](docs/registered-studies.md): all candidate/cost trials declared before work, common dates and a selection gap, automatic frozen policy choice, and one irreversible final base/stress evaluation with no runner-up substitution.
+- Single-operator sign-in with a first-run setup code, hashed password, lockout and revocable sessions; see [deployment](docs/deployment.md#sign-in).
+- A portfolio page showing what has been bought: the broker's own holdings, costs, values and gains when credentials are configured, plus simulated holdings at booked cost. A settings page for password, sign-out, the persisted pause and the execution policy in force.
 - Contribution-only share buy plans, durable simulated partial fills/cancellation and a persisted pause.
 - Frozen current-month signal scoring and a separately configured broker coordinator with durable intents, unknown-submission protection and fill reconciliation. See [the execution contract](docs/broker-execution.md).
 - GBP contribution/target calculations using annual effective compounding.

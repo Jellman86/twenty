@@ -2,8 +2,11 @@ using Twenty.Core.Execution;
 
 namespace Twenty.Api.Execution;
 
-public sealed record BrokerInstrument(string Ticker, string? Currency = null, string? Isin = null);
-public sealed record BrokerPosition(BrokerInstrument Instrument, decimal Quantity);
+public sealed record BrokerInstrument(string Ticker, string? Currency = null, string? Isin = null, string? Name = null);
+// Valuation fields are display-only: instrument prices are in the instrument currency, wallet amounts in the account currency.
+public sealed record BrokerPositionValue(string Currency, decimal CurrentValue, decimal TotalCost, decimal UnrealizedProfitLoss, decimal? FxImpact = null);
+public sealed record BrokerPosition(BrokerInstrument Instrument, decimal Quantity, decimal? AveragePricePaid = null, decimal? CurrentPrice = null,
+    BrokerPositionValue? WalletImpact = null, DateTimeOffset? CreatedAt = null);
 public sealed record BrokerTax(string Currency, decimal Quantity, string Name);
 public sealed record BrokerWalletImpact(string Currency, decimal NetValue, decimal FxRate, BrokerTax[]? Taxes = null);
 public sealed record BrokerFill(long Id, DateTimeOffset FilledAt, decimal Quantity, decimal Price, string Type, BrokerWalletImpact WalletImpact);

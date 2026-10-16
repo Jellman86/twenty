@@ -1,6 +1,7 @@
-"""Exercise the running image: HTTP contracts, durable training and isolated simulated orders."""
+"""Exercise the running image: HTTP contracts, operator sign-in, durable training and isolated simulated orders."""
 import hashlib
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -8,25 +9,59 @@ import urllib.request
 import uuid
 
 base = sys.argv[1].rstrip("/")
+setup_code = os.environ["TWENTY_SETUP_CODE"]
+cookie = ""
 
 
-def get(path):
-    return urllib.request.urlopen(base + path, timeout=15)
+def headers(extra=None):
+    values = {"Content-Type": "application/json", "X-Twenty-Request": "1"} if extra is None else dict(extra)
+    if cookie:
+        values["Cookie"] = cookie
+    return values
 
 
-def post(path, payload=None, expected=200, headers=None):
-    request = urllib.request.Request(
-        base + path, json.dumps(payload or {}).encode(),
-        headers or {"Content-Type": "application/json", "X-Twenty-Request": "1"},
-    )
+def get(path, expected=200):
+    try:
+        response = urllib.request.urlopen(urllib.request.Request(base + path, headers=headers({})), timeout=15)
+        assert response.status == expected, (path, response.status)
+        return response
+    except urllib.error.HTTPError as error:
+        assert error.code == expected, (path, error.code)
+        return error
+
+
+def post(path, payload=None, expected=200, extra_headers=None, raw=False):
+    request = urllib.request.Request(base + path, json.dumps(payload or {}).encode(), headers(extra_headers))
     try:
         response = urllib.request.urlopen(request, timeout=15)
         assert response.status == expected, (path, response.status)
-        return json.load(response)
     except urllib.error.HTTPError as error:
         assert error.code == expected, (path, error.code)
-        return json.load(error)
+        response = error
+    return response if raw else json.load(response)
 
+
+# The image serves its health checks and static shell anonymously and nothing else.
+get("/api/meta", 401)
+get("/api/portfolio", 401)
+state = json.load(get("/api/auth/state"))
+assert state["setupRequired"] is True and state["authenticated"] is False
+assert post("/api/auth/setup", {"setupCode": "wrong", "username": "smoke", "password": "smoke test password"}, 400)["error"] == "setup-code-invalid"
+password = "smoke test password " + uuid.uuid4().hex
+response = post("/api/auth/setup", {"setupCode": setup_code, "username": "smoke", "password": password}, raw=True)
+set_cookie = response.headers["Set-Cookie"]
+assert "httponly" in set_cookie.lower() and "secure" in set_cookie.lower() and "samesite=strict" in set_cookie.lower()
+cookie = set_cookie.split(";", 1)[0]
+assert post("/api/auth/setup", {"setupCode": setup_code, "username": "other", "password": password}, 409)["error"] == "setup-closed"
+post("/api/auth/logout")
+cookie = ""
+get("/api/meta", 401)
+assert post("/api/auth/login", {"username": "smoke", "password": "wrong password"}, 401)["error"] == "login-invalid"
+cookie = post("/api/auth/login", {"username": "smoke", "password": password}, raw=True).headers["Set-Cookie"].split(";", 1)[0]
+state = json.load(get("/api/auth/state"))
+assert state["authenticated"] is True and state["username"] == "smoke"
+portfolio = json.load(get("/api/portfolio"))
+assert portfolio["brokerConfigured"] is False and portfolio["broker"] is None
 
 assert json.load(get("/health/ready"))["mode"] == "research"
 assert json.load(get("/api/meta"))["brokerConnected"] is False
@@ -75,6 +110,9 @@ filled = post(f'/api/execution/paper/{account["id"]}/reconcile')
 assert filled == post(f'/api/execution/paper/{account["id"]}/reconcile')
 assert all(o["progress"]["status"] == "filled" for o in filled["orders"])
 assert abs(filled["cashGbp"] + sum(o["progress"]["debitGbp"] for o in filled["orders"]) - 20) < 1e-8
+simulated = next(a for a in json.load(get("/api/portfolio"))["simulated"] if a["id"] == account["id"])
+assert simulated["holdings"] and simulated["reservedGbp"] == 0
+assert abs(sum(h["costGbp"] for h in simulated["holdings"]) + simulated["cashGbp"] - 20) < 1e-8
 capabilities = json.load(get("/api/research/capabilities"))
 assert capabilities["broker"]["automaticPurchases"] is False
 assert capabilities["finalHoldoutEnabled"] is False
@@ -147,4 +185,4 @@ assert post(f'/api/research/studies/{study["id"]}/evaluate', {"requestId": study
 assert post(f'/api/research/studies/{study["id"]}/evaluate', {"requestId": str(uuid.uuid4()), "planSha256": study["planSha256"]}, 400)["error"] == "study-holdout-spent"
 events = json.load(get(f'/api/research/studies/{study["id"]}/events'))
 assert [e["kind"] for e in events] == ["registered-before-work", "development-selection-frozen", "holdout-spent-before-work", "final-decision-no-substitute"]
-print("HTTP smoke passed: CPU trials, simulated purchases, candidate-family diagnostics and a finite one-time final study rehearsal")
+print("HTTP smoke passed: operator sign-in, CPU trials, simulated purchases, candidate-family diagnostics and a finite one-time final study rehearsal")
