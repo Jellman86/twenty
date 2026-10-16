@@ -126,7 +126,7 @@ Data/hosting/electricity costs, instrument-specific taxes, foreign withholding, 
 5. Freeze a candidate; collect forward paper predictions and compare them with the same contribution benchmarks.
 6. Validate the implemented Trading 212 coordinator against authenticated demo evidence, genuine current signals and independently inspected account/instrument inputs before enabling real execution.
 
-See [the research pack](docs/research.md) for the critical review of 24 academic studies, source/data decisions, evaluation protocol and roadmap.
+See [the research pack](docs/research.md) for the critical review of 39 academic studies, the [growth and catalyst research plan](docs/growth-research.md), source/data decisions, evaluation protocol and roadmap.
 
 ## Development and releases
 

@@ -6,7 +6,8 @@ Reviewed 15 October 2026. The initial code is a research foundation; none of the
 
 Start with these documents:
 
-- [Critical review of 24 academic studies](literature-review.md): findings, conflicting evidence, relevance to a small ISA, source links and the extent actually reviewed.
+- [Critical review of 39 academic studies](literature-review.md): findings, conflicting evidence, relevance to a small ISA, source links and the extent actually reviewed.
+- [Growth and catalyst research plan](growth-research.md): proposed, unimplemented experiments for multibagger/wipeout scoring, clinical-trial catalysts and stop/trend exposure rules.
 - [ECB reference FX audit](ecb-fx.md): real wire-format samples, explicit cross-rate units and an offline XML parser; historical availability import remains unimplemented.
 - [SEC filing collector](sec-collector.md): bounded collection, immutable originals, first-observation timing, caching and quarantine; live validation pending.
 - [Implemented dataset contract v1](data-contract-v1.md): offline validation, original/revision selection, identity/currency checks and immutable snapshots.

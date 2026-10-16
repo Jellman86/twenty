@@ -1,6 +1,6 @@
 # Academic evidence review
 
-Review date: **15 October 2026**. Scope: 24 studies relevant to a small, long-only GBP ISA, local model training, disclosure analysis and trustworthy backtesting. This is a targeted critical review, not a systematic review or an independent replication.
+Review date: **15 October 2026**. Scope: 24 studies relevant to a small, long-only GBP ISA, local model training, disclosure analysis and trustworthy backtesting. P25–P39 were added on **16 October 2026** for extreme-winner selection, biotechnology catalysts and timing rules. This is a targeted critical review, not a systematic review or an independent replication.
 
 Entries distinguish the material actually inspected. **Sections** means relevant methods/results/discussion passages were inspected; it does not mean every appendix was reproduced. **Abstract** means conclusions are limited to an accessible publisher/author abstract or summary. Publication dates refer to journal issue years where applicable; working-paper versions can differ. No paper supplies a defensible probability that Twenty will turn £20 monthly into £1 million.
 
@@ -206,8 +206,138 @@ The authors document financial/economic memorization and show why historical for
 
 [Author preprint](https://arxiv.org/abs/2504.14765).
 
+## Extreme winners, skewness and lottery demand
+
+Added 16 October 2026 to test the proposed search for 10x/100x stocks. These entries are mostly abstract-level reviews; none was replicated. Read them together: wealth creation is concentrated (P14, P25), but the observable traits most associated with lottery-like upside have low average subsequent returns (P26–P29).
+
+### P25 — Bessembinder, Chen, Choi & Wei (2023)
+
+**Long-Term Shareholder Returns: Evidence from 64,000 Global Stocks**, Financial Analysts Journal. Review: publisher abstract.
+
+Across more than 64,000 global common stocks from 1990 to 2020, most US and non-US stocks compounded below one-month US Treasury bills, and roughly 2.4% of firms account for all net global wealth creation. This extends P14 outside the US. It shows why a concentrated portfolio usually misses the winners; it does not show they are identifiable beforehand. Twenty should measure every multibagger model against broad exposure that holds those winners automatically, and report how often its selections compound below cash.
+
+[Publisher](https://rpc.cfainstitute.org/research/financial-analysts-journal/2023/long-term-shareholder-returns-evidence-from-64000-global-stocks); [RePEc record](https://ideas.repec.org/a/taf/ufajxx/v79y2023i3p33-63.html).
+
+### P26 — Bali, Cakici & Whitelaw (2011)
+
+**Maxing Out: Stocks as Lotteries and the Cross-Section of Expected Returns**, Journal of Financial Economics. Review: abstract and replication abstracts.
+
+Stocks with the largest maximum daily return in the prior month subsequently underperform; the reported lowest-minus-highest decile difference exceeds 1% per month in 1962–2005 US data. Gorman, Akhtar, Durand & Gould (2022, Critical Finance Review) find the effect general but argue overreaction rather than lottery preference explains it. Either reading means a recent violent rise is a warning, not an entry signal. Include MAX as a required feature and a falsification check: a 10x classifier that mostly selects high-MAX stocks is likely selecting the losing pool.
+
+[Summary of publisher abstract](https://academicnewsletter.sufe.edu.cn/info/356984); [Gorman et al. replication](https://nowpublishers.com/article/Details/CFR-0123).
+
+### P27 — Boyer, Mitton & Vorkink (2010)
+
+**Expected Idiosyncratic Skewness**, Review of Financial Studies. Review: publisher/SSRN abstract.
+
+Lagged skewness is a weak forecast, so the authors model expected skewness from other firm traits. Stocks with high expected skewness have lower subsequent Fama-French alphas (about 1.00% per month between extreme quintiles), which also helps explain the low returns of high idiosyncratic-volatility stocks. A model that successfully predicts upside skew can therefore still select negative-alpha stocks. Twenty should score expected return and probability of a large gain separately and never treat the second as the first.
+
+[SSRN](https://papers.ssrn.com/abstract=1541002); [RePEc record](https://ideas.repec.org/a/oup/rfinst/v23y2010i1p169-202.html).
+
+### P28 — Barber, Huang, Odean & Schwarz (2022)
+
+**Attention-Induced Trading and Returns: Evidence from Robinhood Users**, Journal of Finance. Review: publisher abstract.
+
+Concentrated retail buying of high-attention stocks predicts negative abnormal returns: −4.7% over 20 days for the top stocks bought each day, and −19.6% in extreme herding events. Social-media, forum and trending-list data are therefore more plausibly contrary or risk indicators than buy signals. Any scraped attention feature must be collected with first-seen timestamps and tested with both signs; a positive-sign result would need unusually strong evidence.
+
+[RePEc record](https://ideas.repec.org/a/bla/jfinan/v77y2022i6p3141-3190.html); [working paper](https://www.smallake.kr/wp-content/uploads/2020/12/SSRN-id3715077.pdf).
+
+### P29 — Loughran & Ritter (1995)
+
+**The New Issues Puzzle**, Journal of Finance. Review: publisher abstract; Ritter (1991) by citation only.
+
+US firms issuing equity in 1970–1990 earned about 5% a year (IPOs) and 7% a year (seasoned offerings) over the following five years, well below matched non-issuers. Later work links much of the gap to idiosyncratic risk and lottery preference. Young, recently listed growth stories are where many apparent future multibaggers sit, so listing age and recent issuance must be features and evaluation strata. A universe that drops failed IPOs will overstate this segment badly.
+
+[RePEc record](https://ideas.repec.org/a/bla/jfinan/v50y1995i1p23-51.html).
+
+### P30 — Mohanram (2005)
+
+**Separating Winners from Losers among Low Book-to-Market Stocks using Financial Statement Analysis**, Review of Accounting Studies. Review: publisher abstract.
+
+GSCORE combines earnings and cash-flow quality with earnings/growth stability and R&D, capital-expenditure and advertising intensity to separate outcomes among growth (low book-to-market) stocks. Most of the long-short return comes from the short side: it identifies growth stocks to avoid better than stocks to buy. That makes it useful for a long-only account mainly as an exclusion screen. Implement it only with timestamped statements, and test whether it reduces wipeouts in a multibagger candidate pool.
+
+[RePEc record](https://ideas.repec.org/a/spr/reaccs/v10y2005i2d10.1007_s11142-005-1526-4.html).
+
+### P31 — Yartseva (2025 working paper)
+
+**The Alchemy of Multibagger Stocks**, CAFE Working Paper 33, Birmingham City University, listed as submitted. Review: repository listing, seminar abstract and a secondary practitioner summary only; the paper itself was not inspected.
+
+The study reportedly examines 464 US-listed stocks that rose at least tenfold from 2009 to 2024 and extends Fama-French five-factor variables with free-cash-flow yield, margins, interest-rate changes and momentum. Selecting firms by their eventual outcome cannot by itself give the probability that a firm with the same starting traits became a multibagger, or how many such firms failed. Treat its variables as candidate features only. Twenty's version must start from all eligible stocks at each formation date, including later delistings, and report precision against the base rate.
+
+[Repository listing](https://www.open-access.bcu.ac.uk/view/creators/Yartseva=3AAnna=3A=3A.html); [secondary summary](https://www.quant-investing.com/blog/find-next-10-bagger-using-data-driven-screening/).
+
+## Biotechnology and clinical-trial catalysts
+
+### P32 — Wong, Siah & Lo (2019)
+
+**Estimation of Clinical Trial Success Rates and Related Parameters**, Biostatistics. Review: publisher abstract.
+
+Using 406,038 trial-data entries for more than 21,000 compounds from 2000 to 2015, the authors estimate phase-transition and approval probabilities by disease, phase, sponsor and biomarker use. Oncology's estimated probability of approval from phase 1 was 3.4%. These base rates are the prior any biotech model must beat; a pipeline narrative is not a probability. The estimates are historical and partly derived from commercial datasets, so recompute them from the data Twenty can actually obtain.
+
+[PubMed](https://pubmed.ncbi.nlm.nih.gov/29394327/); [MIT repository](https://dspace.mit.edu/handle/1721.1/128480).
+
+### P33 — Lo, Siah & Wong (2019)
+
+**Machine Learning with Statistical Imputation for Predicting Drug Approvals**, Harvard Data Science Review. Review: author abstract.
+
+Models trained on 2003–2015 drug-development and trial data reported AUCs of 0.74, 0.78 and 0.81 for phase 2→3, phase 2→approval and phase 3→approval. The strongest predictors were trial outcomes and status, accrual, duration, prior approval for another indication and sponsor track record. Statistical imputation outperformed complete-case analysis. A good approval classifier is not a trading signal: the market price already embeds an approval expectation. Twenty should compare model probabilities with market-implied expectations, not with zero.
+
+[SSRN](https://papers.ssrn.com/abstract=2973611); [MIT repository](https://dspace.mit.edu/handle/1721.1/112049).
+
+### P34 — Fu, Huang, Xiao, Glass & Sun (2022); Chen et al. (TrialBench)
+
+**HINT: Hierarchical Interaction Network for Clinical Trial Outcome Prediction**, Patterns; **TrialBench: Multi-Modal AI-Ready Clinical Trial Datasets** (preprint, reported accepted by Scientific Data). Review: abstracts.
+
+HINT combines drug-molecule, disease and eligibility-criteria embeddings and reports test F1 of 0.665, 0.620 and 0.847 for phases 1, 2 and 3. TrialBench packages 23 ClinicalTrials.gov-derived datasets across eight tasks, using DrugBank features and commercial TrialTrove approval labels. They provide ready baselines and code, but their labels depend on licensed sources, and their splits are not built around when information became public. Use them for model development only after re-deriving labels and dates that Twenty can reproduce.
+
+[HINT preprint](https://arxiv.org/abs/2102.04252); [TrialBench preprint](https://arxiv.org/abs/2407.00631).
+
+### P35 — Singh, Rocafort, Cai, Siah & Lo (2022); Hwang (2013)
+
+**The Reaction of Sponsor Stock Prices to Clinical Trial Outcomes: An Event Study Analysis**, PLOS ONE; **Stock Market Returns and Clinical Trial Results of Investigational Compounds**, PLOS ONE. Review: abstracts.
+
+Singh et al. examine 13,807 trials from 2000 to 2020. Sponsor type (early biotechnology versus big pharmaceutical) has the largest association with announcement abnormal returns, followed by disease, outcome, phase and accrual, but these properties explain little of the variation. Hwang's small large-company sample (24 compounds) finds median announcement-day abnormal returns of +0.8% for positive and −2.0% for negative results, with negative effects persisting. Trial results are genuine, dateable catalysts with asymmetric downside. Holding a single small biotech through a readout is a concentrated binary bet; position limits and outcome-date exposure must be explicit.
+
+[Singh et al.](https://doi.org/10.1371/journal.pone.0272851); [Hwang](https://doi.org/10.1371/journal.pone.0071966).
+
+## Timing, stop-losses and trend rules
+
+### P36 — Goyal, Welch & Zafirov (2024); Welch & Goyal (2008)
+
+**A Comprehensive 2022 Look at the Empirical Performance of Equity Premium Prediction**, Review of Financial Studies. Review: abstracts.
+
+Re-testing 17 original and 29 later published market-return predictors with data to 2021, the authors find over a third lack in-sample significance and half of the remainder perform poorly out of sample; a few survive. The 2008 paper concluded the equity premium was not predictable for practical purposes. Predicting when to leave and re-enter the market is the weakest-supported part of the proposed system. Any timing rule must beat continuous investment out of sample after costs, and the record must include every rule tried.
+
+[SFI publication record](https://www.sfi.ch/en/publications/a-comprehensive-2022-look-at-the-empirical-performance-of-equity-premium-prediction); [author page](https://ivo-welch.info/home/card-eqpredict.html).
+
+### P37 — Kaminski & Lo (2014)
+
+**When Do Stop-Loss Rules Stop Losses?**, Journal of Financial Markets. Review: author abstract and working-paper summary.
+
+Under a random walk, a simple stop-loss always reduces expected return. Stop-losses add value only when returns are persistent (momentum), which the authors find for certain rules in long-horizon US equity data. The useful object is therefore a measured persistence condition, not a price threshold chosen from a chart. Twenty should test stop rules as pre-registered hypotheses against buy-and-hold, report time out of the market and re-entry costs, and remember that a stop order does not guarantee its trigger price.
+
+[MIT DSpace](https://dspace.mit.edu/entities/publication/bb69ca4b-0cdc-487f-831d-63b2e84fafee).
+
+### P38 — Han, Zhou & Zhu (2016 working paper)
+
+**Taming Momentum Crashes: A Simple Stop-Loss Strategy**. Review: SSRN abstract and secondary summaries; reported figures differ between versions.
+
+A 10% stop applied to each position of a monthly long-short momentum portfolio reportedly cuts the worst equal-weighted monthly loss from about −50% to about −11%. The results are gross of the extra trading, apply to a long-short portfolio, and rely on daily monitoring. They support testing per-position stops inside a momentum-style strategy (see P12), not a general claim that stops improve any portfolio.
+
+[Practitioner review](https://alphaarchitect.com/2016/08/taming-the-momentum-roller-coaster-fact-or-fiction/).
+
+### P39 — Moskowitz, Ooi & Pedersen (2012); Hurst, Ooi & Pedersen (2017)
+
+**Time Series Momentum**, Journal of Financial Economics; **A Century of Evidence on Trend-Following Investing**, Journal of Portfolio Management. Review: abstracts and the AQR manuscript summary.
+
+An asset's own past 1–12-month return predicts its near-term return across 58 liquid futures, with partial reversal later; the extended study reports positive trend-following returns in every decade across 67 markets since the 1880s. This is the strongest evidence for rule-based reduction of exposure, but it comes from diversified, leveraged futures portfolios, not single small-cap stocks in an ISA. A long-only, unleveraged trend filter on a broad index is a fair test; a trend rule on one volatile stock is a different, weaker hypothesis.
+
+[AQR manuscript](https://fairmodel.econ.yale.edu/ec439/hurst.pdf); [summary](https://alphaarchitect.com/time-series-momentum-aka-trend-following-the-historical-evidence/).
+
 ## Synthesis and limits
 
 The review supports investigating persistent signals and useful document processing. It does not establish that increased model complexity, faster search, volatility scaling or concentrated selection will improve this account. Those are experimentally separable propositions. Begin with good data and fair benchmarks, then require a learned model to demonstrate incremental value under the same execution restrictions.
+
+The additions sharpen this. Extreme winners are real and dominate wealth creation, but the obvious traits of lottery-like upside predict low average returns, and outcome-selected multibagger studies cannot give a probability. Clinical-trial outcomes are genuinely predictable from public data, but a usable edge requires beating market-implied expectations. Market timing has weak out-of-sample support; stop and trend rules help only under measured persistence. See [the growth and catalyst research plan](growth-research.md).
 
 No paid datasets were purchased, no source code from papers was executed and no published strategy was independently replicated for this review. Full methods/appendix review remains necessary for any candidate promoted to a faithful replication. Research priorities and concrete gates are specified in [the evaluation protocol](evaluation-protocol.md) and [roadmap](roadmap.md).
