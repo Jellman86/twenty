@@ -35,7 +35,7 @@ Before selecting a vendor, obtain a sample and written documentation sufficient 
 
 Audit examples must include a delisting, merger, dividend, split, restatement, reporting delay and symbol change; compare with primary announcements. Benchmark prices need the same currency/distribution conventions. Cross-check sampled returns, not merely closing-price agreement on one famous surviving company.
 
-**No primary full-market price provider is selected yet.** A provider recommendation awaiting the owner's budget decision is in [market-data selection](market-data-selection.md). Public documentation narrows the candidates; it cannot settle contractual rights, completeness or the cost of the exact package. Until then, fixed-survivor or free exploratory datasets must be labelled exploratory and cannot support a claim of strategy profitability.
+**No primary full-market price provider is selected yet.** The owner has since ruled out paid data; the free-sources selection and its limits are in [market-data selection](market-data-selection.md). Public documentation narrows the candidates; it cannot settle contractual rights, completeness or the cost of the exact package. Until then, fixed-survivor or free exploratory datasets must be labelled exploratory and cannot support a claim of strategy profitability.
 
 ## Collection contract
 
