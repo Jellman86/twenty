@@ -71,3 +71,14 @@ public sealed class PortfolioTests
         public Task<bool> RequestCancel(long id, CancellationToken ct) => throw new NotSupportedException();
     }
 }
+
+public sealed class BrokerReadFailureTests
+{
+    [Theory]
+    [InlineData(System.Net.HttpStatusCode.Unauthorized, "broker-auth-rejected")]
+    [InlineData(System.Net.HttpStatusCode.Forbidden, "broker-permission-denied")]
+    [InlineData(System.Net.HttpStatusCode.TooManyRequests, "broker-rate-limited")]
+    [InlineData(System.Net.HttpStatusCode.BadGateway, "broker-read-unavailable")]
+    public void ReadFailuresSayWhetherTheKeyOrTheServiceIsAtFault(System.Net.HttpStatusCode status, string code) =>
+        Assert.Equal(code, Twenty.Api.Execution.Trading212Client.ReadFailure(status));
+}

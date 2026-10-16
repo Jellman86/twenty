@@ -16,6 +16,7 @@ if (args.Contains("--health-check"))
 var builder = WebApplication.CreateBuilder(args);
 var root = builder.Configuration["TWENTY_DATA_ROOT"] ?? Path.Combine(builder.Environment.ContentRootPath, "data", "workspace");
 if (args.Contains("--collector")) return await CollectorModule.RunHeadless(builder.Configuration, root);
+if (args.Contains("--broker-check")) return await BrokerCheck.Run(builder.Configuration);
 var store = ResearchModule.Register(builder.Services, root);
 if (args.Length == 2 && args[0] == "--import-panel")
 {

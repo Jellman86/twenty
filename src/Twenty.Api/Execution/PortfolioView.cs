@@ -37,7 +37,7 @@ public static class PortfolioView
         }
         catch (Exception error) when (error is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException or Twenty.Core.Research.ResearchException)
         {
-            return new(null, "broker-read-unavailable", true, simulated);
+            return new(null, error is Twenty.Core.Research.ResearchException research ? research.Code : "broker-read-unavailable", true, simulated);
         }
     }
 

@@ -25,6 +25,8 @@ Create two private, read-only files outside the checkout and data archive, conta
 | `TWENTY_T212_SECRET_FILE` | Absolute path to the mounted secret file |
 | `TWENTY_DATA_ROOT` | Private writable dataset/run/ledger directory; `/data` in the image |
 
+To prove a credential works without signing in to the web app, run the read-only check inside the container: `docker exec twenty dotnet Twenty.Api.dll --broker-check`. It makes two GET calls (account summary and positions), prints the environment, a masked account number, currency, cash and position count, and places no order. A rejected key reports `broker-auth-rejected`, a missing read permission `broker-permission-denied`.
+
 Use Dockhand's encrypted settings and read-only secret mounts for deployment. Do not add literal credentials to Compose, repository `.env` files or generated Dockhand files. The application returns only a masked account number in the dashboard. Changing environments requires restarting through Dockhand; a demo credential must never silently fall back to live.
 
 ## Inputs needed for a real purchase

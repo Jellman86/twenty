@@ -48,7 +48,7 @@ public sealed class Trading212Client : IBrokerGateway
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct); deadline.CancelAfter(operationTimeout); ct = deadline.Token;
         using var response = await Send(HttpMethod.Get, "/api/v0/equity/account/summary", null, ct);
-        if (!response.IsSuccessStatusCode) throw new ResearchException("broker-read-unavailable");
+        if (!response.IsSuccessStatusCode) throw new ResearchException(ReadFailure(response.StatusCode));
         var summary = await Read<BrokerSummary>(response, ct);
         if (summary.Id <= 0 || string.IsNullOrWhiteSpace(summary.Currency) || summary.Cash is null || summary.Cash.AvailableToTrade < 0)
             throw new ResearchException("broker-schema");
@@ -82,7 +82,7 @@ public sealed class Trading212Client : IBrokerGateway
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct); deadline.CancelAfter(operationTimeout); ct = deadline.Token;
         using var response = await Send(HttpMethod.Get, $"/api/v0/equity/orders/{id}", null, ct);
         if (response.StatusCode == HttpStatusCode.NotFound) return null; // Requires history + fills reconciliation; never infer cancelled/filled.
-        if (!response.IsSuccessStatusCode) throw new ResearchException("broker-read-unavailable");
+        if (!response.IsSuccessStatusCode) throw new ResearchException(ReadFailure(response.StatusCode));
         var order = await Read<BrokerOrder>(response, ct);
         if (order.Id != id) throw new ResearchException("broker-response-mismatch");
         return order;
@@ -149,11 +149,19 @@ public sealed class Trading212Client : IBrokerGateway
             if (!valid) throw new ResearchException("broker-pagination-query");
         }
     }
+    // Distinguish a rejected key or missing permission from an outage, so a bad credential is visible at once.
+    public static string ReadFailure(HttpStatusCode status) => status switch
+    {
+        HttpStatusCode.Unauthorized => "broker-auth-rejected",
+        HttpStatusCode.Forbidden => "broker-permission-denied",
+        HttpStatusCode.TooManyRequests => "broker-rate-limited",
+        _ => "broker-read-unavailable",
+    };
     private async Task<T> Get<T>(string path, CancellationToken ct)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct); deadline.CancelAfter(operationTimeout);
         using var response = await Send(HttpMethod.Get, path, null, deadline.Token);
-        if (!response.IsSuccessStatusCode) throw new ResearchException("broker-read-unavailable");
+        if (!response.IsSuccessStatusCode) throw new ResearchException(ReadFailure(response.StatusCode));
         return await Read<T>(response, deadline.Token);
     }
     private async Task<HttpResponseMessage> Send(HttpMethod method, string path, object? body, CancellationToken ct, string? localIntentId = null)

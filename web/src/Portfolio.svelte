@@ -85,7 +85,7 @@
       <div class="lab-empty"><h3>No holdings yet.</h3><p>The account holds only cash. Purchases appear here after they fill.</p></div>
     {/if}
   {:else if overview?.brokerConfigured}
-    <p class="error">The broker could not be read just now. Its rate limits or a network problem can cause this; refresh in a minute.</p>
+    <p class="error">{overview.brokerError === 'broker-auth-rejected' ? 'Trading 212 rejected the API key. Check it was copied correctly and has not been revoked.' : overview.brokerError === 'broker-permission-denied' ? 'The API key lacks a read permission (account, positions, orders or history).' : 'The broker could not be read just now. Its rate limits or a network problem can cause this; refresh in a minute.'}<small>{overview.brokerError}</small></p>
   {:else if overview}
     <div class="lab-empty"><h3>No broker connected.</h3><p>Add read-only Trading 212 credentials to the private configuration to see real holdings here. See <a class="text-link" href="#settings">Settings</a>.</p></div>
   {/if}
