@@ -10,6 +10,7 @@ WORKDIR /build
 COPY global.json Directory.Build.props ./
 COPY src/Twenty.Core/ src/Twenty.Core/
 COPY src/Twenty.Research/ src/Twenty.Research/
+COPY src/Twenty.Ingestion/ src/Twenty.Ingestion/
 COPY src/Twenty.Api/ src/Twenty.Api/
 COPY fixtures/research/ fixtures/research/
 COPY --from=web /build/src/Twenty.Api/wwwroot/ src/Twenty.Api/wwwroot/

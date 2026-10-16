@@ -51,6 +51,12 @@
       "twenty.core": {
         "type": "Project"
       },
+      "twenty.ingestion": {
+        "type": "Project",
+        "dependencies": {
+          "Twenty.Core": "[1.0.0, )"
+        }
+      },
       "twenty.research": {
         "type": "Project",
         "dependencies": {

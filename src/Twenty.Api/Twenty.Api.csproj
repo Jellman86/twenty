@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Twenty.Core\Twenty.Core.csproj" />
     <ProjectReference Include="../Twenty.Research/Twenty.Research.csproj" />
+    <ProjectReference Include="../Twenty.Ingestion/Twenty.Ingestion.csproj" />
   </ItemGroup>
 
   <PropertyGroup>

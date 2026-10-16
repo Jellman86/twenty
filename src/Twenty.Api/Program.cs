@@ -3,6 +3,7 @@ using Twenty.Core.Research;
 using Twenty.Research;
 using Twenty.Api.Execution;
 using Twenty.Api.Auth;
+using Twenty.Api.Collection;
 
 if (args.Contains("--health-check"))
 {
@@ -14,6 +15,7 @@ if (args.Contains("--health-check"))
 
 var builder = WebApplication.CreateBuilder(args);
 var root = builder.Configuration["TWENTY_DATA_ROOT"] ?? Path.Combine(builder.Environment.ContentRootPath, "data", "workspace");
+if (args.Contains("--collector")) return await CollectorModule.RunHeadless(builder.Configuration, root);
 var store = ResearchModule.Register(builder.Services, root);
 if (args.Length == 2 && args[0] == "--import-panel")
 {
@@ -29,6 +31,8 @@ if (args.Length == 2 && args[0] == "--import-panel")
     { Console.Error.WriteLine("Panel import rejected; source files were not registered."); store.Dispose(); return 1; }
 }
 var accounts = AuthModule.Add(builder, root);
+var collection = CollectorSettings.From(builder.Configuration, root, headless: false);
+var captures = CollectorModule.Add(builder.Services, collection);
 var ledger = new PaperLedger(store);
 builder.Services.AddSingleton(ledger);
 var broker = BrokerConfiguration.Create(builder.Configuration, store.Root);
@@ -43,6 +47,7 @@ builder.Services.AddHostedService<ExecutionWorker>();
 builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = 16384);
 var app = builder.Build();
 app.Lifetime.ApplicationStopped.Register(store.Dispose);
+app.Lifetime.ApplicationStopped.Register(() => captures?.Dispose());
 app.Use(async (context, next) =>
 {
     try
@@ -80,6 +85,7 @@ if (accounts.SetupRequired)
 app.MapGet("/health/live", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
 app.MapGet("/health/ready", () => Results.Ok(new { status = "ready", mode = "research" })).AllowAnonymous();
 AuthModule.Map(app, accounts);
+CollectorModule.Map(app, collection, captures);
 ExecutionPolicy? DisplayPolicy() { try { return execution.Policy(); } catch (ResearchException) { return null; } }
 app.MapGet("/api/meta", () =>
 {

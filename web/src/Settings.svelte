@@ -3,6 +3,10 @@
   let { username, passwordChangedAt, onSignOut }: { username: string; passwordChangedAt: string | null; onSignOut: () => void } = $props();
   type Runtime = { configured: boolean; enabled: boolean; automatic: boolean; environment: string; monthlyAllowanceGbp: number | null; credentialsConfigured: boolean; paused: boolean; configurationError: string | null; demoReceipts: { synthetic: boolean }[] };
   type Meta = { commit: string; dataset: string; mode: string };
+  type Source = { id: string; title: string; defaultHost: string; cadenceHours: number; collectedHere: boolean; lastSuccessAt: string | null; lastAttemptAt: string | null; pausedUntil: string | null; lastError: string | null; observations: number; lastCollector: string | null };
+  type Collection = { role: string; collector: string; receivingRemote: boolean; sources: Source[] };
+  let collection = $state<Collection | null>(null);
+  const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
   let runtime = $state<Runtime | null>(null);
   let meta = $state<Meta | null>(null);
   let current = $state('');
@@ -19,9 +23,10 @@
   const post = (path: string, body: unknown = {}) =>
     fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Twenty-Request': '1' }, body: JSON.stringify(body) });
   async function load() {
-    const [r, m] = await Promise.all([fetch('/api/execution/broker'), fetch('/api/meta')]);
+    const [r, m, c] = await Promise.all([fetch('/api/execution/broker'), fetch('/api/meta'), fetch('/api/ingest/status')]);
     if (r.ok) runtime = await r.json();
     if (m.ok) meta = await m.json();
+    if (c.ok) collection = await c.json();
   }
   async function changePassword(e: SubmitEvent) {
     e.preventDefault();
@@ -113,6 +118,30 @@
     <a class="text-link" href="https://github.com/Jellman86/twenty/blob/dev/docs/broker-execution.md" target="_blank" rel="noreferrer">Execution policy and setup ↗</a>
   </section>
 </div>
+
+<section class="panel lab-results" aria-labelledby="collection-title">
+  <div class="panel-heading">
+    <div><p class="eyebrow">DATA COLLECTION</p><h2 id="collection-title">{!collection ? 'Loading…' : collection.role === 'local' ? `Collecting on ${collection.collector}` : 'Collection off on this instance'}</h2></div>
+    <span class="badge">{collection?.receivingRemote ? 'ACCEPTS REMOTE CAPTURES' : 'NO REMOTE COLLECTORS'}</span>
+  </div>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Source</th><th>Runs here</th><th>Last capture</th><th>Captures</th><th>State</th></tr></thead>
+      <tbody>
+        {#each collection?.sources ?? [] as s}
+          <tr>
+            <td>{s.title}<small>{s.id} · every {s.cadenceHours >= 100 ? 'week' : 'day'} · default {s.defaultHost}</small></td>
+            <td>{s.collectedHere ? 'Yes' : 'No'}</td>
+            <td>{when(s.lastSuccessAt)}{#if s.lastCollector}<small>by {s.lastCollector}</small>{/if}</td>
+            <td>{s.observations}</td>
+            <td class:negative={!!s.lastError}>{s.pausedUntil && s.lastError ? `Paused until ${when(s.pausedUntil)}` : s.lastError ? s.lastError : s.lastSuccessAt ? 'OK' : '—'}{#if s.lastError}<small>{s.lastError}</small>{/if}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+  <p class="dataset-note">Raw files are kept privately on this server, one copy per distinct version, with every check recorded, so an unchanged daily list still counts as evidence for that day. Collection is set with <code>TWENTY_COLLECTOR_ROLE</code>; remote collectors ship here with a private ingest token. See docs/collectors.md.</p>
+</section>
 
 <section class="panel compact settings-about" aria-labelledby="about-title">
   <p class="eyebrow">DEPLOYMENT</p>

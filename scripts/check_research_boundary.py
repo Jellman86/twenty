@@ -30,7 +30,7 @@ with tempfile.TemporaryDirectory(prefix="twenty-boundary-") as temporary:
     root = Path(temporary)
     for name in ("global.json", "Directory.Build.props"):
         shutil.copyfile(source / name, root / name)
-    for project in ("Twenty.Core", "Twenty.Research", "Twenty.Api"):
+    for project in ("Twenty.Core", "Twenty.Research", "Twenty.Ingestion", "Twenty.Api"):
         shutil.copytree(source / "src" / project, root / "src" / project,
                         ignore=shutil.ignore_patterns("bin", "obj", "wwwroot"))
     # No .git is copied, matching Docker's build context; commit metadata is recorded by the host separately.
