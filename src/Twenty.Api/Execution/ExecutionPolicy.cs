@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using Twenty.Api.Research;
+using Twenty.Research;
 using Twenty.Core.Execution;
 using Twenty.Core.Research;
 

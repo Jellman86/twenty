@@ -148,7 +148,8 @@
         "type": "Project",
         "dependencies": {
           "Microsoft.Data.Sqlite": "[10.0.13, )",
-          "Twenty.Core": "[1.0.0, )"
+          "Twenty.Core": "[1.0.0, )",
+          "Twenty.Research": "[1.0.0, )"
         }
       },
       "twenty.core": {
@@ -157,6 +158,13 @@
       "twenty.ingestion": {
         "type": "Project",
         "dependencies": {
+          "Twenty.Core": "[1.0.0, )"
+        }
+      },
+      "twenty.research": {
+        "type": "Project",
+        "dependencies": {
+          "Microsoft.Data.Sqlite": "[10.0.13, )",
           "Twenty.Core": "[1.0.0, )"
         }
       }

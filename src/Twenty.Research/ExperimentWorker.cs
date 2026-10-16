@@ -1,6 +1,8 @@
 using Twenty.Core.Research;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
-namespace Twenty.Api.Research;
+namespace Twenty.Research;
 
 public sealed class ExperimentWorker(ResearchStore store, ILogger<ExperimentWorker> logger) : BackgroundService
 {

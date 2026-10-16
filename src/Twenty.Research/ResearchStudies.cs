@@ -1,11 +1,12 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Twenty.Core.Research;
 
-namespace Twenty.Api.Research;
+namespace Twenty.Research;
 
 public sealed record StudyRequest(string RequestId, string DatasetId, string Name, string Purpose, decimal MonthlyGbp, ResearchCosts Costs);
 public sealed record StudyEvaluationRequest(string RequestId, string PlanSha256);
@@ -22,8 +23,8 @@ public sealed partial class ResearchStore
 {
     private const int MaximumStudies = 16, MaximumStudyPayload = 1024 * 1024;
     private static string JsonHash<T>(T value) => Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(value, Json)));
-    public static string StudyCodeSha256 => Convert.ToHexStringLower(SHA256.HashData(
-        File.ReadAllBytes(typeof(Backtest).Assembly.Location).Concat(File.ReadAllBytes(typeof(ResearchStore).Assembly.Location)).ToArray()));
+    public static string StudyCodeSha256 => ResearchIdentity.Current.Sha256;
+    private static bool StudyCodeMatches(StudyPlan plan) => plan.IdentityScheme == ResearchIdentity.Scheme && plan.CodeSha256 == StudyCodeSha256;
     private static void InitialiseStudies(SqliteConnection db) => Execute(db,
         "CREATE TABLE IF NOT EXISTS studies(id TEXT PRIMARY KEY,request_id TEXT NOT NULL UNIQUE,json TEXT NOT NULL,sha256 TEXT NOT NULL);" +
         "CREATE TABLE IF NOT EXISTS study_events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,study_id TEXT NOT NULL,at TEXT NOT NULL,kind TEXT NOT NULL);" +
@@ -131,7 +132,9 @@ public sealed partial class ResearchStore
             { if (previous.RequestSha256 != requestHash) throw new ResearchException("request-id-conflict"); return previous; }
             if (Studies().Count >= MaximumStudies) throw new ResearchException("study-capacity");
             var panel = Panel(request.DatasetId);
-            var plan = StudyProtocol.Declare(panel, request.MonthlyGbp, request.Costs, request.Purpose, StudyCodeSha256);
+            var identity = ResearchIdentity.Current;
+            var plan = StudyProtocol.Declare(panel, request.MonthlyGbp, request.Costs, request.Purpose, identity.Sha256,
+                identity.Scheme, identity.BuildSdk, identity.Framework, identity.Architecture);
             if (!plan.Synthetic)
             {
                 GuardStudyReservations(panel, plan.Candidates[0].Config);
@@ -171,7 +174,7 @@ public sealed partial class ResearchStore
         }
         using var db = Open(); using var command = db.CreateCommand(); command.CommandText = "SELECT start_date,end_date FROM study_holdout_claims WHERE synthetic=0 AND study_id!=$own";
         command.Parameters.AddWithValue("$own", ownStudy ?? ""); using var reader = command.ExecuteReader();
-        while (reader.Read()) if (Overlap(start, end, DateOnly.ParseExact(reader.GetString(0), "yyyy-MM-dd"), DateOnly.ParseExact(reader.GetString(1), "yyyy-MM-dd")))
+        while (reader.Read()) if (Overlap(start, end, DateOnly.ParseExact(reader.GetString(0), "yyyy-MM-dd", CultureInfo.InvariantCulture), DateOnly.ParseExact(reader.GetString(1), "yyyy-MM-dd", CultureInfo.InvariantCulture)))
             throw new ResearchException("study-holdout-spent");
     }
     private void GuardStudyReservations(MonthlyPanel panel, ExperimentConfig config, string? ownStudy = null)
@@ -191,7 +194,7 @@ public sealed partial class ResearchStore
             if (study.FinalRequestId == request.RequestId) return study;
             if (study.FinalRequestedAt is not null) throw new ResearchException("study-holdout-spent");
             if (study.Status != "candidate-frozen" || study.SelectedCandidateId is null) throw new ResearchException("study-candidate-not-frozen");
-            if (study.Plan.CodeSha256 != StudyCodeSha256) throw new ResearchException("study-code-changed");
+            if (!StudyCodeMatches(study.Plan)) throw new ResearchException("study-code-changed");
             if (!study.Plan.Synthetic) GuardPriorReservedExposure(study.Plan.ReservedStart, study.Plan.ReservedEnd, study.Id);
             var candidate = study.Plan.Candidates.Single(c => c.Id == study.SelectedCandidateId);
             GuardStudyReservations(Panel(study.Plan.DatasetSha256), candidate.Config with { EvaluateHoldout = true }, study.Id);
@@ -202,7 +205,7 @@ public sealed partial class ResearchStore
             if (command.ExecuteScalar() is not null) throw new ResearchException("request-id-conflict");
             command.CommandText = "INSERT INTO study_holdout_claims VALUES($study,$request,$start,$end,$synthetic,$at)";
             command.Parameters.AddWithValue("$study", study.Id);
-            command.Parameters.AddWithValue("$start", study.Plan.ReservedStart.ToString("yyyy-MM-dd")); command.Parameters.AddWithValue("$end", study.Plan.ReservedEnd.ToString("yyyy-MM-dd"));
+            command.Parameters.AddWithValue("$start", study.Plan.ReservedStart.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)); command.Parameters.AddWithValue("$end", study.Plan.ReservedEnd.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
             command.Parameters.AddWithValue("$synthetic", study.Plan.Synthetic ? 1 : 0); command.Parameters.AddWithValue("$at", requestedAt.ToString("O")); command.ExecuteNonQuery();
             InsertStudyRun(db, tx, a); InsertStudyRun(db, tx, b);
             command.CommandText = "INSERT INTO holdout_access VALUES($dataset,$run,$at)";
@@ -228,7 +231,7 @@ public sealed partial class ResearchStore
         var study = Study(run.StudyId) ?? throw new ResearchException("study-not-found");
         var allowed = run.StudyStage?.StartsWith("development-", StringComparison.Ordinal) == true ? study.Status == "development" :
             study.Status == "final-evaluation" && (run.Id == study.FinalBaseRunId || run.Id == study.FinalStressRunId) && study.FinalRequestedAt is not null;
-        if (!allowed || study.Plan.CodeSha256 != StudyCodeSha256)
+        if (!allowed || !StudyCodeMatches(study.Plan))
         {
             Save(run with { Status = "cancelled", CancelRequested = true, FinishedAt = clock.GetUtcNow(), ErrorCode = "study-code-or-state-changed" }, "study-not-started");
             FailStudy(study, "study-code-or-state-changed"); return false;
@@ -246,7 +249,7 @@ public sealed partial class ResearchStore
         if (run.Config != expectedConfig || run.Costs != expectedCosts || run.DatasetId != study.Plan.DatasetSha256 ||
             report.EvaluationStart != (run.Config.EvaluateHoldout ? study.Plan.ReservedStart : study.Plan.DevelopmentStart) ||
             report.EvaluationEnd != (run.Config.EvaluateHoldout ? study.Plan.ReservedEnd : study.Plan.DevelopmentEnd) || report.ReservedPeriodStart != study.Plan.ReservedStart ||
-            report.FeatureVersion != MonthlyPanel.FeatureVersion || study.Plan.CodeSha256 != StudyCodeSha256 || report.Config != run.Config || report.Costs != run.Costs || report.DatasetSha256 != run.DatasetId || report.Synthetic != study.Plan.Synthetic ||
+            report.FeatureVersion != MonthlyPanel.FeatureVersion || !StudyCodeMatches(study.Plan) || report.Config != run.Config || report.Costs != run.Costs || report.DatasetSha256 != run.DatasetId || report.Synthetic != study.Plan.Synthetic ||
             (run.Config.EvaluateHoldout ? report.Scope != "reserved_holdout" || study.FinalRequestedAt is null : report.Scope != "development_walk_forward"))
             throw new ResearchException("study-report-contract");
     }
@@ -272,7 +275,7 @@ public sealed partial class ResearchStore
         {
             try
             {
-                if (study.Plan.CodeSha256 != StudyCodeSha256) { FailStudy(study, "study-code-changed"); continue; }
+                if (!StudyCodeMatches(study.Plan)) { FailStudy(study, "study-code-changed"); continue; }
                 if (study.Status == "candidate-frozen") continue;
                 var runs = ListRuns().Where(r => r.StudyId == study.Id && (study.Status == "development" ? r.StudyStage!.StartsWith("development-", StringComparison.Ordinal) : r.Config.EvaluateHoldout)).ToArray();
                 if (runs.Any(r => r.Status is "cancelled" or "failed" or "interrupted")) { FailStudy(study, "study-trial-incomplete"); continue; }
@@ -311,7 +314,7 @@ public sealed partial class ResearchStore
     {
         if (run.StudyId is null) return;
         var study = Study(run.StudyId) ?? throw new ResearchException("study-not-found");
-        if (study.Plan.CodeSha256 != StudyCodeSha256) throw new ResearchException("execution-study-code-changed");
+        if (!StudyCodeMatches(study.Plan)) throw new ResearchException("execution-study-code-changed");
         if (run.Id != study.FinalBaseRunId || run.ReportSha256 != study.FinalBaseReportSha256 ||
             (live ? study.Status != "forward-candidate" || study.Plan.Synthetic : study.Status is not ("forward-candidate" or "engineering-complete")))
             throw new ResearchException("execution-study-selection");

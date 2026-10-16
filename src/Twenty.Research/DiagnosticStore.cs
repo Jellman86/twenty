@@ -4,7 +4,7 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Twenty.Core.Research;
 
-namespace Twenty.Api.Research;
+namespace Twenty.Research;
 
 public sealed record DiagnosticRequest(string RequestId, string AnchorRunId);
 public sealed record DiagnosticTrial(string RunId, string DatasetId, string Status, string ConfigSha256,

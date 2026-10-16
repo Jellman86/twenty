@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Data.Sqlite;
 using Microsoft.Extensions.Logging.Abstractions;
-using Twenty.Api.Research;
+using Twenty.Research;
 using Twenty.Core.Research;
 
 namespace Twenty.Tests;
@@ -58,6 +58,7 @@ public sealed class StudyWorkflowTests
         Assert.Equal(24, f.Store.ListRuns().Count); Assert.Single(f.Store.Studies());
         Assert.Equal("request-id-conflict", Assert.Throws<ResearchException>(() => f.Store.RegisterStudy(request with { MonthlyGbp = 30 }, "unit")).Code);
         Assert.Equal(study.PlanSha256, Hash(f.Store.StudyPlanJson(study.Id)!));
+        Assert.Equal(ResearchIdentity.Scheme, study.Plan.IdentityScheme); Assert.Equal(ResearchIdentity.Current.BuildSdk, study.Plan.BuildSdk);
         Assert.Equal(study.Plan.DevelopmentEnd.AddMonths(1), study.Plan.ReservedStart);
         Assert.Equal(study.Plan.BaseCosts.MinimumOrderGbp, study.Plan.StressCosts.MinimumOrderGbp);
         Assert.Equal(study.Plan.BaseCosts.BuyRate * 2, study.Plan.StressCosts.BuyRate);
@@ -222,5 +223,14 @@ public sealed class StudyWorkflowTests
         using var evolved = new Fixture(); study = evolved.Register(); RewriteStudy(evolved, study, root => root["plan"]!["futureOptionalField"] = "retain original bytes");
         var plan = evolved.Store.StudyPlanJson(study.Id); evolved.Store.CancelStudy(study.Id);
         Assert.Equal(plan, evolved.Store.StudyPlanJson(study.Id)); Assert.Equal(Hash(plan!), evolved.Store.Study(study.Id)!.PlanSha256);
+    }
+    [Fact]
+    public void LegacyPlansStayReadableButCannotBorrowTheCurrentFingerprint()
+    {
+        using var f = new Fixture(); var study = f.Register();
+        RewriteStudy(f, study, root => root["plan"]!.AsObject().Remove("identityScheme"));
+        var plan = f.Store.StudyPlanJson(study.Id); Assert.Equal("legacy-core-api-assemblies-v1", f.Store.Study(study.Id)!.Plan.IdentityScheme);
+        Assert.Null(f.Store.Claim()); Assert.Equal("study-code-changed", f.Store.Study(study.Id)!.ErrorCode);
+        Assert.Equal(plan, f.Store.StudyPlanJson(study.Id)); Assert.All(f.Store.ListRuns(), r => Assert.Null(r.StartedAt));
     }
 }

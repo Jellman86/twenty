@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
 using System.Text;
 using Twenty.Api.Execution;
-using Twenty.Api.Research;
+using Twenty.Research;
 using Twenty.Core.Execution;
 using Twenty.Core.Research;
 

@@ -5,7 +5,8 @@ namespace Twenty.Core.Research;
 public sealed record StudyCandidate(string Id, ExperimentConfig Config);
 public sealed record StudyPlan(string Version, string DatasetSha256, bool Synthetic, string Purpose, string CodeSha256,
     string AccountInitialisation, string SelectionRule, DateOnly DevelopmentStart, DateOnly DevelopmentEnd, DateOnly ReservedStart, DateOnly ReservedEnd,
-    ResearchCosts BaseCosts, ResearchCosts StressCosts, ImmutableArray<StudyCandidate> Candidates);
+    ResearchCosts BaseCosts, ResearchCosts StressCosts, ImmutableArray<StudyCandidate> Candidates,
+    string IdentityScheme = "legacy-core-api-assemblies-v1", string BuildSdk = "unrecorded", string Framework = "unrecorded", string Architecture = "unrecorded");
 public sealed record StudyCandidateScore(string CandidateId, string BaseRunId, string StressRunId, decimal BaseEndingGbp,
     decimal StressEndingGbp, decimal BaseComparatorGbp, decimal StressComparatorGbp, decimal WorstMarginGbp);
 
@@ -14,7 +15,8 @@ public static class StudyProtocol
 {
     public const string Version = "contribution-study-v1";
     public static readonly ImmutableArray<string> Hypotheses = ["ridge-relative-return", "momentum", "breakout", "upside-tail"];
-    public static StudyPlan Declare(MonthlyPanel panel, decimal monthly, ResearchCosts costs, string purpose, string codeSha)
+    public static StudyPlan Declare(MonthlyPanel panel, decimal monthly, ResearchCosts costs, string purpose, string codeSha,
+        string identityScheme = "legacy-core-api-assemblies-v1", string buildSdk = "unrecorded", string framework = "unrecorded", string architecture = "unrecorded")
     {
         if (purpose != (panel.Synthetic ? "engineering" : "research")) throw new ResearchException("study-purpose-provenance");
         costs.Validate();
@@ -31,7 +33,8 @@ public static class StudyProtocol
         foreach (var candidate in candidates) candidate.Config.Validate(panel);
         return new(Version, panel.Sha256, panel.Synthetic, purpose, codeSha, "Empty portfolio at each development/final window; expanding training; refit at window start and every 12 months; one monthly selection/execution gap before the final window.",
             "Maximise the minimum base/stress ending-wealth margin over the greatest of benchmark, all-asset equal targets and cash; ordinal candidate ID breaks ties. Positive real-data margin nominates only for final research.",
-            panel.Dates[start], panel.Dates[developmentEnd], panel.Dates[panel.Dates.Length - 1 - holdout], panel.Dates[^1], costs, stress, candidates);
+            panel.Dates[start], panel.Dates[developmentEnd], panel.Dates[panel.Dates.Length - 1 - holdout], panel.Dates[^1], costs, stress, candidates,
+            identityScheme, buildSdk, framework, architecture);
     }
     public static StudyCandidateScore Score(string candidateId, string baseRun, string stressRun, BacktestReport baseline, BacktestReport stress)
     {

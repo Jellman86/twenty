@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
-using Twenty.Api.Research;
+using Twenty.Research;
 using Twenty.Core.Research;
 
 namespace Twenty.Api.Execution;

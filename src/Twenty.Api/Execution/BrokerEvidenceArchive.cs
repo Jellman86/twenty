@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
-using Twenty.Api.Research;
+using Twenty.Research;
 using Twenty.Core.Research;
 
 namespace Twenty.Api.Execution;

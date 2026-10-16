@@ -4,7 +4,7 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Twenty.Core.Research;
 
-namespace Twenty.Api.Research;
+namespace Twenty.Research;
 
 public sealed record DatasetEntry(string Id, string Name, string Sha256, bool Synthetic, int Months, int Assets, DateOnly Start, DateOnly End, DateTimeOffset? RegisteredAt = null);
 public sealed record RunRequest(string RequestId, string DatasetId, ExperimentConfig Config, ResearchCosts Costs);

@@ -1,6 +1,6 @@
 using System.Text.Json;
 using Twenty.Api.Execution;
-using Twenty.Api.Research;
+using Twenty.Research;
 using Twenty.Core.Execution;
 using Twenty.Core.Research;
 

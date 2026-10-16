@@ -79,7 +79,7 @@ Intents and reservations commit before transport. A submitting marker commits be
 
 Missing pending/history rows never prove cancellation. A successful cancellation request retains reserves until positive terminal evidence and complete accepted fill quantities arrive. A timeout stays unknown. An operator may bind an independently inspected broker order ID to an unknown intent; one matching price/time row alone is not proof of ownership. No automatic replacement is sent.
 
-Demo receipts require reconciled fills plus matching position readback. They bind the strategy report, both Core **and API/coordinator code**, wallet/research/data contract and instrument-rule contract. Synthetic receipts cannot activate live, and changed rules/code require new compatible evidence. A private one-process workspace lease and one coordinator semaphore prevent concurrent workers sharing the ledger.
+Demo receipts require reconciled fills plus matching position readback. They bind the strategy report, Core, Research and API/coordinator code, exact runtime/architecture, wallet/research/data contract and instrument-rule contract. Synthetic receipts cannot activate live, and changed rules/code require new compatible evidence. Scientific study identity is separately scoped to Core and Research, so an adapter-only correction does not force another final research evaluation. A private one-process workspace lease and one coordinator semaphore prevent concurrent workers sharing the ledger.
 
 ## Validation limits
 

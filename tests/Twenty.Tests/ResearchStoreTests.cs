@@ -1,4 +1,4 @@
-using Twenty.Api.Research;
+using Twenty.Research;
 using Twenty.Core.Research;
 using Microsoft.Data.Sqlite;
 using System.Security.Cryptography;

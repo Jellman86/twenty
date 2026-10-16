@@ -95,7 +95,7 @@ public sealed class BrokerContractTests
     {
         Assert.Null(ExecutionPolicy.Load(null));
         using var f=new ForwardExecutionTests.Fixture();var p=Path.Combine(f.Root,"policy.json");
-        var json=JsonSerializer.Serialize(f.Policy,Twenty.Api.Research.ResearchStore.Json);
+        var json=JsonSerializer.Serialize(f.Policy,Twenty.Research.ResearchStore.Json);
         File.WriteAllText(p,json);Assert.Equal(f.Policy.PolicyHash,ExecutionPolicy.Load(p)!.PolicyHash);
         File.WriteAllText(p,json.Replace("\"syntheticEvidence\":true,",""));
         Assert.Equal("execution-policy-json",Assert.Throws<ResearchException>(()=>ExecutionPolicy.Load(p)).Code);

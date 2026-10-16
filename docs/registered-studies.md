@@ -38,6 +38,14 @@ The final decision applies the same worst-margin screen. A negative/non-positive
 
 The optional broker coordinator accepts a study-bound policy only for that study's selected completed **final-base** report, with the matching study code and appropriate status. Stress, unselected, failed and synthetic-live study paths are rejected. Existing private account/ISA, data, quote/rule, wallet, strategy evidence and genuine-demo requirements still apply. Standalone externally reviewed strategy evidence remains a separate explicit private configuration path; this workflow does not silently create or replace it. No credentials or actual orders are created by study registration/evaluation.
 
+## Versioned code identity
+
+New plans use `research-assemblies-v1`: an ordinal, JSON-framed manifest of the actual Core and Research DLL SHA-256 values. Research includes the worker, bounded input readers through Core, lifecycle, admission rules, service composition and routes. Its compiled resources include the exact dependency lock and build SDK stamp. Repository-wide revision metadata and Source Link are disabled in these two scientific assemblies; the host still records the deployed commit separately. API-only source changes therefore preserve scientific identity, while model, accounting, reader, research or toolchain changes invalidate it. CI compiles both cases and two different revision stamps without opening a holdout.
+
+Plans also record the actual framework and architecture. They are provenance, not enforced scientific compatibility checks or a numerical-parity certificate. A runtime/architecture migration still needs independent CPU/accounting validation; matching artifact hashes alone do not establish identical floating-point outcomes. Execution evidence is more conservative: `execution-assemblies-v2` covers Core, Research, API and the exact runtime/architecture, requiring fresh compatible genuine demo evidence after any of those change.
+
+Plans lacking a scheme remain `legacy-core-api-assemblies-v1`. Original plan bytes/hashes and completed results remain readable; unfinished legacy work cannot borrow the new fingerprint. No plan is relabelled, no spent interval is reopened and a repeated final request returns its original pair. Actual research changes still stop unfinished studies rather than retroactively reinterpreting results.
+
 ## API, persistence and bounds
 
 - `POST /api/research/studies`: request UUID, dataset ID, name, purpose, contribution and base costs. Returns the registered plan; request reuse is idempotent and conflicting reuse fails.

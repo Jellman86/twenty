@@ -2,6 +2,8 @@
 
 Decision date: 15 October 2026. Based on the user's preference for C#/.NET. **Recommended application foundation: .NET 10 LTS.** The first implemented slice is an ASP.NET Core application serving a Svelte 5 + TypeScript + Vite dashboard, alongside the Python research harness. It now exposes native CPU strategy experiments, decimal notional backtests, conditional scenarios and persistent simulated share portfolios alongside contribution/evidence navigation. There is no certified historical dataset or live trading. See [the implemented application](initial-application.md).
 
+The native boundary now has three libraries/hosts: `Twenty.Core` owns data contracts, bounded readers, modelling and accounting; `Twenty.Research` owns persisted studies, workers, diagnostics, research service composition and HTTP admission; `Twenty.Api` hosts those routes and the optional broker coordinator. Research has no reference to the broker host. Scientific study identity covers Core and Research, including the embedded dependency lock and build SDK; execution evidence additionally covers the API and runtime/architecture. This allows an adapter-only fix without reopening a scientific holdout. See [versioned study identity](registered-studies.md#versioned-code-identity).
+
 Microsoft lists .NET 10 as an active LTS release supported until November 2028. The local machine already has the .NET 10.0.302 SDK. At implementation, pin an appropriate supported SDK and keep servicing updates current rather than selecting a preview. [Official support policy](https://dotnet.microsoft.com/en-us/platform/support/policy/dotnet-core).
 
 ## Component responsibilities

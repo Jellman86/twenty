@@ -4,7 +4,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Twenty.Core.Execution;
-using Twenty.Api.Research;
+using Twenty.Research;
 using Twenty.Core.Research;
 
 namespace Twenty.Api.Execution;

@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
 using System.Security.Cryptography;
-using Twenty.Api.Research;
+using Twenty.Research;
 using Twenty.Core.Execution;
 using Twenty.Core.Research;
 
@@ -25,8 +25,8 @@ public sealed class ExecutionCoordinator
         this.ledger = ledger; this.signals = signals; this.research = research; this.broker = broker; this.policySource = policySource;
         this.quoteSource = quoteSource ?? (p => ExecutionQuotes.Load(p.QuotesFile)); this.clock = clock ?? TimeProvider.System;
         quoteArchive = new BrokerEvidenceArchive(research.Root);
-        var core = File.ReadAllBytes(typeof(Backtest).Assembly.Location); var host = File.ReadAllBytes(typeof(ExecutionCoordinator).Assembly.Location);
-        CodeSha256 = Convert.ToHexStringLower(SHA256.HashData(core.Concat(host).ToArray()));
+        CodeSha256 = ResearchIdentity.Digest("execution-assemblies-v2", ResearchIdentity.Artifacts(typeof(Backtest).Assembly, typeof(ResearchStore).Assembly, typeof(ExecutionCoordinator).Assembly),
+            System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription + "/" + System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture);
     }
     public ExecutionPolicy? Policy() => policySource();
     private ExecutionPolicy RequirePolicy()

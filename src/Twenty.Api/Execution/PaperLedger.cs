@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
-using Twenty.Api.Research;
+using Twenty.Research;
 using Twenty.Core.Execution;
 using Twenty.Core.Research;
 
