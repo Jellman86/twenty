@@ -139,7 +139,7 @@ public sealed class DiagnosticStore
                 streams.Add(new(run.Id, run.ReportSha256!, candidate.Select(e => e.PeriodEnd).ToImmutableArray(),
                     candidate.Select(e => (double)e.State.PeriodReturn).ToImmutableArray(), comparators));
             }
-            var result = await Task.Run(() => SearchDiagnostics.Build(streams, deadline.Token), deadline.Token);
+            var result = await Task.Run(() => SearchDiagnostics.Build(streams, deadline.Token, trials.Length), deadline.Token);
             deadline.Token.ThrowIfCancellationRequested();
             attempt = attempt with { Status = "succeeded", FinishedAt = clock.GetUtcNow(), Report = result }; Save(attempt); return attempt;
         }

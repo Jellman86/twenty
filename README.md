@@ -26,7 +26,7 @@ The application base is **C#/.NET 10 LTS** with a Svelte 5 workbench and an offl
 
 - Browser-run C# experiments: relative-return ranking, a deterministic boosted-tree relative-return challenger with fixed declared hyperparameters, momentum, return-index breakout, six-month upside-tail ranking, a half equal-weight core / half momentum core-satellite blend, and declared multi-strategy sleeve blends that split each contribution by percentage across market/model/active sleeves, with explicit full-rebalance or contribution-only allocation. Only matching contribution-only reports can approve the initial buy-only coordinator, and live approval additionally requires a registered-study final run.
 - Persisted jobs, cancellation, restart recovery, model/report hashes and all attempted trials.
-- Paired candidate-family uncertainty diagnostics with joint month resampling, disclosed excluded trials and approximate simultaneous mean-active-return bands; [scope and assumptions](docs/search-diagnostics.md).
+- Paired candidate-family uncertainty diagnostics with joint month resampling, disclosed excluded trials, approximate simultaneous mean-active-return bands, and family-scoped CSCV probability-of-overfitting plus deflated-Sharpe selection estimates; [scope and assumptions](docs/search-diagnostics.md).
 - [Registered contribution studies](docs/registered-studies.md): all candidate/cost trials declared before work, common dates and a selection gap, automatic frozen policy choice, and one irreversible final base/stress evaluation with no runner-up substitution.
 - Single-operator sign-in with a first-run setup code, hashed password, lockout and revocable sessions; see [deployment](docs/deployment.md#sign-in).
 - Free-data collectors that run inside the app on Quark or headless on a remote VPS that ships to Quark: daily US listing snapshots, Tiingo's ticker list, Fama–French factors and Shiller data, kept as private raw captures. See [collectors](docs/collectors.md). The listing snapshots convert offline into [observed listing intervals](docs/listing-intervals.md) — first/last-seen evidence per source, not delisting dates or a certified universe.
@@ -106,7 +106,7 @@ The Python harness excludes the last 24 return intervals from development evalua
 uv run twenty backtest --data data/synthetic.csv --evaluate-holdout
 ```
 
-Results appear in `runs/<run-id>/`. Each run records its configuration before fitting; failed attempts can therefore leave a manifest without a completed report. `runs/experiments.jsonl` records attempts within that output root. Do not delete failed/poor trials during strategy selection or hide trials by changing output roots. The native workbench has scoped candidate-family diagnostics and a registered first-study/final-pair workflow; the Python harness does not. Whole-programme correction, PBO/deflated Sharpe and genuine prospective promotion remain outstanding.
+Results appear in `runs/<run-id>/`. Each run records its configuration before fitting; failed attempts can therefore leave a manifest without a completed report. `runs/experiments.jsonl` records attempts within that output root. Do not delete failed/poor trials during strategy selection or hide trials by changing output roots. The native workbench has scoped candidate-family diagnostics, including family-scoped PBO/deflated-Sharpe estimates, and a registered first-study/final-pair workflow; the Python harness does not. Whole-programme correction and genuine prospective promotion remain outstanding.
 
 ## Costs and limits
 

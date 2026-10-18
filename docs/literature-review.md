@@ -176,7 +176,7 @@ Large-scale factor testing requires a higher evidential hurdle than an isolated 
 
 **The Probability of Backtest Overfitting**, Journal of Computational Finance. Review: author abstract/method framing and publisher issue record.
 
-The framework estimates how choosing an in-sample winner can lead to disappointing relative out-of-sample performance. It motivates keeping all candidate return streams rather than only the best report. Combinatorial evaluation is not a substitute for chronological training or a repair for look-ahead data. Twenty should implement search-aware diagnostics alongside forward evaluation; its current append-only local register is helpful bookkeeping, not a computed probability of overfitting.
+The framework estimates how choosing an in-sample winner can lead to disappointing relative out-of-sample performance. It motivates keeping all candidate return streams rather than only the best report. Combinatorial evaluation is not a substitute for chronological training or a repair for look-ahead data. Twenty implements the CSCV statistic over its recorded compatible family (16 blocks, Sharpe ranking, fractional ranks) since 18 October 2026; the estimate is scoped to that family and is not a whole-programme probability.
 
 [Author manuscript](https://www.davidhbailey.com/dhbpapers/backtest-prob.pdf); [publication record](https://escholarship.org/uc/item/4w1110bb).
 
@@ -184,7 +184,7 @@ The framework estimates how choosing an in-sample winner can lead to disappointi
 
 **The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting and Non-Normality**, Journal of Portfolio Management. Review: author manuscript sections on selection, moments and dependent trials.
 
-The statistic addresses selection across trials and non-normal return distributions. It requires assumptions about trial dependence, sample size and return moments; an opaque effective-trial count can make it misleading. Twenty should disclose both raw and adjusted statistics, retain candidate returns and use dependence-aware uncertainty estimates. It must not interpret a high deflated statistic as a guarantee or as a cure for leaked data. This diagnostic remains unimplemented.
+The statistic addresses selection across trials and non-normal return distributions. It requires assumptions about trial dependence, sample size and return moments; an opaque effective-trial count can make it misleading. Twenty should disclose both raw and adjusted statistics, retain candidate returns and use dependence-aware uncertainty estimates. It must not interpret a high deflated statistic as a guarantee or as a cure for leaked data. Implemented since 18 October 2026 for the recorded family's Sharpe winner, with family, correlation-adjusted (Appendix A.3) and whole-snapshot trial counts reported side by side rather than collapsed into one opaque count.
 
 [Author manuscript](https://www.davidhbailey.com/dhbpapers/deflated-sharpe.pdf); [publication metadata](https://doi.org/10.2139/ssrn.2460551).
 

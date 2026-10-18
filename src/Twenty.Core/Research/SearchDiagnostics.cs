@@ -10,17 +10,18 @@ public sealed record BlockSensitivity(int ExpectedBlockMonths, double ExpectedBl
     ImmutableArray<ActiveReturnInterval> Intervals);
 public sealed record SearchDiagnosticReport(string MethodVersion, string Statistic, int Replicates, int Seed,
     DateOnly FirstPeriodEnd, DateOnly LastPeriodEnd, int Months, int Candidates, int Comparisons,
-    ImmutableArray<BlockSensitivity> Sensitivities, ImmutableArray<string> Limitations);
+    ImmutableArray<BlockSensitivity> Sensitivities, ImmutableArray<string> Limitations, SelectionDiagnostic? Selection = null);
 
-/// <summary>Paired, joint stationary resampling of already recorded development returns. Never fits a model or reads reserved outcomes.</summary>
+/// <summary>Paired, joint stationary resampling of already recorded development returns plus scoped
+/// CSCV/deflated-Sharpe selection estimates. Never fits a model or reads reserved outcomes.</summary>
 public static class SearchDiagnostics
 {
-    public const string Version = "stationary-active-mean-v1";
+    public const string Version = "stationary-active-mean-v2";
     public const int Replicates = 2000, Seed = 212, MaximumCandidates = 64;
     public static readonly ImmutableArray<string> Comparators = ["benchmark", "momentum", "equal_weight", "cash"];
     public static readonly ImmutableArray<int> Blocks = [3, 6, 12];
 
-    public static SearchDiagnosticReport Build(IReadOnlyList<DiagnosticReturns> candidates, CancellationToken ct = default)
+    public static SearchDiagnosticReport Build(IReadOnlyList<DiagnosticReturns> candidates, CancellationToken ct = default, int registeredTrials = 0)
     {
         if (candidates.Count is < 1 or > MaximumCandidates || candidates.Select(c => c.RunId).Distinct(StringComparer.Ordinal).Count() != candidates.Count)
             throw new ResearchException("diagnostic-candidate-count");
@@ -39,10 +40,12 @@ public static class SearchDiagnostics
         var dates = candidates[0].PeriodEnds.Where(d => d >= start && d <= end).ToArray();
         if (dates.Length < 24) throw new ResearchException("diagnostic-common-window-too-short");
         var columns = new List<(string Run, string Comparator, double[] Values)>();
+        var aligned = new List<(string RunId, double[] Returns)>();
         foreach (var c in candidates.OrderBy(c => c.RunId, StringComparer.Ordinal))
         {
             var offset = c.PeriodEnds.IndexOf(dates[0]);
             if (offset < 0 || !c.PeriodEnds.Skip(offset).Take(dates.Length).SequenceEqual(dates)) throw new ResearchException("diagnostic-month-grid");
+            aligned.Add((c.RunId, Enumerable.Range(offset, dates.Length).Select(i => c.Candidate[i]).ToArray()));
             foreach (var name in Comparators)
                 columns.Add((c.RunId, name, Enumerable.Range(offset, dates.Length).Select(i => c.Candidate[i] - c.Comparators[name][i]).ToArray()));
         }
@@ -77,6 +80,7 @@ public static class SearchDiagnostics
                 Quantile(samples[k], .025), Quantile(samples[k], .975), means[k] * 12 - radius, means[k] * 12 + radius)).ToImmutableArray();
             sensitivities.Add(new(block, 1 + (dates.Length - 1d) / block, radius, rows));
         }
+        var selection = SelectionDiagnostics.Build(aligned, registeredTrials > 0 ? registeredTrials : candidates.Count, ct);
         return new(Version, "12 × arithmetic mean of paired net monthly return differences; percentage points, not compound returns or Sharpe",
             Replicates, Seed, dates[0], dates[^1], dates.Length, candidates.Count, columns.Count, sensitivities.ToImmutable(),
             ["Stationary-bootstrap approximation for a fixed recorded candidate family under weak dependence/stationarity; regime changes and limited history can invalidate coverage.",
@@ -84,7 +88,7 @@ public static class SearchDiagnostics
              "Expected block lengths 3, 6 and 12 months are fixed sensitivities, not optimised choices; short histories contain few expected blocks. Monte Carlo quantiles are approximate.",
              "The common calendar window can discard earlier observations. Recorded account paths keep their original portfolio history; cash exposure and earlier contributions can differ.",
              "Resampling existing returns holds fitted models and the research universe fixed; it does not measure refit, data, delisting, execution or full research-programme uncertainty.",
-             "These are retrospective diagnostics, not a preregistered study, a PBO/deflated-Sharpe estimate, a future-wealth probability or approval to trade."]);
+             "These are retrospective diagnostics, not a preregistered study, a future-wealth probability or approval to trade. The selection section adds scoped CSCV-PBO and deflated-Sharpe estimates under its own stated assumptions; neither corrects searches outside this recorded family."], selection);
     }
     private static double Quantile(double[] values, double probability)
     {
