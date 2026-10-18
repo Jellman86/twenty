@@ -4,6 +4,7 @@ using Twenty.Core.Data;
 using Twenty.Ingestion.Sec;
 using Twenty.Ingestion.Fx;
 using Twenty.Ingestion.Capture;
+using Twenty.Ingestion.Listings;
 using Twenty.Ingestion.Returns;
 using Twenty.Ingestion.Tiingo;
 
@@ -28,6 +29,24 @@ try
             if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         }
         Console.WriteLine(JsonSerializer.Serialize(new { valid = true, panelId = files.Id, researchOnly = true, converter = FrenchReturnPanel.VersionFor(set) }));
+        return 0;
+    }
+    if ((args.Length == 5 || args.Length == 7 && args[5] == "--sources") && args[0] == "listing-intervals" && args[1] == "--archive" && args[3] == "--output")
+    {
+        var sourceIds = args.Length == 5 ? ListingIntervals.SupportedSources
+            : System.Collections.Immutable.ImmutableArray.CreateRange(args[6].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        using var archive = new CaptureStore(args[2]);
+        var files = ListingIntervals.Build(archive, sourceIds);
+        var directory = Path.GetFullPath(args[4]); Directory.CreateDirectory(directory);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        foreach (var (suffix, outputBytes) in new[] { (".csv", files.Csv), (".audit.json", files.Audit) })
+        {
+            var path = Path.Combine(directory, files.Id + suffix);
+            if (File.Exists(path)) { if (!File.ReadAllBytes(path).SequenceEqual(outputBytes)) throw new IOException(); continue; }
+            using (var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None)) output.Write(outputBytes);
+            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+        Console.WriteLine(JsonSerializer.Serialize(new { valid = true, intervalId = files.Id, intervals = files.Intervals, converter = ListingIntervals.Version, sources = sourceIds }));
         return 0;
     }
     if (args.Length == 3 && args[0] == "tiingo-check" && args[1] == "--archive" ||
@@ -103,6 +122,7 @@ try
         Console.Error.WriteLine("Usage: Twenty.Data french-panel --archive <captures> --from yyyy-mm-dd --to yyyy-mm-dd --output <private-inbox> [--portfolios industry|size-value25]\n" +
             "       Twenty.Data tiingo-check --archive <private-directory>\n" +
             "       Twenty.Data tiingo-history <SYMBOL> --from yyyy-mm-dd --to yyyy-mm-dd --archive <private-directory> --capture\n" +
+            "       Twenty.Data listing-intervals --archive <captures> --output <private-directory> [--sources nasdaq-listed,nasdaq-other,tiingo-tickers]\n" +
             "       Twenty.Data capture-public --archive <private-directory> --sources <comma-separated-source-ids>\n" +
             "       Twenty.Data validate <dataset.json> [--archive <directory>]\n" +
             "       Twenty.Data sec-inspect <CIK> <submissions.json>\n" +

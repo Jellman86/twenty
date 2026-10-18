@@ -48,4 +48,4 @@ Metadata marks the panel `researchOnly: true` and includes its reason. That flag
 
 ## Remaining stock-data work
 
-Next: sample more delistings and renamed listings; cross-check splits/dividends and terminal outcomes; parse daily listing snapshots; acquire as-filed fundamentals with a genuine monitored SEC contact; then construct a point-in-time stock universe. A free Tiingo key removes an access dependency, not the statistical and accounting acceptance gates. No millionaire probability or profitable strategy is established here.
+Daily listing snapshots now parse into [observed listing intervals](listing-intervals.md) (18 October 2026); coverage compounds from the first capture and cannot be backfilled. Next: sample more delistings and renamed listings against those intervals; cross-check splits/dividends and terminal outcomes; acquire as-filed fundamentals with a genuine monitored SEC contact; then construct a point-in-time stock universe. A free Tiingo key removes an access dependency, not the statistical and accounting acceptance gates. No millionaire probability or profitable strategy is established here.
