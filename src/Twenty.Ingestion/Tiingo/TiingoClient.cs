@@ -11,6 +11,8 @@ namespace Twenty.Ingestion.Tiingo;
 
 public sealed record TiingoHistoryRequest(string Symbol, DateOnly From, DateOnly To);
 public sealed record TiingoHistoryResult(string Symbol, int Rows, DateOnly? First, DateOnly? Last, string CaptureId, string Sha256);
+public sealed record TiingoBar(DateOnly Date, decimal Open, decimal High, decimal Low, decimal Close,
+    decimal AdjClose, decimal Volume, decimal DivCash, decimal SplitFactor);
 public sealed record TiingoQuota(DateTimeOffset LastAttemptAt, string Month, string Day, int DayRequests, long MonthBytes, ImmutableArray<string> Symbols);
 
 /// <summary>Explicit, bounded read-only requests. Captured response bodies exclude request/authentication headers.</summary>
@@ -78,26 +80,34 @@ public sealed partial class TiingoClient(HttpClient http, CaptureStore store, st
     }
     public static IReadOnlyList<DateOnly> ValidateHistory(byte[] bytes, DateOnly from, DateOnly to)
     {
+        var bars = ParseHistory(bytes);
+        if (bars.Any(b => b.Date < from || b.Date > to)) throw new ResearchException("tiingo-history-date");
+        return bars.Select(b => b.Date).ToList();
+    }
+    /// <summary>Parses captured history bytes with the same fail-closed row rules as capture validation, minus the request window.</summary>
+    public static ImmutableArray<TiingoBar> ParseHistory(byte[] bytes)
+    {
         if (bytes.Length is 0 or > 8 * 1024 * 1024) throw new ResearchException("tiingo-response-size");
         try
         {
             using var document = JsonDocument.Parse(bytes, new JsonDocumentOptions { MaxDepth = 8 });
             if (document.RootElement.ValueKind != JsonValueKind.Array || document.RootElement.GetArrayLength() > 20000) throw new ResearchException("tiingo-history-shape");
-            var dates = new List<DateOnly>();
+            var bars = ImmutableArray.CreateBuilder<TiingoBar>();
             foreach (var row in document.RootElement.EnumerateArray())
             {
                 if (row.ValueKind != JsonValueKind.Object || row.EnumerateObject().Select(p => p.Name).Distinct(StringComparer.Ordinal).Count() != row.EnumerateObject().Count() ||
                     !DateTimeOffset.TryParse(row.GetProperty("date").GetString(), CultureInfo.InvariantCulture, DateTimeStyles.None, out var instant) ||
                     instant.Offset != TimeSpan.Zero || instant.TimeOfDay != TimeSpan.Zero) throw new ResearchException("tiingo-history-row");
                 var date = DateOnly.FromDateTime(instant.UtcDateTime);
-                if (date < from || date > to || dates.Count > 0 && date <= dates[^1]) throw new ResearchException("tiingo-history-date");
+                if (bars.Count > 0 && date <= bars[^1].Date) throw new ResearchException("tiingo-history-date");
                 decimal Number(string name) => row.GetProperty(name).TryGetDecimal(out var value) ? value : throw new ResearchException("tiingo-history-number");
                 var open = Number("open"); var high = Number("high"); var low = Number("low"); var close = Number("close");
+                var adjClose = Number("adjClose"); var volume = Number("volume"); var divCash = Number("divCash"); var splitFactor = Number("splitFactor");
                 if (open <= 0 || low <= 0 || high < low || open < low || open > high || close < low || close > high ||
-                    Number("adjClose") <= 0 || Number("volume") < 0 || Number("divCash") < 0 || Number("splitFactor") <= 0) throw new ResearchException("tiingo-history-number");
-                dates.Add(date);
+                    adjClose <= 0 || volume < 0 || divCash < 0 || splitFactor <= 0) throw new ResearchException("tiingo-history-number");
+                bars.Add(new(date, open, high, low, close, adjClose, volume, divCash, splitFactor));
             }
-            return dates;
+            return bars.ToImmutable();
         }
         catch (Exception e) when (e is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
         { throw new ResearchException("tiingo-history-shape"); }

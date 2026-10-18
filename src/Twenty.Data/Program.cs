@@ -49,6 +49,29 @@ try
         Console.WriteLine(JsonSerializer.Serialize(new { valid = true, intervalId = files.Id, intervals = files.Intervals, converter = ListingIntervals.Version, sources = sourceIds }));
         return 0;
     }
+    if (args.Length == 9 && args[0] == "listing-audit" && args[1] == "--intervals" && args[3] == "--archive" && args[5] == "--symbols" && args[7] == "--output")
+    {
+        var intervalsPath = Path.GetFullPath(args[2]);
+        var info = new FileInfo(intervalsPath);
+        if (!info.Exists || info.Length is 0 or > 64L * 1024 * 1024) throw new Twenty.Core.Research.ResearchException("listing-audit-interval-size");
+        var intervalBytes = File.ReadAllBytes(intervalsPath);
+        var intervalId = Path.GetFileNameWithoutExtension(intervalsPath);
+        var symbols = System.Collections.Immutable.ImmutableArray.CreateRange(args[6].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        using var archive = new CaptureStore(args[4]);
+        var files = ListingAudit.Build(intervalBytes, intervalId, archive, symbols);
+        var directory = Path.GetFullPath(args[8]); Directory.CreateDirectory(directory);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        foreach (var (suffix, outputBytes) in new[] { (".csv", files.Csv), (".audit.json", files.Audit) })
+        {
+            var path = Path.Combine(directory, files.Id + suffix);
+            if (File.Exists(path)) { if (!File.ReadAllBytes(path).SequenceEqual(outputBytes)) throw new IOException(); continue; }
+            using (var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None)) output.Write(outputBytes);
+            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+        Console.WriteLine(JsonSerializer.Serialize(new { valid = true, auditId = files.Id, intervalId, symbols = files.Subjects.Length, converter = ListingAudit.Version,
+            subjects = files.Subjects.Select(s => new { s.Symbol, s.TerminalClass, s.Findings }) }));
+        return 0;
+    }
     if (args.Length == 3 && args[0] == "tiingo-check" && args[1] == "--archive" ||
         args.Length == 9 && args[0] == "tiingo-history" && args[2] == "--from" && args[4] == "--to" && args[6] == "--archive" && args[8] == "--capture")
     {
@@ -123,6 +146,7 @@ try
             "       Twenty.Data tiingo-check --archive <private-directory>\n" +
             "       Twenty.Data tiingo-history <SYMBOL> --from yyyy-mm-dd --to yyyy-mm-dd --archive <private-directory> --capture\n" +
             "       Twenty.Data listing-intervals --archive <captures> --output <private-directory> [--sources nasdaq-listed,nasdaq-other,tiingo-tickers]\n" +
+            "       Twenty.Data listing-audit --intervals <interval-id.csv> --archive <tiingo-captures> --symbols AAA,BBB --output <private-directory>\n" +
             "       Twenty.Data capture-public --archive <private-directory> --sources <comma-separated-source-ids>\n" +
             "       Twenty.Data validate <dataset.json> [--archive <directory>]\n" +
             "       Twenty.Data sec-inspect <CIK> <submissions.json>\n" +

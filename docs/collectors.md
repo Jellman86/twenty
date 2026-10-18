@@ -24,7 +24,7 @@ Under `<data>/captures/capture-v1/`:
 - `observations/<source>/<yyyy-mm>.jsonl`: one line per successful check, including unchanged ones (`notModified: true`), with URL, hash, size, time, collector name, and for shipped captures the time Quark received it. An unchanged daily listing is still evidence the symbols were listed that day.
 - `status/<source>.json`: last success, validators for conditional requests, failures and any pause.
 
-Files are owner-only and the store has a single writer. Nothing here goes into Git or the published image. The offline French industry/market converter now produces an explicitly non-executable research panel; see [real-data integration](real-data-milestone.md). Daily listing snapshots now convert offline into [observed listing intervals](listing-intervals.md); Shiller return observations remain unimplemented. The v1 stock observation contract is unchanged.
+Files are owner-only and the store has a single writer. Nothing here goes into Git or the published image. The offline French industry/market converter now produces an explicitly non-executable research panel; see [real-data integration](real-data-milestone.md). Daily listing snapshots now convert offline into [observed listing intervals](listing-intervals.md) and a declared-sample [listing audit](listing-audit.md) against captured Tiingo histories; Shiller return observations remain unimplemented. The v1 stock observation contract is unchanged.
 
 ## Politeness and failure
 
