@@ -48,10 +48,11 @@ doubled-variable stress costs, development windows only, on the synthetic
 demo panel, the synthetic winners/crashes stress panel and the French
 industry-10 GBP research panel (`363ff590…fce6`, 1999–2026, £4,660
 contributed; development 2005-03 to 2024-08). Twelve trials, no selection,
-failures retained. The French size/value-25 panel was not available locally
-and was not rebuilt; the reserved holdout was not evaluated. The benchmark
-row reproduces [sleeve-blend tests](sleeve-blends-2026-10-18.md) exactly
-(12.63% / £22,134), confirming the runner matches that methodology.
+failures retained. The French size/value-25 panel was initially disclosed
+as unavailable locally; a same-day declared extension (below) closed that
+gap, for sixteen trials in total. The reserved holdout was not evaluated.
+The benchmark row reproduces [sleeve-blend tests](sleeve-blends-2026-10-18.md)
+exactly (12.63% / £22,134), confirming the runner matches that methodology.
 
 ## Results (annualised time-weighted return / ending equity, base costs)
 
@@ -96,10 +97,42 @@ Stress costs change nothing in the ordering (ridge 10.96%, tree 10.68%).
 - **Cost of compute is bounded and recorded.** Tree runs took ~10× the
   ridge wall time (1.8s vs 0.1s on the French panel, local CPU); every fold
   used all 60 trees (~620–670 nodes). No accelerator was involved.
-- With these twelve declared trials observed, further tree tuning on the
-  same panels would be search, not evidence. Any future claim needs
-  unseen or forward data, and a declared study version that includes the
-  hypothesis before results exist.
+- With these declared trials observed (sixteen after the extension
+  below), further tree tuning on the same panels would be search, not
+  evidence. Any future claim needs unseen or forward data, and a declared
+  study version that includes the hypothesis before results exist.
+
+## Extension: French size/value 25 (declared before these runs)
+
+The missing second panel was built the same day from fresh local public
+captures (`french-size-value25-gbp-v1`, panel `a82aa6a8…3c88`, same window
+and £4,660). The benchmark row again reproduces the sleeve-blend record
+exactly, so the vintage matches. Four further trials, identical config:
+
+| Candidate | Return | Ending | Max DD |
+|---|---|---|---|
+| Benchmark (comparator) | 12.63% | £22,134 | — |
+| Equal weight (comparator) | 11.66% | £17,390 | — |
+| ridge-relative-return | 11.60% | £18,968 | −18.7% |
+| tree-relative-return | 10.72% | £16,741 | −29.9% |
+
+Stress costs again change nothing in the ordering (ridge 11.53%, tree
+10.66%). The tree trails the ridge on **both** real panels, and its
+industry-panel drawdown advantage does not repeat here (−29.9% vs −18.7%).
+Cross-panel agreement turns "one panel cannot settle this" into a cleaner
+negative: with these five price-derived features, the boosted-tree
+challenger is not an upgrade on either real panel Twenty can currently
+build. Sixteen declared trials are now spent on this comparison; see the
+search warning above.
+
+## Deployment
+
+Commit `1319ac9` was deployed to Quark through Dockhand the same day.
+Preservation was verified against a pre-deploy snapshot (60 runs, 3
+datasets, 7 paper accounts identical; legacy reports load with the new
+fold field absent), and a deployed tree run on the French industry panel
+reproduced the local candidate result exactly (£14,981.56 / 10.75%).
+Details are in the [issue #8 deployment checkpoint](https://github.com/Jellman86/twenty/issues/8#issuecomment-6254885715).
 
 ## Use in the workbench
 
