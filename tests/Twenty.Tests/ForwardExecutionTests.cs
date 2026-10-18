@@ -43,6 +43,18 @@ public sealed class ForwardExecutionTests
         Assert.Equal("signal-report-scope", Assert.Throws<ResearchException>(() =>
             ForwardSignalBuilder.Build(f.Run.Id, f.Run.ReportSha256!, f.Report with { Scope = "unknown" }, f.Panel, f.Panel, f.Clock.Now)).Code);
     }
+    [Fact] public void FrozenForwardSignalScoresWithTheStoredTreeModel()
+    {
+        using var f = new Fixture("tree-relative-return", stress:true);
+        var signal = f.Signals.Create(new(f.Run.Id, f.Dataset.Id));
+        var expected = BoostedTreeModel.Restore(f.Report.Folds[^1].BoostedTree!).Predict(f.Panel.Features(f.Panel.Dates.Length));
+        Assert.Equal(expected, signal.Predictions.Select(p => p.Score));
+        Assert.Equal("tree-relative-return", signal.Hypothesis);
+        Assert.All(signal.Predictions, p => Assert.True(p.FeatureCutoff < p.DecisionDate));
+        var stripped = f.Report with { Folds = f.Report.Folds.SetItem(f.Report.Folds.Length - 1, f.Report.Folds[^1] with { BoostedTree = null }) };
+        Assert.Equal("signal-model-snapshot", Assert.Throws<ResearchException>(() =>
+            ForwardSignalBuilder.Build(f.Run.Id, f.Run.ReportSha256!, stripped, f.Panel, f.Panel, f.Clock.Now)).Code);
+    }
     [Fact] public void SleeveBlendReportsCannotSeedForwardSignalsYet()
     {
         using var f = new Fixture();

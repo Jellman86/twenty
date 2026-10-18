@@ -39,12 +39,17 @@ public static class ForwardSignalBuilder
             "momentum" or "core-satellite" => features.Select(x => x[2]).ToArray(),
             "breakout" => latestPanel.BreakoutScores(latestPanel.Dates.Length),
             "ridge-relative-return" or "upside-tail" => RidgeModel.Restore(snapshot).Predict(features),
+            "tree-relative-return" => BoostedTreeModel.Restore(
+                frozen.Folds[^1].BoostedTree ?? throw new ResearchException("signal-model-snapshot")).Predict(features),
             _ => throw new ResearchException("signal-hypothesis")
         };
         var weights = Backtest.CandidateWeights(frozen.Config, scores, latestPanel.Assets);
         var predictions = latestPanel.Assets.Select((s, i) => new Prediction(decision, cutoff, s, scores[i], weights.GetValueOrDefault(s))).ToImmutableArray();
         string Hash(object value) => Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(value)));
-        var modelHash = Hash(new { snapshot, frozen.Config, frozen.FeatureVersion });
+        // Tree signals bind the tree snapshot that actually scored; other hypotheses keep their existing hash shape.
+        var modelHash = frozen.Config.Hypothesis == "tree-relative-return"
+            ? Hash(new { tree = frozen.Folds[^1].BoostedTree, frozen.Config, frozen.FeatureVersion })
+            : Hash(new { snapshot, frozen.Config, frozen.FeatureVersion });
         var id = Hash(new { runId, reportHash, modelHash, latestPanel.Sha256, decision, predictions });
         return new(id, runId, reportHash, modelHash, latestPanel.Sha256, frozen.FeatureVersion, frozen.Config.Hypothesis,
             decision, cutoff, now, frozen.Synthetic || latestPanel.Synthetic, frozen.Config.MonthlyGbp, frozen.Config.MaximumWeight, predictions, observedAt);

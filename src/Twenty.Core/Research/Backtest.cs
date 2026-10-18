@@ -11,7 +11,7 @@ public sealed record ExperimentConfig(decimal MonthlyGbp = 20m, int TopK = 3, de
     {
         if (MonthlyGbp is < 1 or > 1000 || TopK is < 1 or > 10 || MaximumWeight is <= 0 or > 1 || TrainMonths is < 24 or > 240 ||
             RefitMonths is < 1 or > 24 || HoldoutMonths is < 12 or > 120 || !double.IsFinite(RidgeAlpha) || RidgeAlpha is < 0.01 or > 1000 ||
-            AllocationPolicy is not ("full-rebalance" or "contribution-only") || Hypothesis is not ("ridge-relative-return" or "momentum" or "breakout" or "upside-tail" or "core-satellite" or "sleeve-blend") || ForwardYears is < 1 or > 30 || Seed is < 0 or > 1000000 ||
+            AllocationPolicy is not ("full-rebalance" or "contribution-only") || Hypothesis is not ("ridge-relative-return" or "tree-relative-return" or "momentum" or "breakout" or "upside-tail" or "core-satellite" or "sleeve-blend") || ForwardYears is < 1 or > 30 || Seed is < 0 or > 1000000 ||
             panel.Dates.Length - 1 - HoldoutMonths <= MonthlyPanel.Warmup + TrainMonths + LabelHorizon ||
             DevelopmentStart is { } date && (panel.Dates.IndexOf(date) < MonthlyPanel.Warmup + TrainMonths + LabelHorizon || panel.Dates.IndexOf(date) >= panel.Dates.Length - 1 - HoldoutMonths))
             throw new ResearchException("invalid-experiment-config");
@@ -24,7 +24,7 @@ public sealed record ExperimentConfig(decimal MonthlyGbp = 20m, int TopK = 3, de
 }
 public sealed record EquityObservation(DateOnly DecisionDate, DateOnly PeriodEnd, string Strategy, PortfolioStep State);
 public sealed record Prediction(DateOnly DecisionDate, DateOnly FeatureCutoff, string Symbol, double Score, decimal TargetWeight);
-public sealed record TrainingFold(DateOnly DecisionDate, DateOnly LastLabelEnd, int TrainingMonths, int TrainingRows, RidgeSnapshot Model);
+public sealed record TrainingFold(DateOnly DecisionDate, DateOnly LastLabelEnd, int TrainingMonths, int TrainingRows, RidgeSnapshot Model, BoostedTreeSnapshot? BoostedTree = null);
 public sealed record StrategySummary(string Strategy, decimal EndingEquityGbp, decimal ContributionsGbp, decimal ProfitGbp,
     decimal TradingCostGbp, decimal TradedNotionalGbp, decimal MaxDrawdown, double AnnualisedTimeWeightedReturn,
     double AnnualisedVolatility, double PositiveMonthFraction);
@@ -47,7 +47,7 @@ public static class Backtest
         return Enumerable.Range(0, assets.Length).OrderByDescending(i => scores[i]).ThenBy(i => assets[i], StringComparer.Ordinal).Take(count)
             .ToDictionary(i => assets[i], _ => weight, StringComparer.Ordinal);
     }
-    public static readonly ImmutableArray<string> Sleeves = ["benchmark", "equal_weight", "cash", "momentum", "breakout", "core-satellite", "ridge-relative-return"];
+    public static readonly ImmutableArray<string> Sleeves = ["benchmark", "equal_weight", "cash", "momentum", "breakout", "core-satellite", "ridge-relative-return", "tree-relative-return"];
     /// <summary>Parse "benchmark:0.7,core-satellite:0.3". Fractions must be positive, named once, and sum to 1.
     /// Upside-tail is excluded: its six-month label horizon needs its own training contract.</summary>
     public static ImmutableArray<(string Sleeve, decimal Fraction)> ParseSleeves(string spec)
@@ -80,6 +80,7 @@ public static class Backtest
                 "momentum" or "core-satellite" => CandidateWeights(config with { Hypothesis = sleeve }, Scores(scoresBySleeve, "momentum"), assets),
                 "breakout" => CandidateWeights(config with { Hypothesis = sleeve }, Scores(scoresBySleeve, "breakout"), assets),
                 "ridge-relative-return" => CandidateWeights(config with { Hypothesis = sleeve }, Scores(scoresBySleeve, "ridge-relative-return"), assets),
+                "tree-relative-return" => CandidateWeights(config with { Hypothesis = sleeve }, Scores(scoresBySleeve, "tree-relative-return"), assets),
                 _ => throw new ResearchException("invalid-experiment-config")
             };
             foreach (var (symbol, weight) in sleeveWeights) total[symbol] = total.GetValueOrDefault(symbol) + fraction * weight;
@@ -111,7 +112,9 @@ public static class Backtest
         var equity = ImmutableArray.CreateBuilder<EquityObservation>();
         var predictions = ImmutableArray.CreateBuilder<Prediction>();
         var folds = ImmutableArray.CreateBuilder<TrainingFold>();
-        RidgeModel? model = null;
+        RidgeModel? model = null; BoostedTreeModel? tree = null;
+        var needsTree = config.Hypothesis == "tree-relative-return" ||
+            config.Hypothesis == "sleeve-blend" && ParseSleeves(config.SleeveSpec).Any(s => s.Sleeve == "tree-relative-return");
         for (var t = start; t < stop; t++)
         {
             ct.ThrowIfCancellationRequested();
@@ -123,17 +126,20 @@ public static class Backtest
                 if (config.Hypothesis == "upside-tail" && (y.Count(v => v == 1) < 5 || y.Count(v => v == 0) < 5))
                     throw new ResearchException("tail-insufficient-examples");
                 model = RidgeModel.Fit(x.ToArray(), y.ToArray(), config.RidgeAlpha);
-                folds.Add(new(panel.Dates[t], panel.Dates[training[^1] + config.LabelHorizon], training.Length, x.Count, model.Snapshot));
+                tree = needsTree ? BoostedTreeModel.Fit(x.ToArray(), y.ToArray(), ct) : null;
+                folds.Add(new(panel.Dates[t], panel.Dates[training[^1] + config.LabelHorizon], training.Length, x.Count, model.Snapshot, tree?.Snapshot));
             }
             var features = panel.Features(t);
             Dictionary<string, decimal> candidate; double[] predictionScores;
             if (config.Hypothesis == "sleeve-blend")
             {
                 var momentumScores = features.Select(x => x[2]).ToArray();
-                candidate = BlendWeights(config, panel.Assets, panel.Benchmark, new Dictionary<string, double[]>
+                var sleeveScores = new Dictionary<string, double[]>
                 {
                     ["momentum"] = momentumScores, ["breakout"] = panel.BreakoutScores(t), ["ridge-relative-return"] = model!.Predict(features)
-                });
+                };
+                if (tree is not null) sleeveScores["tree-relative-return"] = tree.Predict(features);
+                candidate = BlendWeights(config, panel.Assets, panel.Benchmark, sleeveScores);
                 predictionScores = panel.Assets.Select(a => (double)candidate.GetValueOrDefault(a)).ToArray();
             }
             else
@@ -142,6 +148,7 @@ public static class Backtest
                 {
                     "momentum" or "core-satellite" => features.Select(x => x[2]).ToArray(),
                     "breakout" => panel.BreakoutScores(t),
+                    "tree-relative-return" => tree!.Predict(features),
                     _ => model!.Predict(features)
                 };
                 candidate = CandidateWeights(config, predictionScores, panel.Assets);
