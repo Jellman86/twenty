@@ -9,12 +9,15 @@ using Twenty.Ingestion.Tiingo;
 
 try
 {
-    if (args.Length == 9 && args[0] == "french-panel" && args[1] == "--archive" && args[3] == "--from" && args[5] == "--to" && args[7] == "--output")
+    if ((args.Length == 9 || args.Length == 11 && args[9] == "--portfolios") && args[0] == "french-panel" && args[1] == "--archive" && args[3] == "--from" && args[5] == "--to" && args[7] == "--output")
     {
         if (!DateOnly.TryParseExact(args[4], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var from) ||
             !DateOnly.TryParseExact(args[6], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var to)) throw new Twenty.Core.Research.ResearchException("return-panel-window");
+        var set = args.Length == 9 || args[10] == "industry" ? FrenchPortfolioSet.Industry10
+            : args[10] == "size-value25" ? FrenchPortfolioSet.SizeValue25
+            : throw new Twenty.Core.Research.ResearchException("french-portfolio-set");
         using var archive = new CaptureStore(args[2]);
-        var files = FrenchReturnPanel.Build(archive, from, to);
+        var files = FrenchReturnPanel.Build(archive, from, to, set);
         var directory = Path.GetFullPath(args[8]); Directory.CreateDirectory(directory);
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         foreach (var (suffix, outputBytes) in new[] { (".csv", files.Csv), (".metadata.json", files.Metadata), (".audit.json", files.Audit) })
@@ -24,7 +27,7 @@ try
             using (var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None)) output.Write(outputBytes);
             if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
         }
-        Console.WriteLine(JsonSerializer.Serialize(new { valid = true, panelId = files.Id, researchOnly = true, converter = FrenchReturnPanel.Version }));
+        Console.WriteLine(JsonSerializer.Serialize(new { valid = true, panelId = files.Id, researchOnly = true, converter = FrenchReturnPanel.VersionFor(set) }));
         return 0;
     }
     if (args.Length == 3 && args[0] == "tiingo-check" && args[1] == "--archive" ||
@@ -97,7 +100,7 @@ try
     }
     if (args.Length is not (2 or 4) || args[0] != "validate" || (args.Length == 4 && args[2] != "--archive"))
     {
-        Console.Error.WriteLine("Usage: Twenty.Data french-panel --archive <captures> --from yyyy-mm-dd --to yyyy-mm-dd --output <private-inbox>\n" +
+        Console.Error.WriteLine("Usage: Twenty.Data french-panel --archive <captures> --from yyyy-mm-dd --to yyyy-mm-dd --output <private-inbox> [--portfolios industry|size-value25]\n" +
             "       Twenty.Data tiingo-check --archive <private-directory>\n" +
             "       Twenty.Data tiingo-history <SYMBOL> --from yyyy-mm-dd --to yyyy-mm-dd --archive <private-directory> --capture\n" +
             "       Twenty.Data capture-public --archive <private-directory> --sources <comma-separated-source-ids>\n" +

@@ -48,23 +48,23 @@ public sealed class NotionalPortfolio
             var floor = before - cash * costs.BuyRate / (1 + costs.BuyRate);
             var slots = Math.Max(0, maximumHoldings - next.Values.Count(v => v > 0));
             var remaining = cash;
-            if (next.Values.All(v => v <= floor * maximumWeight))
+            // Purchase cap only: a holding drifted above maximumWeight gets no further buys
+            // (its budget below is zero), but contributions still buy underweight names.
+            // Cash is already in NAV, so idling it would not reduce the drifted weight either.
+            var eligible = new List<KeyValuePair<string, decimal>>();
+            foreach (var item in weights.Where(w => w.Value > 0))
             {
-                var eligible = new List<KeyValuePair<string, decimal>>();
-                foreach (var item in weights.Where(w => w.Value > 0))
-                {
-                    if (next.GetValueOrDefault(item.Key) <= 0)
-                    { if (slots == 0) continue; slots--; }
-                    eligible.Add(item);
-                }
-                foreach (var (symbol, weight) in eligible.OrderByDescending(w => w.Value).ThenBy(w => w.Key, StringComparer.Ordinal))
-                {
-                    var budget = Math.Min(remaining, Math.Max(0, floor * weight - next.GetValueOrDefault(symbol)));
-                    var notional = budget / (1 + costs.BuyRate);
-                    if (notional <= 0 || notional < costs.MinimumOrderGbp) continue;
-                    target[symbol] = next.GetValueOrDefault(symbol) + notional;
-                    remaining -= notional * (1 + costs.BuyRate);
-                }
+                if (next.GetValueOrDefault(item.Key) <= 0)
+                { if (slots == 0) continue; slots--; }
+                eligible.Add(item);
+            }
+            foreach (var (symbol, weight) in eligible.OrderByDescending(w => w.Value).ThenBy(w => w.Key, StringComparer.Ordinal))
+            {
+                var budget = Math.Min(remaining, Math.Max(0, floor * Math.Min(weight, maximumWeight) - next.GetValueOrDefault(symbol)));
+                var notional = budget / (1 + costs.BuyRate);
+                if (notional <= 0 || notional < costs.MinimumOrderGbp) continue;
+                target[symbol] = next.GetValueOrDefault(symbol) + notional;
+                remaining -= notional * (1 + costs.BuyRate);
             }
         }
         var trades = ImmutableArray.CreateBuilder<NotionalTrade>();
@@ -89,6 +89,22 @@ public sealed class NotionalPortfolio
             var fee = amount * costs.BuyRate;
             cash -= amount + fee; next[symbol] = next.GetValueOrDefault(symbol) + amount;
             trades.Add(new(symbol, "buy", amount, fee));
+        }
+        // Cash reserved for a scaled buy that fell below the minimum funds the remaining
+        // unmet targets instead of idling; this matters most at very small notionals.
+        for (var pass = 0; pass <= wanted.Length; pass++)
+        {
+            var progressed = false;
+            foreach (var (symbol, _) in wanted)
+            {
+                var unmet = Math.Max(0m, target.GetValueOrDefault(symbol) - next.GetValueOrDefault(symbol));
+                var amount = Math.Min(unmet, cash / (1 + costs.BuyRate));
+                if (amount < costs.MinimumOrderGbp || amount <= 0) continue;
+                var fee = amount * costs.BuyRate;
+                cash -= amount + fee; next[symbol] = next.GetValueOrDefault(symbol) + amount;
+                trades.Add(new(symbol, "buy", amount, fee)); progressed = true;
+            }
+            if (!progressed) break;
         }
         // Only decimal residue at the precision limit may be normalised; no economic borrowing.
         if (cash < -0.00000000000000000001m) throw new ResearchException("portfolio-borrowing");

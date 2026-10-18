@@ -25,7 +25,14 @@ public sealed class SignalStore
         var run = research.Find(request.RunId) ?? throw new ResearchException("run-not-found");
         var report = research.Report(run.Id) ?? throw new ResearchException("signal-completed-run-required");
         var observed = research.Datasets().SingleOrDefault(d => d.Id == request.DatasetId)?.RegisteredAt ?? throw new ResearchException("signal-availability-unknown");
-        var signal = ForwardSignalBuilder.Build(run.Id, run.ReportSha256!, report, research.Panel(run.DatasetId), research.Panel(request.DatasetId), clock.GetUtcNow(), observed);
+        var allowReservedHoldout = false;
+        if (report.Scope == "reserved_holdout")
+        {
+            if (run.StudyId is null) throw new ResearchException("signal-report-scope");
+            research.AssertStudyExecutionRun(run, false);
+            allowReservedHoldout = true;
+        }
+        var signal = ForwardSignalBuilder.Build(run.Id, run.ReportSha256!, report, research.Panel(run.DatasetId), research.Panel(request.DatasetId), clock.GetUtcNow(), observed, allowReservedHoldout);
         lock (gate)
         {
             var prior = Find(signal.Id); if (prior is not null) return prior;

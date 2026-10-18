@@ -38,7 +38,8 @@
   let result = $state<Scenario | null>(null);
   let issues = $state<Issue[]>([]);
   let commit = $state('local');
-  let executionMode = $state('Research only');
+  // Never assert the safe mode without evidence: unknown until /api/meta answers.
+  let executionMode = $state('Checking…');
   let busy = $state(false);
   let error = $state('');
   let roadmapError = $state(false);
@@ -130,7 +131,7 @@
       })
       .then((data) => (issues = data))
       .catch(() => (roadmapError = true));
-    const refreshMode = () => { void fetch('/api/meta').then(r=>r.json()).then(data=>{commit=data.commit.slice(0,7);executionMode=data.mode;}).catch(()=>{}); };
+    const refreshMode = () => { void fetch('/api/meta').then(r=>{if(!r.ok)throw new Error();return r.json();}).then(data=>{commit=data.commit.slice(0,7);executionMode=data.mode;}).catch(()=>{executionMode='Unknown — verify on Settings';}); };
     refreshMode();
     const modeTimer=setInterval(refreshMode,15000);
     return () => clearInterval(modeTimer);

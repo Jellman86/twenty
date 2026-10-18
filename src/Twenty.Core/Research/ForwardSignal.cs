@@ -12,9 +12,13 @@ public static class ForwardSignalBuilder
 {
     // Score a frozen model. Never refit on new labels or use the held-out report to pick a replacement.
     public static ForwardSignal Build(string runId, string reportHash, BacktestReport frozen, MonthlyPanel trainingPanel,
-        MonthlyPanel latestPanel, DateTimeOffset now, DateTimeOffset? inputObservedAt = null)
+        MonthlyPanel latestPanel, DateTimeOffset now, DateTimeOffset? inputObservedAt = null, bool allowReservedHoldout = false)
     {
         if (trainingPanel.ResearchOnly || latestPanel.ResearchOnly) throw new ResearchException("signal-research-only-panel");
+        // A reserved-holdout report may only seed a signal when the caller has verified it is an
+        // approved registered-study final; development reports are the ordinary forward-paper path.
+        if (frozen.Scope is not ("development_walk_forward" or "reserved_holdout") ||
+            frozen.Scope == "reserved_holdout" && !allowReservedHoldout) throw new ResearchException("signal-report-scope");
         now = now.ToUniversalTime();
         var observedAt = inputObservedAt ?? now;
         if (observedAt > now) throw new ResearchException("signal-input-availability");
@@ -32,13 +36,12 @@ public static class ForwardSignalBuilder
         var features = latestPanel.Features(latestPanel.Dates.Length);
         var scores = frozen.Config.Hypothesis switch
         {
-            "momentum" => features.Select(x => x[2]).ToArray(),
+            "momentum" or "core-satellite" => features.Select(x => x[2]).ToArray(),
             "breakout" => latestPanel.BreakoutScores(latestPanel.Dates.Length),
             "ridge-relative-return" or "upside-tail" => RidgeModel.Restore(snapshot).Predict(features),
             _ => throw new ResearchException("signal-hypothesis")
         };
-        var weights = Backtest.Rank(scores, latestPanel.Assets, frozen.Config.TopK, frozen.Config.MaximumWeight);
-        if (frozen.Config.Hypothesis == "breakout") weights = weights.Where(x => scores[latestPanel.Assets.IndexOf(x.Key)] > 0).ToDictionary();
+        var weights = Backtest.CandidateWeights(frozen.Config, scores, latestPanel.Assets);
         var predictions = latestPanel.Assets.Select((s, i) => new Prediction(decision, cutoff, s, scores[i], weights.GetValueOrDefault(s))).ToImmutableArray();
         string Hash(object value) => Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(value)));
         var modelHash = Hash(new { snapshot, frozen.Config, frozen.FeatureVersion });

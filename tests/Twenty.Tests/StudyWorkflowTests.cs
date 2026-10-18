@@ -89,6 +89,15 @@ public sealed class StudyWorkflowTests
         Assert.Equal("execution-study-selection", Assert.Throws<ResearchException>(() => f.Store.AssertStudyExecutionRun(f.Store.Find(study.FinalStressRunId!)!, false)).Code);
     }
     [Fact]
+    public void NonStudyRunCannotApproveLiveExecutionButMayRehearseInDemo()
+    {
+        using var f = new Fixture();
+        var ordinary = f.Store.Enqueue(new(Guid.NewGuid().ToString("D"), f.Dataset.Id, new(), new()), "unit");
+        Assert.Null(ordinary.StudyId);
+        f.Store.AssertStudyExecutionRun(ordinary, false);
+        Assert.Equal("execution-study-required", Assert.Throws<ResearchException>(() => f.Store.AssertStudyExecutionRun(ordinary, true)).Code);
+    }
+    [Fact]
     public void ChangedReservedPricesCannotChangeTheDevelopmentChoice()
     {
         using var before = new Fixture(); using var after = new Fixture(finalCollapse: true);

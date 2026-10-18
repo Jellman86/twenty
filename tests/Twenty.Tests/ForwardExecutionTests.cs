@@ -21,15 +21,27 @@ public sealed class ForwardExecutionTests
         f.Clock.Now = f.Clock.Now.AddMonths(1);
         Assert.Equal("signal-current-panel-required", Assert.Throws<ResearchException>(()=>f.Signals.Create(new(f.Run.Id, f.Dataset.Id))).Code);
     }
-    [Theory] [InlineData("momentum")] [InlineData("breakout")] [InlineData("upside-tail")]
+    [Theory] [InlineData("momentum")] [InlineData("breakout")] [InlineData("upside-tail")] [InlineData("core-satellite")]
     public void ForwardScoringRetainsTheSelectedHypothesis(string hypothesis)
     {
         using var f = new Fixture(hypothesis, stress:true);
         var signal = f.Signals.Create(new(f.Run.Id,f.Dataset.Id));
-        if (hypothesis=="momentum") Assert.Equal(f.Panel.Features(f.Panel.Dates.Length).Select(x=>x[2]),signal.Predictions.Select(p=>p.Score));
+        if (hypothesis is "momentum" or "core-satellite") Assert.Equal(f.Panel.Features(f.Panel.Dates.Length).Select(x=>x[2]),signal.Predictions.Select(p=>p.Score));
+        if (hypothesis=="core-satellite") Assert.All(signal.Predictions,p=>Assert.True(p.TargetWeight>0));
         if (hypothesis=="breakout")
         { Assert.Equal(f.Panel.BreakoutScores(f.Panel.Dates.Length),signal.Predictions.Select(p=>p.Score)); Assert.All(signal.Predictions.Where(p=>p.Score<=0),p=>Assert.Equal(0,p.TargetWeight)); }
         Assert.Equal(hypothesis,signal.Hypothesis);
+    }
+    [Fact] public void ReservedHoldoutReportCannotSeedASignalWithoutExplicitStudyApproval()
+    {
+        using var f = new Fixture();
+        var holdout = f.Report with { Scope = "reserved_holdout" };
+        Assert.Equal("signal-report-scope", Assert.Throws<ResearchException>(() =>
+            ForwardSignalBuilder.Build(f.Run.Id, f.Run.ReportSha256!, holdout, f.Panel, f.Panel, f.Clock.Now)).Code);
+        var approved = ForwardSignalBuilder.Build(f.Run.Id, f.Run.ReportSha256!, holdout, f.Panel, f.Panel, f.Clock.Now, allowReservedHoldout: true);
+        Assert.Equal(f.Run.Id, approved.RunId);
+        Assert.Equal("signal-report-scope", Assert.Throws<ResearchException>(() =>
+            ForwardSignalBuilder.Build(f.Run.Id, f.Run.ReportSha256!, f.Report with { Scope = "unknown" }, f.Panel, f.Panel, f.Clock.Now)).Code);
     }
     [Fact] public void InvalidFrozenModelAndFutureSignalMonthReject()
     {
@@ -166,21 +178,18 @@ public sealed class ForwardExecutionTests
         Assert.Equal("cancelled",f.Account.Intents[0].Phase);Assert.Equal(quantity,f.Account.Intents[0].Progress.Filled);
         Assert.Equal(0,f.Account.Intents[0].Progress.RemainingReserve);Assert.Equal(20,f.Account.CashGbp+f.Account.Intents.Sum(i=>i.Progress.DebitGbp));
     }
-    [Fact] public async Task LiveNeedsAMatchingNonSyntheticDemoReceiptForCodeContractAndRules()
+    [Fact] public async Task LiveWithoutAStudyStopsAtTheStudyGateEvenWithNonSyntheticDemoEvidence()
     {
         // Authored mocks model the gates only; this receipt never leaves its temporary test workspace.
+        // The fixture run is deliberately non-study: live must stop at execution-study-required
+        // before any demo-receipt or submission logic, whatever evidence files are supplied.
         using var f=new Fixture(realFlags:true);await f.Coordinator.Run(default);await f.Coordinator.Run(default);
         Assert.False(Assert.Single(f.Ledger.DemoReceipts()).Synthetic);
         f.Gateway.Rows.Clear();f.Gateway.Mode=BrokerEnvironment.Live;
         f.Policy=f.Policy with { Environment="live",AccountType="stocks-isa",WalletRule=new("positive-debit",true,"positive-charge") };
-        Assert.Equal("execution-genuine-demo-required",(await f.Coordinator.Run(default)).Code);Assert.Equal(3,f.Gateway.Posts);
-    }
-    [Fact] public async Task LivePathCanSubmitAfterMatchingDemoEvidenceUsingAuthoredGatewayOnly()
-    {
-        using var f=new Fixture(realFlags:true);await f.Coordinator.Run(default);await f.Coordinator.Run(default);
-        f.Gateway.Rows.Clear();f.Gateway.Mode=BrokerEnvironment.Live;f.Policy=f.Policy with { Environment="live",AccountType="stocks-isa" };
-        Assert.Equal("processed",(await f.Coordinator.Run(default)).Status);Assert.Equal(6,f.Gateway.Posts);
-        await f.Coordinator.Run(default);Assert.All(f.Account.Intents,i=>Assert.Equal("filled",i.Phase));Assert.Equal(20,f.Account.ContributionsGbp);
+        Assert.Equal("execution-study-required",(await f.Coordinator.Run(default)).Code);Assert.Equal(3,f.Gateway.Posts);
+        f.Policy=f.Policy with { WalletRule=new("negative-debit",true,"positive-charge") };
+        Assert.Equal("execution-study-required",(await f.Coordinator.Run(default)).Code);Assert.Equal(3,f.Gateway.Posts);
     }
     [Fact] public void ObservationsArrivingAfterSignalTimeCannotBecomeFeatures()
     {
@@ -201,10 +210,12 @@ public sealed class ForwardExecutionTests
         Assert.Equal("execution-external-pending-order",result.Code);Assert.Equal(1,f.Gateway.Posts);
         Assert.Equal(20,f.Account.ContributionsGbp);Assert.Contains(f.Account.Intents,i=>i.Phase=="planned");
     }
-    [Fact] public async Task ChangedRulesAfterPlanningCannotBypassThePinnedBatchOrLiveReceipt()
+    [Fact] public async Task ChangedRulesAfterPlanningCannotBypassThePinnedBatch()
     {
+        // Exercised on a fresh demo account: live now additionally requires a registered-study run,
+        // which this fixture deliberately does not create.
         using var f=new Fixture(realFlags:true);await f.Coordinator.Run(default);await f.Coordinator.Run(default);
-        f.Gateway.Rows.Clear();f.Gateway.Mode=BrokerEnvironment.Live;f.Policy=f.Policy with {Environment="live",AccountType="stocks-isa"};
+        f.Gateway.Rows.Clear();f.Gateway.AccountId=43;f.Policy=f.Policy with {AccountId=43};
         var reads=0;
         var coordinator=new ExecutionCoordinator(f.Ledger,f.Signals,f.Store,f.Gateway,()=>f.Policy,_=>
         {
@@ -279,7 +290,8 @@ public sealed class ForwardExecutionTests
         public BrokerEnvironment Mode=BrokerEnvironment.Demo;public BrokerEnvironment Environment=>Mode;public int Posts,Reads;public bool UnknownAfterAccept,HideHistory;public bool AutoFill=true;
         public List<BrokerOrder> Active=[];
         public Func<Task>? Wait;public Action? OnSubmit;public List<BrokerHistoryItem> Rows=[];
-        public async Task<BrokerSummary> Summary(CancellationToken ct){Reads++;if(Wait is not null){var w=Wait;Wait=null;await w();}return new(42,"GBP",new(100-Rows.DistinctBy(r=>r.Fill!.Id).Sum(r=>-r.Fill!.WalletImpact.NetValue),0));}
+        public long AccountId=42;
+        public async Task<BrokerSummary> Summary(CancellationToken ct){Reads++;if(Wait is not null){var w=Wait;Wait=null;await w();}return new(AccountId,"GBP",new(100-Rows.DistinctBy(r=>r.Fill!.Id).Sum(r=>-r.Fill!.WalletImpact.NetValue),0));}
         public BrokerPosition[] CurrentPositions()=>Rows.DistinctBy(r=>r.Fill!.Id).GroupBy(r=>r.Order.Ticker).Select(g=>new BrokerPosition(new(g.Key),g.Sum(r=>r.Fill!.Quantity))).ToArray();
         public Task<BrokerPosition[]> Positions(CancellationToken ct)=>Task.FromResult(CurrentPositions());
         public Task<BrokerOrder[]> PendingOrders(CancellationToken ct)=>Task.FromResult(Active.ToArray());

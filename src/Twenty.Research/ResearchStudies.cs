@@ -312,7 +312,13 @@ public sealed partial class ResearchStore
     }
     public void AssertStudyExecutionRun(RunEntry run, bool live)
     {
-        if (run.StudyId is null) return;
+        // Live execution requires a registered-study final. Ordinary runs may still rehearse in demo,
+        // where the remaining coordinator gates exercise the plumbing without real-money exposure.
+        if (run.StudyId is null)
+        {
+            if (live) throw new ResearchException("execution-study-required");
+            return;
+        }
         var study = Study(run.StudyId) ?? throw new ResearchException("study-not-found");
         if (!StudyCodeMatches(study.Plan)) throw new ResearchException("execution-study-code-changed");
         if (run.Id != study.FinalBaseRunId || run.ReportSha256 != study.FinalBaseReportSha256 ||

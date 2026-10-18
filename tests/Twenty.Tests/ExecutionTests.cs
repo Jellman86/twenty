@@ -131,13 +131,19 @@ public sealed class ExecutionTests
         var nav = 20 - order.MaximumDebitGbp + markedHolding;
         Assert.True(markedHolding / nav <= .5m);
     }
-    [Fact] public void FeesOnNewBuyCannotPushAnExistingHoldingAboveCap()
+    [Fact] public void OverweightHoldingBlocksItsOwnOrderButNotDilutingOrdersForOthers()
     {
+        // Purchase-cap semantics mirror NotionalPortfolio: an existing holding at/above the cap is
+        // never added to, but contributions still buy underweight names sized on post-cost NAV.
         var rules = new Dictionary<string, InstrumentRule> { ["A"] = Rule() with { Ask = 1, LimitPrice = 1, MaximumFeeBps = 0 },
             ["B"] = Rule() with { Symbol = "B", BrokerTicker = "B_TEST_EQ", Ask = 1, LimitPrice = 1, MaximumFeeBps = 1000 } };
         var plan = LimitPlanner.Plan(10, new Dictionary<string, decimal> { ["A"] = 10 }, new Dictionary<string, decimal>(),
             new Dictionary<string, decimal> { ["A"] = .5m, ["B"] = .5m }, rules, .5m, Now);
-        Assert.Empty(plan.Orders); Assert.Contains(plan.Notes, n => n.Contains("post-cost"));
+        var order = Assert.Single(plan.Orders); Assert.Equal("B", order.Symbol);
+        Assert.Contains(plan.Notes, n => n.Contains("A:") && n.Contains("post-cost"));
+        // B itself stays within the cap on worst-case post-cost NAV.
+        var navFloor = 20 - 10 * (1 - 1 / 1.1m);
+        Assert.True(order.Quantity * 1 <= navFloor * .5m);
     }
     [Fact] public async Task StalledResponseBodyIsBoundedAndSubmissionRemainsUnknown()
     {

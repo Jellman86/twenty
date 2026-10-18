@@ -10,7 +10,7 @@ public sealed record ExperimentConfig(decimal MonthlyGbp = 20m, int TopK = 3, de
     {
         if (MonthlyGbp is < 1 or > 1000 || TopK is < 1 or > 10 || MaximumWeight is <= 0 or > 1 || TrainMonths is < 24 or > 240 ||
             RefitMonths is < 1 or > 24 || HoldoutMonths is < 12 or > 120 || !double.IsFinite(RidgeAlpha) || RidgeAlpha is < 0.01 or > 1000 ||
-            AllocationPolicy is not ("full-rebalance" or "contribution-only") || Hypothesis is not ("ridge-relative-return" or "momentum" or "breakout" or "upside-tail") || ForwardYears is < 1 or > 30 || Seed is < 0 or > 1000000 ||
+            AllocationPolicy is not ("full-rebalance" or "contribution-only") || Hypothesis is not ("ridge-relative-return" or "momentum" or "breakout" or "upside-tail" or "core-satellite") || ForwardYears is < 1 or > 30 || Seed is < 0 or > 1000000 ||
             panel.Dates.Length - 1 - HoldoutMonths <= MonthlyPanel.Warmup + TrainMonths + LabelHorizon ||
             DevelopmentStart is { } date && (panel.Dates.IndexOf(date) < MonthlyPanel.Warmup + TrainMonths + LabelHorizon || panel.Dates.IndexOf(date) >= panel.Dates.Length - 1 - HoldoutMonths))
             throw new ResearchException("invalid-experiment-config");
@@ -44,6 +44,17 @@ public static class Backtest
         return Enumerable.Range(0, assets.Length).OrderByDescending(i => scores[i]).ThenBy(i => assets[i], StringComparer.Ordinal).Take(count)
             .ToDictionary(i => assets[i], _ => weight, StringComparer.Ordinal);
     }
+    /// <summary>Candidate target weights for one decision. Core-satellite keeps half in an
+    /// equal-weight core over every asset and half in the ranked satellite, capped per name.</summary>
+    public static Dictionary<string, decimal> CandidateWeights(ExperimentConfig config, double[] scores, ImmutableArray<string> assets)
+    {
+        var ranked = Rank(scores, assets, config.TopK, config.MaximumWeight);
+        if (config.Hypothesis == "breakout")
+            return ranked.Where(x => scores[assets.IndexOf(x.Key)] > 0).ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
+        if (config.Hypothesis != "core-satellite") return ranked;
+        var core = EqualFraction(assets.Length) / 2;
+        return assets.ToDictionary(s => s, s => Math.Min(core + ranked.GetValueOrDefault(s) / 2, config.MaximumWeight), StringComparer.Ordinal);
+    }
     public static BacktestReport Run(MonthlyPanel panel, ExperimentConfig config, ResearchCosts costs, CancellationToken ct = default, Action<int>? progress = null)
     {
         config.Validate(panel); costs.Validate();
@@ -72,12 +83,11 @@ public static class Backtest
             var features = panel.Features(t);
             var scores = config.Hypothesis switch
             {
-                "momentum" => features.Select(x => x[2]).ToArray(),
+                "momentum" or "core-satellite" => features.Select(x => x[2]).ToArray(),
                 "breakout" => panel.BreakoutScores(t),
                 _ => model!.Predict(features)
             };
-            var candidate = Rank(scores, panel.Assets, config.TopK, config.MaximumWeight);
-            if (config.Hypothesis == "breakout") candidate = candidate.Where(x => scores[panel.Assets.IndexOf(x.Key)] > 0).ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
+            var candidate = CandidateWeights(config, scores, panel.Assets);
             var allocations = new Dictionary<string, Dictionary<string, decimal>>
             {
                 ["candidate"] = candidate,
@@ -89,7 +99,8 @@ public static class Backtest
             var returns = panel.Returns(t);
             foreach (var strategy in Strategies)
             {
-                var slots = strategy is "candidate" or "momentum" ? config.TopK : strategy == "equal_weight" ? panel.Assets.Length : 1;
+                var slots = strategy == "candidate" && config.Hypothesis == "core-satellite" || strategy == "equal_weight" ? panel.Assets.Length
+                    : strategy is "candidate" or "momentum" ? config.TopK : 1;
                 var cap = strategy is "candidate" or "momentum" ? config.MaximumWeight : strategy == "equal_weight" ? EqualFraction(panel.Assets.Length) : 1m;
                 equity.Add(new(panel.Dates[t], panel.Dates[t + 1], strategy, portfolios[strategy].Step(config.MonthlyGbp, allocations[strategy], returns, costs,
                     config.AllocationPolicy == "contribution-only", slots, cap)));

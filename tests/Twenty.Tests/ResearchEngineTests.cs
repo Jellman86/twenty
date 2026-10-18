@@ -138,4 +138,27 @@ public class ResearchEngineTests
         Assert.All(report.Predictions.Where(p => p.Score <= 0), p => Assert.Equal(0, p.TargetWeight));
     }
 
+    [Fact]
+    public void CoreSatelliteBlendsEqualWeightCoreWithMomentumSatelliteAndRespectsCap()
+    {
+        var assets = System.Collections.Immutable.ImmutableArray.Create("A", "B", "C", "D");
+        var weights = Backtest.CandidateWeights(new(Hypothesis: "core-satellite", TopK: 2, MaximumWeight: .5m), [4, 3, 2, 1], assets);
+        Assert.Equal(.375m, weights["A"]); Assert.Equal(.375m, weights["B"]);
+        Assert.Equal(.125m, weights["C"]); Assert.Equal(.125m, weights["D"]);
+        Assert.Equal(1m, weights.Values.Sum());
+        var single = Backtest.CandidateWeights(new(Hypothesis: "core-satellite", TopK: 1, MaximumWeight: .5m), [1.0],
+            System.Collections.Immutable.ImmutableArray.Create("A"));
+        Assert.Equal(.5m, single["A"]);
+    }
+    [Fact]
+    public void CoreSatelliteContributionRunBuysEveryAssetFromTheFirstMonth()
+    {
+        var panel = Panel();
+        var report = Backtest.Run(panel, new(Hypothesis: "core-satellite", AllocationPolicy: "contribution-only", TopK: 2), new());
+        var first = report.Equity.Where(e => e.Strategy == "candidate").MinBy(e => e.DecisionDate)!;
+        Assert.Equal(panel.Assets.Length, first.State.Trades.Select(t => t.Symbol).Distinct().Count());
+        Assert.All(first.State.Trades, t => Assert.Equal("buy", t.Side));
+        Assert.All(report.Predictions, p => Assert.True(p.TargetWeight > 0));
+    }
+
 }

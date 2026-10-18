@@ -10,6 +10,7 @@ Implemented 16 October 2026. Twenty collects free public data in two places from
 | `tiingo-tickers`: Tiingo's public `supported_tickers.zip` | day | any | zip entry and column header |
 | `french-factors-monthly`, `french-factors-daily`: Fama–French factors | week | local | zip entry and column header after the notes |
 | `french-industry-monthly`: ten value-weighted industry returns | week | local | zip entry and monthly section header |
+| `french-size-value25-monthly`: 25 value-weighted size/book-to-market returns | week | local | zip entry and monthly section header |
 | `ecb-reference-history`: ECB reference FX history | week | local | XML envelope; full parsing at conversion |
 | `shiller-ie-data`: Shiller's `ie_data.xls`, found from the link on shillerdata.com | week | local | a real spreadsheet (OLE2 signature) |
 

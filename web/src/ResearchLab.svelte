@@ -13,7 +13,7 @@
   let requestId = '';
   let totalTrials = $state(0);
   const labels: Record<string,string> = { candidate: 'Selected strategy', momentum: 'Momentum comparator', equal_weight: 'All assets equally', benchmark: 'Dataset benchmark', cash: 'Uninvested cash' };
-  const methods: Record<string,string> = { 'ridge-relative-return': 'Train a relative-return model', momentum: 'Rank long momentum', breakout: '12-month return-index breakout', 'upside-tail': 'Model +50% upside over six months' };
+  const methods: Record<string,string> = { 'ridge-relative-return': 'Train a relative-return model', momentum: 'Rank long momentum', breakout: '12-month return-index breakout', 'upside-tail': 'Model +50% upside over six months', 'core-satellite': 'Half equal-weight core, half momentum satellite' };
   const money = (x: number) => new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2}).format(x);
   const pct = (x: number) => `${(x*100).toFixed(1)}%`;
   const dataset = $derived(datasets.find(d=>d.id===datasetId));

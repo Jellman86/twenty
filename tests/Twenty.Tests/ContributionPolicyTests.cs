@@ -40,13 +40,26 @@ public sealed class ContributionPolicyTests
         Assert.Equal(30,portfolio.Holdings["A"]);Assert.Equal(30,portfolio.Holdings["B"]);
         Assert.False(portfolio.Holdings.ContainsKey("E"));Assert.False(portfolio.Holdings.ContainsKey("F"));
     }
-    [Fact] public void AppreciatedOverweightPositionStopsPurchasesWithoutBeingSilentlySold()
+    [Fact] public void AppreciatedOverweightPositionBlocksItsOwnBuysButContributionsStillBuyTheUnderweight()
     {
+        // Purchase-cap semantics: drift above the cap is never repaired by selling and never added to,
+        // but new contributions must still buy underweight names (cash-flow rebalancing) instead of idling.
         var portfolio=new NotionalPortfolio();var weights=new Dictionary<string,decimal>{{"A",.5m},{"B",.5m}};
         portfolio.Step(20,weights,new Dictionary<string,decimal>{{"A",4},{"B",0}},new(),true,2,.5m);
         var before=portfolio.Holdings.ToDictionary();
         var next=portfolio.Step(20,weights,FlatReturns,new(),true,2,.5m);
-        Assert.Empty(next.Trades);Assert.Equal(before,portfolio.Holdings.ToDictionary());Assert.True(next.CashGbp>20);
+        var trade=Assert.Single(next.Trades);Assert.Equal("buy",trade.Side);Assert.Equal("B",trade.Symbol);
+        Assert.Equal(before["A"],portfolio.Holdings["A"]);Assert.True(portfolio.Holdings["B"]>before["B"]);
+        Assert.True(next.CashGbp<1);
+    }
+    [Fact] public void SubMinimumScaledBuyCashIsReallocatedToRemainingBuysInFullRebalance()
+    {
+        // With a 40% buy cost, £2.60 across two £1.30 targets scales each buy to ~£0.93, below the
+        // £1 minimum. The reserved cash must fund the first unmet target in full instead of idling.
+        var portfolio=new NotionalPortfolio();var costs=new ResearchCosts(FxBps:4000,HalfSpreadBps:0,SlippageBps:0,MinimumOrderGbp:1);
+        var step=portfolio.Step(2.60m,new Dictionary<string,decimal>{{"A",.5m},{"B",.5m}},FlatReturns,costs);
+        var trade=Assert.Single(step.Trades);Assert.Equal("A",trade.Symbol);Assert.Equal(1.30m,trade.NotionalGbp);
+        Assert.Equal(2.60m,step.CashGbp+step.TradedNotionalGbp+step.PeriodCostGbp);
     }
     [Fact] public void ContributionOnlyBacktestsDoNotSellOrAccumulateUnboundedNames()
     {

@@ -40,11 +40,13 @@ public static class LimitPlanner
         var navFloor = nav - cash * lossFraction;
         var remaining = cash;
         var orders = ImmutableArray.CreateBuilder<BuyIntent>(); var notes = ImmutableArray.CreateBuilder<string>();
+        // Purchase cap only, mirroring NotionalPortfolio: a drifted holding is never added to and
+        // never sold here, but it does not block diluting buys of underweight names either.
         foreach (var symbol in exposures.Keys.Where(s => exposures[s] > navFloor * maximumWeight))
-            notes.Add($"{symbol}: existing or worst-case post-cost exposure exceeds the cap; retain cash. This purchase policy cannot sell to repair drift.");
-        if (notes.Count > 0) return new([], cash, notes.ToImmutable());
+            notes.Add($"{symbol}: existing or worst-case post-cost exposure exceeds the cap; no further buys of this name. This purchase policy cannot sell to repair drift.");
         foreach (var (symbol, weight) in targets.OrderByDescending(x => x.Value).ThenBy(x => x.Key, StringComparer.Ordinal))
         {
+            if (exposures.GetValueOrDefault(symbol) > navFloor * maximumWeight) continue;
             var rule = rules[symbol]; var limitGbp = rule.LimitPrice / (rule.QuoteCurrency == "GBX" ? 100 : 1);
             var gap = Math.Max(0, navFloor * weight - exposures.GetValueOrDefault(symbol));
             var budget = Math.Min(remaining, gap);

@@ -30,6 +30,9 @@
     if (m.ok) meta = await m.json();
     if (c.ok) collection = await c.json();
     if (t.ok) tiingo = await t.json();
+    // A failed safety read must be visible, never rendered as an indefinite "Loading…".
+    const failed = [!r.ok && 'broker status', !m.ok && 'server mode', !c.ok && 'collection status', !t.ok && 'Tiingo status'].filter(Boolean);
+    if (failed.length) error = `Could not load ${failed.join(', ')}. Treat the missing state as unknown and reload the page.`;
   }
   async function checkTiingo() {
     busy = true; error = notice = '';

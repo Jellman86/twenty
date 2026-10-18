@@ -80,4 +80,60 @@ public sealed class FrenchReturnTests
         }
         finally { Directory.Delete(root, true); }
     }
+    private static byte[] Zip25(string text)
+    {
+        using var output = new MemoryStream();
+        using (var zip = new ZipArchive(output, ZipArchiveMode.Create, true))
+        using (var writer = new StreamWriter(zip.CreateEntry("25_Portfolios_5x5.csv").Open())) writer.Write(text);
+        return output.ToArray();
+    }
+    private static string Header25 => "Authored test input; no historical evidence.\nAverage Value Weighted Returns -- Monthly\n,SMALL LoBM,ME1 BM2,ME1 BM3,ME1 BM4,SMALL HiBM,ME2 BM1,ME2 BM2,ME2 BM3,ME2 BM4,ME2 BM5,ME3 BM1,ME3 BM2,ME3 BM3,ME3 BM4,ME3 BM5,ME4 BM1,ME4 BM2,ME4 BM3,ME4 BM4,ME4 BM5,BIG LoBM,ME5 BM2,ME5 BM3,ME5 BM4,BIG HiBM\n";
+    private static string Row25(string date, string value = "1.00") => date + "," + string.Join(',', Enumerable.Repeat(value, 25)) + "\n";
+    [Fact]
+    public void SizeValue25ParsesOnlyValueWeightedMonthlyWithNamedCorners()
+    {
+        var bytes = Zip25(Header25 + Row25("199901") + Row25("199902") + "\nAverage Equal Weighted Returns -- Monthly\n" + Row25("199901", "99"));
+        var rows = FrenchReturnPanel.Read(bytes, FrenchPortfolioSet.SizeValue25);
+        Assert.Equal(2, rows.Length); Assert.Equal(25, rows[0].PercentReturns.Length);
+        Assert.Equal("FF25_ME1_BM1", FrenchReturnPanel.SizeValueSymbols[0]);
+        Assert.Equal("FF25_ME1_BM5", FrenchReturnPanel.SizeValueSymbols[4]);
+        Assert.Equal("FF25_ME5_BM1", FrenchReturnPanel.SizeValueSymbols[20]);
+        Assert.Equal("FF25_ME5_BM5", FrenchReturnPanel.SizeValueSymbols[24]);
+        Assert.Throws<ResearchException>(() => FrenchReturnPanel.Read(Zip25(Header25 + Row25("199901", "-99.99")), FrenchPortfolioSet.SizeValue25));
+        Assert.Throws<ResearchException>(() => FrenchReturnPanel.Read(Zip25(Header25.Replace("Value Weighted", "Equal Weighted") + Row25("199901")), FrenchPortfolioSet.SizeValue25));
+        Assert.Null(CaptureSources.Find("french-size-value25-monthly").Validate(bytes));
+    }
+    [Fact]
+    public void SizeValue25BuildsAResearchOnlyGbpPanelWithMarketBenchmark()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "twenty-french25-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var archive = new CaptureStore(Path.Combine(root, "captures"));
+            var sizeValue = new StringBuilder(Header25); var factors = new StringBuilder("Authored unit input\n,Mkt-RF,SMB,HML,RF\n");
+            var xml = new StringBuilder("<gesmes:Envelope xmlns:gesmes=\"http://www.gesmes.org/xml/2002-08-01\" xmlns=\"http://www.ecb.int/vocabulary/2002-08-01/eurofxref\"><Cube>");
+            for (var i = 0; i < 16; i++)
+            {
+                var first = new DateOnly(1999, 1, 1).AddMonths(i); var month = first.ToString("yyyyMM", CultureInfo.InvariantCulture);
+                sizeValue.Append(Row25(month)); factors.Append(month).Append(",0.75,0,0,0.25\n");
+                var date = first.AddMonths(1).AddDays(-1);
+                xml.Append("<Cube time=\"").Append(date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).Append("\"><Cube currency=\"USD\" rate=\"2\"/><Cube currency=\"GBP\" rate=\"1\"/></Cube>");
+            }
+            xml.Append("</Cube></gesmes:Envelope>");
+            foreach (var (id, bytes) in new[] { ("french-size-value25-monthly", Zip25(sizeValue.ToString())), ("french-factors-monthly", Zip(factors.ToString(), false)), ("ecb-reference-history", Encoding.UTF8.GetBytes(xml.ToString())) })
+                archive.Record(new(Guid.NewGuid().ToString("N"), id, CaptureSources.Find(id).Url.AbsoluteUri, CaptureStore.Hash(bytes), bytes.Length,
+                    "application/octet-stream", DateTimeOffset.UtcNow, "authored-unit", false), bytes, false);
+            var files = FrenchReturnPanel.Build(archive, new(1999, 1, 31), new(2000, 4, 30), FrenchPortfolioSet.SizeValue25);
+            var panel = MonthlyPanel.Read(files.Csv, files.Metadata);
+            Assert.Equal(25, panel.Assets.Length); Assert.Equal("FRENCH_MARKET", panel.Benchmark);
+            Assert.True(panel.ResearchOnly); Assert.False(panel.Synthetic);
+            var expected = 100m; for (var i = 0; i < 15; i++) expected *= 1.01m;
+            Assert.Equal(expected, panel.Index(15, "FF25_ME1_BM1"));
+            Assert.Equal(expected, panel.Index(15, "FF25_ME5_BM5"));
+            using var metadata = JsonDocument.Parse(files.Metadata);
+            Assert.Equal("french-size-value25-gbp-v1", metadata.RootElement.GetProperty("converter").GetString());
+            using var audit = JsonDocument.Parse(files.Audit); Assert.Equal(25, audit.RootElement.GetProperty("assets").GetInt32());
+        }
+        finally { Directory.Delete(root, true); }
+    }
 }
