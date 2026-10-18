@@ -151,6 +151,54 @@ public class ResearchEngineTests
         Assert.Equal(.5m, single["A"]);
     }
     [Fact]
+    public void SleeveBlendAllocatesEachContributionAcrossStrategiesByDeclaredFractions()
+    {
+        var assets = System.Collections.Immutable.ImmutableArray.Create("A", "B", "C", "D");
+        var config = new ExperimentConfig(Hypothesis: "sleeve-blend", TopK: 2, MaximumWeight: .5m, SleeveSpec: "benchmark:0.5,momentum:0.5");
+        var weights = Backtest.BlendWeights(config, assets, "BM", new Dictionary<string, double[]> { ["momentum"] = [4, 3, 2, 1] });
+        Assert.Equal(.5m, weights["BM"]); Assert.Equal(.25m, weights["A"]); Assert.Equal(.25m, weights["B"]);
+        Assert.Equal(0m, weights.GetValueOrDefault("C")); Assert.Equal(1m, weights.Values.Sum());
+    }
+    [Fact]
+    public void SleeveBlendCapsSelectionAssetsButNeverStranglesTheMarketSleeve()
+    {
+        var assets = System.Collections.Immutable.ImmutableArray.Create("A", "B", "C", "D");
+        var config = new ExperimentConfig(Hypothesis: "sleeve-blend", TopK: 2, MaximumWeight: .5m, SleeveSpec: "benchmark:0.8,equal_weight:0.2");
+        var weights = Backtest.BlendWeights(config, assets, "BM", new Dictionary<string, double[]>());
+        Assert.Equal(.8m, weights["BM"]); Assert.All(assets, a => Assert.Equal(.05m, weights[a]));
+        var modelOnly = new ExperimentConfig(Hypothesis: "sleeve-blend", TopK: 2, MaximumWeight: .25m, SleeveSpec: "ridge-relative-return:1");
+        var capped = Backtest.BlendWeights(modelOnly, assets, "BM", new Dictionary<string, double[]> { ["ridge-relative-return"] = [4, 3, 2, 1] });
+        Assert.Equal(.25m, capped["A"]); Assert.Equal(.25m, capped["B"]); Assert.Equal(.5m, capped.Values.Sum());
+    }
+    [Theory]
+    [InlineData("benchmark:0.5")]
+    [InlineData("benchmark:0.5,unknown:0.5")]
+    [InlineData("benchmark:0.5,benchmark:0.5")]
+    [InlineData("benchmark:0.5,upside-tail:0.5")]
+    [InlineData("benchmark:1.5,momentum:-0.5")]
+    [InlineData("")]
+    public void InvalidSleeveSpecsFailClosed(string spec)
+    {
+        var panel = Panel();
+        Assert.Equal("invalid-experiment-config", Assert.Throws<ResearchException>(() =>
+            new ExperimentConfig(Hypothesis: "sleeve-blend", SleeveSpec: spec).Validate(panel)).Code);
+        Assert.Equal("invalid-experiment-config", Assert.Throws<ResearchException>(() =>
+            new ExperimentConfig(Hypothesis: "momentum", SleeveSpec: "benchmark:1").Validate(panel)).Code);
+    }
+    [Fact]
+    public void SleeveBlendContributionRunBuysMarketAndSatelliteNamesTogether()
+    {
+        var panel = Panel();
+        var report = Backtest.Run(panel, new(Hypothesis: "sleeve-blend", AllocationPolicy: "contribution-only", TopK: 2,
+            SleeveSpec: "benchmark:0.6,core-satellite:0.4"), new());
+        var candidate = report.Summaries.Single(s => s.Strategy == "candidate");
+        var first = report.Equity.Where(e => e.Strategy == "candidate").MinBy(e => e.DecisionDate)!;
+        Assert.Contains(first.State.Trades, t => t.Symbol == panel.Benchmark);
+        Assert.True(first.State.Trades.Select(t => t.Symbol).Distinct().Count() > 2);
+        Assert.True(candidate.EndingEquityGbp > candidate.ContributionsGbp * 0.5m);
+        Assert.All(report.Predictions.GroupBy(p => p.DecisionDate), g => Assert.True(g.Sum(p => p.TargetWeight) <= 1m));
+    }
+    [Fact]
     public void CoreSatelliteContributionRunBuysEveryAssetFromTheFirstMonth()
     {
         var panel = Panel();

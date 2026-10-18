@@ -1,21 +1,24 @@
 using System.Collections.Immutable;
+using System.Globalization;
 
 namespace Twenty.Core.Research;
 
 public sealed record ExperimentConfig(decimal MonthlyGbp = 20m, int TopK = 3, decimal MaximumWeight = 0.5m,
     int TrainMonths = 60, int RefitMonths = 12, int HoldoutMonths = 24, double RidgeAlpha = 10,
-    string Hypothesis = "ridge-relative-return", bool EvaluateHoldout = false, int ForwardYears = 10, int Seed = 212, string AllocationPolicy = "full-rebalance", DateOnly? DevelopmentStart = null, DateOnly? DevelopmentEnd = null)
+    string Hypothesis = "ridge-relative-return", bool EvaluateHoldout = false, int ForwardYears = 10, int Seed = 212, string AllocationPolicy = "full-rebalance", DateOnly? DevelopmentStart = null, DateOnly? DevelopmentEnd = null, string SleeveSpec = "")
 {
     public void Validate(MonthlyPanel panel)
     {
         if (MonthlyGbp is < 1 or > 1000 || TopK is < 1 or > 10 || MaximumWeight is <= 0 or > 1 || TrainMonths is < 24 or > 240 ||
             RefitMonths is < 1 or > 24 || HoldoutMonths is < 12 or > 120 || !double.IsFinite(RidgeAlpha) || RidgeAlpha is < 0.01 or > 1000 ||
-            AllocationPolicy is not ("full-rebalance" or "contribution-only") || Hypothesis is not ("ridge-relative-return" or "momentum" or "breakout" or "upside-tail" or "core-satellite") || ForwardYears is < 1 or > 30 || Seed is < 0 or > 1000000 ||
+            AllocationPolicy is not ("full-rebalance" or "contribution-only") || Hypothesis is not ("ridge-relative-return" or "momentum" or "breakout" or "upside-tail" or "core-satellite" or "sleeve-blend") || ForwardYears is < 1 or > 30 || Seed is < 0 or > 1000000 ||
             panel.Dates.Length - 1 - HoldoutMonths <= MonthlyPanel.Warmup + TrainMonths + LabelHorizon ||
             DevelopmentStart is { } date && (panel.Dates.IndexOf(date) < MonthlyPanel.Warmup + TrainMonths + LabelHorizon || panel.Dates.IndexOf(date) >= panel.Dates.Length - 1 - HoldoutMonths))
             throw new ResearchException("invalid-experiment-config");
         if (DevelopmentEnd is { } end && (panel.Dates.IndexOf(end) <= (DevelopmentStart is { } start ? panel.Dates.IndexOf(start) : MonthlyPanel.Warmup + TrainMonths + LabelHorizon) ||
             panel.Dates.IndexOf(end) > panel.Dates.Length - 1 - HoldoutMonths)) throw new ResearchException("invalid-experiment-config");
+        if (Hypothesis == "sleeve-blend") Backtest.ParseSleeves(SleeveSpec);
+        else if (!string.IsNullOrEmpty(SleeveSpec)) throw new ResearchException("invalid-experiment-config");
     }
     public int LabelHorizon => Hypothesis == "upside-tail" ? 6 : 1;
 }
@@ -43,6 +46,48 @@ public static class Backtest
         var weight = Math.Min(EqualFraction(count), cap);
         return Enumerable.Range(0, assets.Length).OrderByDescending(i => scores[i]).ThenBy(i => assets[i], StringComparer.Ordinal).Take(count)
             .ToDictionary(i => assets[i], _ => weight, StringComparer.Ordinal);
+    }
+    public static readonly ImmutableArray<string> Sleeves = ["benchmark", "equal_weight", "cash", "momentum", "breakout", "core-satellite", "ridge-relative-return"];
+    /// <summary>Parse "benchmark:0.7,core-satellite:0.3". Fractions must be positive, named once, and sum to 1.
+    /// Upside-tail is excluded: its six-month label horizon needs its own training contract.</summary>
+    public static ImmutableArray<(string Sleeve, decimal Fraction)> ParseSleeves(string spec)
+    {
+        var parsed = ImmutableArray.CreateBuilder<(string, decimal)>();
+        foreach (var token in (spec ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var parts = token.Split(':');
+            if (parts.Length != 2 || !Sleeves.Contains(parts[0].Trim()) || parsed.Any(p => p.Item1 == parts[0].Trim()) ||
+                !decimal.TryParse(parts[1].Trim(), NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out var fraction) || fraction is <= 0 or > 1)
+                throw new ResearchException("invalid-experiment-config");
+            parsed.Add((parts[0].Trim(), fraction));
+        }
+        if (parsed.Count == 0 || Math.Abs(parsed.Sum(p => p.Item2) - 1m) > 0.000001m) throw new ResearchException("invalid-experiment-config");
+        return parsed.ToImmutable();
+    }
+    /// <summary>Blend declared sleeve weights for one decision. Selection assets are capped at
+    /// MaximumWeight; the benchmark sleeve is capped only by its own allocated fraction.</summary>
+    public static Dictionary<string, decimal> BlendWeights(ExperimentConfig config, ImmutableArray<string> assets, string benchmark,
+        IReadOnlyDictionary<string, double[]> scoresBySleeve)
+    {
+        var total = new Dictionary<string, decimal>(StringComparer.Ordinal);
+        foreach (var (sleeve, fraction) in ParseSleeves(config.SleeveSpec))
+        {
+            var sleeveWeights = sleeve switch
+            {
+                "benchmark" => new Dictionary<string, decimal> { [benchmark] = 1m },
+                "cash" => new Dictionary<string, decimal>(),
+                "equal_weight" => assets.ToDictionary(s => s, _ => EqualFraction(assets.Length), StringComparer.Ordinal),
+                "momentum" or "core-satellite" => CandidateWeights(config with { Hypothesis = sleeve }, Scores(scoresBySleeve, "momentum"), assets),
+                "breakout" => CandidateWeights(config with { Hypothesis = sleeve }, Scores(scoresBySleeve, "breakout"), assets),
+                "ridge-relative-return" => CandidateWeights(config with { Hypothesis = sleeve }, Scores(scoresBySleeve, "ridge-relative-return"), assets),
+                _ => throw new ResearchException("invalid-experiment-config")
+            };
+            foreach (var (symbol, weight) in sleeveWeights) total[symbol] = total.GetValueOrDefault(symbol) + fraction * weight;
+        }
+        return total.Where(x => x.Value > 0)
+            .ToDictionary(x => x.Key, x => x.Key == benchmark ? x.Value : Math.Min(x.Value, config.MaximumWeight), StringComparer.Ordinal);
+        static double[] Scores(IReadOnlyDictionary<string, double[]> all, string key) =>
+            all.TryGetValue(key, out var scores) ? scores : throw new ResearchException("sleeve-scores");
     }
     /// <summary>Candidate target weights for one decision. Core-satellite keeps half in an
     /// equal-weight core over every asset and half in the ranked satellite, capped per name.</summary>
@@ -81,13 +126,26 @@ public static class Backtest
                 folds.Add(new(panel.Dates[t], panel.Dates[training[^1] + config.LabelHorizon], training.Length, x.Count, model.Snapshot));
             }
             var features = panel.Features(t);
-            var scores = config.Hypothesis switch
+            Dictionary<string, decimal> candidate; double[] predictionScores;
+            if (config.Hypothesis == "sleeve-blend")
             {
-                "momentum" or "core-satellite" => features.Select(x => x[2]).ToArray(),
-                "breakout" => panel.BreakoutScores(t),
-                _ => model!.Predict(features)
-            };
-            var candidate = CandidateWeights(config, scores, panel.Assets);
+                var momentumScores = features.Select(x => x[2]).ToArray();
+                candidate = BlendWeights(config, panel.Assets, panel.Benchmark, new Dictionary<string, double[]>
+                {
+                    ["momentum"] = momentumScores, ["breakout"] = panel.BreakoutScores(t), ["ridge-relative-return"] = model!.Predict(features)
+                });
+                predictionScores = panel.Assets.Select(a => (double)candidate.GetValueOrDefault(a)).ToArray();
+            }
+            else
+            {
+                predictionScores = config.Hypothesis switch
+                {
+                    "momentum" or "core-satellite" => features.Select(x => x[2]).ToArray(),
+                    "breakout" => panel.BreakoutScores(t),
+                    _ => model!.Predict(features)
+                };
+                candidate = CandidateWeights(config, predictionScores, panel.Assets);
+            }
             var allocations = new Dictionary<string, Dictionary<string, decimal>>
             {
                 ["candidate"] = candidate,
@@ -95,13 +153,16 @@ public static class Backtest
                 ["equal_weight"] = panel.Assets.ToDictionary(s => s, _ => EqualFraction(panel.Assets.Length)),
                 ["benchmark"] = new() { [panel.Benchmark] = 1m }, ["cash"] = new()
             };
-            for (var a = 0; a < panel.Assets.Length; a++) predictions.Add(new(panel.Dates[t], panel.Dates[t - 1], panel.Assets[a], scores[a], candidate.GetValueOrDefault(panel.Assets[a])));
+            for (var a = 0; a < panel.Assets.Length; a++) predictions.Add(new(panel.Dates[t], panel.Dates[t - 1], panel.Assets[a], predictionScores[a], candidate.GetValueOrDefault(panel.Assets[a])));
             var returns = panel.Returns(t);
             foreach (var strategy in Strategies)
             {
-                var slots = strategy == "candidate" && config.Hypothesis == "core-satellite" || strategy == "equal_weight" ? panel.Assets.Length
+                var slots = strategy == "candidate" && config.Hypothesis == "sleeve-blend" ? Math.Min(100, panel.Assets.Length + 1)
+                    : strategy == "candidate" && config.Hypothesis == "core-satellite" || strategy == "equal_weight" ? panel.Assets.Length
                     : strategy is "candidate" or "momentum" ? config.TopK : 1;
-                var cap = strategy is "candidate" or "momentum" ? config.MaximumWeight : strategy == "equal_weight" ? EqualFraction(panel.Assets.Length) : 1m;
+                // Blend weights are already capped per selection asset; the step cap must not strangle the benchmark sleeve.
+                var cap = strategy == "candidate" && config.Hypothesis == "sleeve-blend" ? 1m
+                    : strategy is "candidate" or "momentum" ? config.MaximumWeight : strategy == "equal_weight" ? EqualFraction(panel.Assets.Length) : 1m;
                 equity.Add(new(panel.Dates[t], panel.Dates[t + 1], strategy, portfolios[strategy].Step(config.MonthlyGbp, allocations[strategy], returns, costs,
                     config.AllocationPolicy == "contribution-only", slots, cap)));
             }

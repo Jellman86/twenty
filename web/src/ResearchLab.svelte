@@ -13,7 +13,8 @@
   let requestId = '';
   let totalTrials = $state(0);
   const labels: Record<string,string> = { candidate: 'Selected strategy', momentum: 'Momentum comparator', equal_weight: 'All assets equally', benchmark: 'Dataset benchmark', cash: 'Uninvested cash' };
-  const methods: Record<string,string> = { 'ridge-relative-return': 'Train a relative-return model', momentum: 'Rank long momentum', breakout: '12-month return-index breakout', 'upside-tail': 'Model +50% upside over six months', 'core-satellite': 'Half equal-weight core, half momentum satellite' };
+  const methods: Record<string,string> = { 'ridge-relative-return': 'Train a relative-return model', momentum: 'Rank long momentum', breakout: '12-month return-index breakout', 'upside-tail': 'Model +50% upside over six months', 'core-satellite': 'Half equal-weight core, half momentum satellite', 'sleeve-blend': 'Split each contribution across strategy sleeves' };
+  let sleeveSpec = $state('benchmark:0.7,core-satellite:0.3');
   const money = (x: number) => new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2}).format(x);
   const pct = (x: number) => `${(x*100).toFixed(1)}%`;
   const dataset = $derived(datasets.find(d=>d.id===datasetId));
@@ -36,8 +37,9 @@
   async function inspectStudyRun(id:string){try{await inspect(await api(`/api/research/runs/${id}`));}catch(e){error=e instanceof Error?e.message:'report-unavailable';}}
   async function start(count=topK, maximum=cap) {
     busy=true;error='';requestId ||= crypto.randomUUID();
+    if(hypothesis==='sleeve-blend'){const parts=sleeveSpec.split(',').map(p=>p.trim()).filter(Boolean);const total=parts.reduce((sum,p)=>sum+Number(p.split(':')[1]),0);if(!parts.length||parts.some(p=>p.split(':').length!==2)||Math.abs(total-1)>0.000001){error='Sleeve fractions must be named shares summing to 1, e.g. benchmark:0.7,core-satellite:0.3';busy=false;return;}}
     try {
-      const run:Run=await api('/api/research/runs',{method:'POST',headers:{'Content-Type':'application/json','X-Twenty-Request':'1'},body:JSON.stringify({requestId,datasetId,config:{monthlyGbp:monthly,topK:count,maximumWeight:maximum/100,trainMonths:60,refitMonths:12,holdoutMonths:24,ridgeAlpha:alpha,hypothesis,evaluateHoldout:false,forwardYears,seed:212,allocationPolicy},costs:{fxBps,halfSpreadBps:5,slippageBps:5,buyTaxBps:taxBps,minimumOrderGbp:1}})});
+      const run:Run=await api('/api/research/runs',{method:'POST',headers:{'Content-Type':'application/json','X-Twenty-Request':'1'},body:JSON.stringify({requestId,datasetId,config:{monthlyGbp:monthly,topK:count,maximumWeight:maximum/100,trainMonths:60,refitMonths:12,holdoutMonths:24,ridgeAlpha:alpha,hypothesis,evaluateHoldout:false,forwardYears,seed:212,allocationPolicy,sleeveSpec:hypothesis==='sleeve-blend'?sleeveSpec:''},costs:{fxBps,halfSpreadBps:5,slippageBps:5,buyTaxBps:taxBps,minimumOrderGbp:1}})});
       requestId='';selected=run;report=null;await refresh();
     }catch(e){error=e instanceof Error?e.message:'run-not-created';}finally{busy=false;}
   }
@@ -60,6 +62,7 @@
 {#if dataset}<p class="dataset-note">{dataset.assets} assets · {dataset.months} months · {dataset.start}–{dataset.end}<br/>{dataset.researchOnly?dataset.researchOnlyReason:dataset.synthetic?'Synthetic engineering data. No real stock-performance claim.':'Imported fixed-universe panel. Historical coverage is not certified.'}</p>{/if}
 <label>Stock-selection hypothesis<select bind:value={hypothesis}>{#each Object.entries(methods) as [key,label]}<option value={key}>{label}</option>{/each}</select></label>
 <label>Allocation policy<select bind:value={allocationPolicy}><option value="contribution-only">Add contributions and retain holdings</option><option value="full-rebalance">Rebalance by selling and buying</option></select></label>
+{#if hypothesis==='sleeve-blend'}<label>Strategy sleeves (shares of each contribution)<input type="text" bind:value={sleeveSpec} required/></label><p class="dataset-note">Sleeves: benchmark, equal_weight, cash, momentum, breakout, core-satellite, ridge-relative-return. Shares must sum to 1. The market sleeve is not capped by the purchase target; selection names are.</p>{/if}
 <div class="lab-pair"><label>Monthly contribution (£)<input type="number" min="1" max="1000" step="1" bind:value={monthly} required/></label><label>Selected holdings<input type="number" min="1" max="10" step="1" bind:value={topK} required/></label></div>
 <div class="lab-pair"><label>Maximum purchase target (%)<input type="number" min="1" max="100" step="1" bind:value={cap} required/></label><label>Forward scenario (years)<input type="number" min="1" max="30" bind:value={forwardYears} required/></label></div>
 <details><summary>Model and cost assumptions</summary><div class="lab-pair"><label>Ridge regularisation<input type="number" min="0.01" max="1000" bind:value={alpha} step="0.01" required/></label><label>FX cost per side (bps)<input type="number" min="0" max="500" bind:value={fxBps} required/></label><label>Purchase tax (bps)<input type="number" min="0" max="500" bind:value={taxBps} required/></label></div><p class="dataset-note">60 training months; annual refits; final 24 months reserved. Spread 5 bps + slippage 5 bps per side; £1 minimum. These are flat research assumptions.</p></details>

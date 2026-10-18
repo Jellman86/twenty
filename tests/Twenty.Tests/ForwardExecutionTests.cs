@@ -43,6 +43,13 @@ public sealed class ForwardExecutionTests
         Assert.Equal("signal-report-scope", Assert.Throws<ResearchException>(() =>
             ForwardSignalBuilder.Build(f.Run.Id, f.Run.ReportSha256!, f.Report with { Scope = "unknown" }, f.Panel, f.Panel, f.Clock.Now)).Code);
     }
+    [Fact] public void SleeveBlendReportsCannotSeedForwardSignalsYet()
+    {
+        using var f = new Fixture();
+        var blend = f.Report with { Config = f.Report.Config with { Hypothesis = "sleeve-blend", SleeveSpec = "benchmark:1" } };
+        Assert.Equal("signal-hypothesis", Assert.Throws<ResearchException>(() =>
+            ForwardSignalBuilder.Build(f.Run.Id, f.Run.ReportSha256!, blend, f.Panel, f.Panel, f.Clock.Now)).Code);
+    }
     [Fact] public void InvalidFrozenModelAndFutureSignalMonthReject()
     {
         using var f = new Fixture();
