@@ -6,7 +6,8 @@ using Twenty.Core.Research;
 
 namespace Twenty.Research;
 
-public sealed record DatasetEntry(string Id, string Name, string Sha256, bool Synthetic, int Months, int Assets, DateOnly Start, DateOnly End, DateTimeOffset? RegisteredAt = null);
+public sealed record DatasetEntry(string Id, string Name, string Sha256, bool Synthetic, int Months, int Assets, DateOnly Start, DateOnly End, DateTimeOffset? RegisteredAt = null, bool ResearchOnly = false, string? ResearchOnlyReason = null);
+public sealed record InboxImportRequest(string PanelId, string Name);
 public sealed record RunRequest(string RequestId, string DatasetId, ExperimentConfig Config, ResearchCosts Costs);
 public sealed record RunEntry(string Id, string DatasetId, string DatasetName, bool Synthetic, string Status, DateTimeOffset CreatedAt,
     DateTimeOffset? StartedAt, DateTimeOffset? FinishedAt, int Progress, string? ErrorCode, string CodeCommit, string ConfigSha256,
@@ -39,18 +40,28 @@ public sealed partial class ResearchStore : IDisposable
         foreach (var run in ListRuns().Where(r => r.Status == "running")) Save(run with { Status = "interrupted", FinishedAt = this.clock.GetUtcNow(), ErrorCode = "process-restarted" }, "restart-interrupted");
     }
     public void Dispose() => lease.Dispose();
+    public DatasetEntry ImportInbox(InboxImportRequest request)
+    {
+        if (request.PanelId is not { Length: 64 } || request.PanelId.Any(c => !char.IsAsciiHexDigitLower(c))) throw new ResearchException("import-panel-id");
+        var directory = Path.Combine(Root, "imports");
+        if (!File.Exists(Path.Combine(directory, request.PanelId + ".csv")) || !File.Exists(Path.Combine(directory, request.PanelId + ".metadata.json"))) throw new ResearchException("import-panel-not-found");
+        var csv = Twenty.Core.Data.DatasetArchive.ReadBounded(Path.Combine(directory, request.PanelId + ".csv"));
+        var metadata = Twenty.Core.Data.DatasetArchive.ReadBounded(Path.Combine(directory, request.PanelId + ".metadata.json"));
+        if (MonthlyPanel.Read(csv, metadata).Sha256 != request.PanelId) throw new ResearchException("import-panel-integrity");
+        return Import(csv, metadata, request.Name);
+    }
     private SqliteConnection Open() { var db = new SqliteConnection(connectionString); db.Open(); return db; }
     private static void Execute(SqliteConnection db, string sql) { using var command = db.CreateCommand(); command.CommandText = sql; command.ExecuteNonQuery(); }
     public DatasetEntry Import(byte[] csv, byte[] metadata, string name)
     {
         var panel = MonthlyPanel.Read(csv, metadata);
-        if (name.Length is < 1 or > 80) throw new ResearchException("dataset-name");
+        if (name is not { Length: >= 1 and <= 80 }) throw new ResearchException("dataset-name");
         lock (gate)
         {
             if (Datasets().Count >= 20 && Datasets().All(x => x.Id != panel.Sha256)) throw new ResearchException("dataset-capacity");
             var directory = Path.Combine(Root, "datasets", panel.Sha256); Directory.CreateDirectory(directory);
             ImmutableWrite(Path.Combine(directory, "prices.csv"), csv); ImmutableWrite(Path.Combine(directory, "prices.metadata.json"), metadata);
-            var entry = new DatasetEntry(panel.Sha256, name, panel.Sha256, panel.Synthetic, panel.Dates.Length, panel.Assets.Length, panel.Dates[0], panel.Dates[^1], this.clock.GetUtcNow());
+            var entry = new DatasetEntry(panel.Sha256, name, panel.Sha256, panel.Synthetic, panel.Dates.Length, panel.Assets.Length, panel.Dates[0], panel.Dates[^1], this.clock.GetUtcNow(), panel.ResearchOnly, panel.ResearchOnlyReason);
             using var db = Open(); using var command = db.CreateCommand();
             command.CommandText = "INSERT OR IGNORE INTO datasets(id,json) VALUES($id,$json)";
             command.Parameters.AddWithValue("$id", entry.Id); command.Parameters.AddWithValue("$json", JsonSerializer.Serialize(entry, Json)); command.ExecuteNonQuery();

@@ -18,6 +18,7 @@ public static class StudyProtocol
     public static StudyPlan Declare(MonthlyPanel panel, decimal monthly, ResearchCosts costs, string purpose, string codeSha,
         string identityScheme = "legacy-core-api-assemblies-v1", string buildSdk = "unrecorded", string framework = "unrecorded", string architecture = "unrecorded")
     {
+        if (panel.ResearchOnly) throw new ResearchException("study-research-only-panel");
         if (purpose != (panel.Synthetic ? "engineering" : "research")) throw new ResearchException("study-purpose-provenance");
         costs.Validate();
         var stress = costs with { FxBps = costs.FxBps * 2, HalfSpreadBps = costs.HalfSpreadBps * 2, SlippageBps = costs.SlippageBps * 2, BuyTaxBps = costs.BuyTaxBps * 2 };

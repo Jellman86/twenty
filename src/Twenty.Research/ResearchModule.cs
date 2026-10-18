@@ -36,6 +36,7 @@ public static class ResearchModule
         });
         static string Commit() => Environment.GetEnvironmentVariable("TWENTY_COMMIT") ?? "local";
         api.MapGet("/datasets", () => store.Datasets());
+        api.MapPost("/datasets/import", (InboxImportRequest request) => Results.Ok(store.ImportInbox(request)));
         api.MapGet("/runs", () => store.ListRuns().Take(100));
         api.MapGet("/trials", () => new { total = store.ListRuns().Count, displayedLimit = 100 });
         api.MapPost("/runs", (RunRequest request) => Results.Accepted("/api/research/runs", store.Enqueue(request, Commit())));

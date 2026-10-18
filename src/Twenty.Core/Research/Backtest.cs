@@ -30,7 +30,7 @@ public sealed record ForwardScenarios(string Method, int Paths, int BlockMonths,
 public sealed record BacktestReport(string EngineVersion, string DatasetSha256, bool Synthetic, string Source, string FeatureVersion,
     ExperimentConfig Config, ResearchCosts Costs, string Scope, DateOnly EvaluationStart, DateOnly EvaluationEnd, DateOnly ReservedPeriodStart,
     ImmutableArray<StrategySummary> Summaries, ImmutableArray<EquityObservation> Equity, ImmutableArray<Prediction> Predictions,
-    ImmutableArray<TrainingFold> Folds, ForwardScenarios Forward, ImmutableArray<string> Limitations);
+    ImmutableArray<TrainingFold> Folds, ForwardScenarios Forward, ImmutableArray<string> Limitations, bool ResearchOnly = false, string? ResearchOnlyReason = null);
 
 public static class Backtest
 {
@@ -116,7 +116,7 @@ public static class Backtest
              "Concentration and hypothesis settings are research choices, not optimised or approved for real investing.",
              config.AllocationPolicy == "contribution-only" ? "Contribution-only policy retains holdings, respects occupied slots and cannot sell to follow rotating ranks; unused cash remains uninvested." : "Full-rebalance research sells holdings to follow new targets; this report cannot approve the initial buy-only broker coordinator.",
              "Conditional bootstrap scenarios assume the sampled return regime repeats; bands are not calibrated investment probabilities.",
-             "Synthetic inputs demonstrate software only; no alpha, millionaire probability or live-trading approval is established."]);
+             panel.ResearchOnly ? panel.ResearchOnlyReason! : "Synthetic inputs demonstrate software only; no alpha, millionaire probability or live-trading approval is established."], panel.ResearchOnly, panel.ResearchOnlyReason);
     }
     private static decimal EqualFraction(int count) => decimal.Truncate(1m / count * 1000000000000000000000000m) / 1000000000000000000000000m;
 }

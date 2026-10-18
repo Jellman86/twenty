@@ -65,6 +65,8 @@ assert portfolio["brokerConfigured"] is False and portfolio["broker"] is None
 
 assert json.load(get("/health/ready"))["mode"] == "research"
 assert json.load(get("/api/meta"))["brokerConnected"] is False
+assert json.load(get("/api/ingest/tiingo"))["configured"] is False
+assert post("/api/ingest/tiingo/check", {}, 400)["error"] == "tiingo-key-missing"
 roadmap = json.load(get("/api/roadmap"))
 assert len(roadmap) >= 11
 assert all(issue["url"].startswith("https://github.com/Jellman86/twenty/issues/") for issue in roadmap)

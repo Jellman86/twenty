@@ -14,6 +14,7 @@ public static class ForwardSignalBuilder
     public static ForwardSignal Build(string runId, string reportHash, BacktestReport frozen, MonthlyPanel trainingPanel,
         MonthlyPanel latestPanel, DateTimeOffset now, DateTimeOffset? inputObservedAt = null)
     {
+        if (trainingPanel.ResearchOnly || latestPanel.ResearchOnly) throw new ResearchException("signal-research-only-panel");
         now = now.ToUniversalTime();
         var observedAt = inputObservedAt ?? now;
         if (observedAt > now) throw new ResearchException("signal-input-availability");

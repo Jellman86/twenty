@@ -93,10 +93,10 @@ public sealed class CollectorWorker(CollectorSettings settings, CaptureStore sto
 
 public static class CollectorModule
 {
-    public static CaptureStore? Add(IServiceCollection services, CollectorSettings settings)
+    public static CaptureStore? Add(IServiceCollection services, CollectorSettings settings, bool tiingoConfigured = false)
     {
         services.AddSingleton(settings);
-        if (settings.Role is null && settings.IngestToken is null) return null;
+        if (settings.Role is null && settings.IngestToken is null && !tiingoConfigured) return null;
         var store = new CaptureStore(settings.Root);
         services.AddSingleton(store);
         if (settings.Role is not null) services.AddHostedService<CollectorWorker>();

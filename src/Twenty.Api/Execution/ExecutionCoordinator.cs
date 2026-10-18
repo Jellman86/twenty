@@ -36,6 +36,7 @@ public sealed class ExecutionCoordinator
         if (broker is null) throw new ResearchException("broker-credentials-missing");
         if (broker.Environment != policy.BrokerEnvironment) throw new ResearchException("execution-environment-mismatch");
         var run = research.Find(policy.RunId) ?? throw new ResearchException("run-not-found");
+        if (research.Panel(run.DatasetId).ResearchOnly) throw new ResearchException("execution-research-only-panel");
         if (run.Status != "succeeded" || run.ReportSha256 != policy.ReportSha256 || run.Config.MonthlyGbp != policy.MonthlyGbp)
             throw new ResearchException("execution-strategy-binding");
         if (run.Config.AllocationPolicy != "contribution-only") throw new ResearchException("execution-backtest-policy-mismatch");

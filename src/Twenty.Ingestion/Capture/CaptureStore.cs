@@ -27,7 +27,7 @@ public sealed class CaptureStore : IDisposable
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(root, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
         try { lease = new FileStream(Path.Combine(root, ".writer.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
         catch (IOException) { throw new CaptureException("store-in-use"); }
-        foreach (var part in new[] { "objects", "observations", "status", "outbox", "received" }) Directory.CreateDirectory(Path.Combine(root, part));
+        foreach (var part in new[] { "objects", "observations", "status", "outbox", "received", "state" }) Directory.CreateDirectory(Path.Combine(root, part));
         foreach (var temporary in Directory.EnumerateFiles(root, ".write-*", SearchOption.AllDirectories)) File.Delete(temporary);
     }
 
@@ -107,6 +107,25 @@ public sealed class CaptureStore : IDisposable
         return bytes;
     }
     public bool HasObject(string sha256) => File.Exists(ObjectPath(sha256));
+    public T? PrivateState<T>(string id) where T : class
+    {
+        lock (gate)
+        {
+            var path = Path.Combine(root, "state", SafeId(id) + ".json");
+            if (!File.Exists(path)) return null;
+            if (new FileInfo(path).Length > 65536) throw new CaptureException("store-state-limit");
+            return Read<T>(path);
+        }
+    }
+    public T UpdatePrivateState<T>(string id, Func<T?, T> update) where T : class
+    {
+        lock (gate)
+        {
+            var state = update(PrivateState<T>(id)); var bytes = JsonSerializer.SerializeToUtf8Bytes(state, Json);
+            if (bytes.Length > 65536) throw new CaptureException("store-state-limit");
+            WriteFile(Path.Combine(root, "state", SafeId(id) + ".json"), bytes, immutable: false); return state;
+        }
+    }
 
     public CaptureStatus Status(string sourceId)
     {

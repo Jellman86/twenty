@@ -48,6 +48,10 @@ public static partial class CaptureSources
             Weekly, CaptureHost.Local, ["mba.tuck.dartmouth.edu"], b => ZipCsv(b, "F-F_Research_Data_Factors.csv", ",Mkt-RF,SMB,HML,RF")),
         new("french-factors-daily", "Fama-French factors, daily", new("https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/F-F_Research_Data_Factors_daily_CSV.zip"),
             Weekly, CaptureHost.Local, ["mba.tuck.dartmouth.edu"], b => ZipCsv(b, "F-F_Research_Data_Factors_daily.csv", ",Mkt-RF,SMB,HML,RF")),
+        new("french-industry-monthly", "French 10 industry portfolios, monthly", new("https://mba.tuck.dartmouth.edu/pages/faculty/ken.french/ftp/10_Industry_Portfolios_CSV.zip"),
+            Weekly, CaptureHost.Local, ["mba.tuck.dartmouth.edu"], b => ZipCsv(b, "10_Industry_Portfolios.csv", ",NoDur,Durbl,Manuf,Enrgy,HiTec,Telcm,Shops,Hlth,Utils,Other")),
+        new("ecb-reference-history", "ECB reference FX history", new("https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.xml"),
+            Weekly, CaptureHost.Local, ["www.ecb.europa.eu"], b => b.Length > 100 && Encoding.UTF8.GetString(b.AsSpan(0, Math.Min(b.Length, 2048))).Contains("gesmes:Envelope", StringComparison.Ordinal) ? null : "unexpected-xml"),
         new("shiller-ie-data", "Shiller S&P data", new("https://shillerdata.com/"), Weekly, CaptureHost.Local,
             ["shillerdata.com", "img1.wsimg.com"], OleSpreadsheet, ShillerLink()),
     ];

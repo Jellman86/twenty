@@ -33,7 +33,10 @@ if (args.Length == 2 && args[0] == "--import-panel")
 }
 var accounts = AuthModule.Add(builder, root);
 var collection = CollectorSettings.From(builder.Configuration, root, headless: false);
-var captures = CollectorModule.Add(builder.Services, collection);
+var tiingoToken = Twenty.Ingestion.Tiingo.TiingoClient.ReadToken(builder.Configuration["TWENTY_TIINGO_KEY"], builder.Configuration["TWENTY_TIINGO_KEY_FILE"]);
+var captures = CollectorModule.Add(builder.Services, collection, tiingoToken is not null);
+using var tiingoHttp = tiingoToken is null ? null : Twenty.Ingestion.Capture.CaptureCollector.CreateHttpClient();
+var tiingo = tiingoToken is null ? null : new Twenty.Ingestion.Tiingo.TiingoClient(tiingoHttp!, captures!, tiingoToken);
 var ledger = new PaperLedger(store);
 builder.Services.AddSingleton(ledger);
 var broker = BrokerConfiguration.Create(builder.Configuration, store.Root);
@@ -89,6 +92,10 @@ app.MapGet("/health/live", () => Results.Ok(new { status = "ok" })).AllowAnonymo
 app.MapGet("/health/ready", () => Results.Ok(new { status = "ready", mode = "research" })).AllowAnonymous();
 AuthModule.Map(app, accounts, signInDisabled);
 CollectorModule.Map(app, collection, captures);
+app.MapGet("/api/ingest/tiingo", () => tiingo?.Status() ?? new { configured = false });
+app.MapPost("/api/ingest/tiingo/check", async (CancellationToken ct) => tiingo is null ? Results.BadRequest(new { error = "tiingo-key-missing" }) : Results.Ok(new { authenticated = await tiingo.Check(ct) }));
+app.MapPost("/api/ingest/tiingo/history", async (Twenty.Ingestion.Tiingo.TiingoHistoryRequest request, CancellationToken ct) =>
+    tiingo is null ? Results.BadRequest(new { error = "tiingo-key-missing" }) : Results.Ok(await tiingo.Capture(request, ct)));
 ExecutionPolicy? DisplayPolicy() { try { return execution.Policy(); } catch (ResearchException) { return null; } }
 app.MapGet("/api/meta", () =>
 {

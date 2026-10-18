@@ -3,9 +3,56 @@ using System.Text.Json;
 using Twenty.Core.Data;
 using Twenty.Ingestion.Sec;
 using Twenty.Ingestion.Fx;
+using Twenty.Ingestion.Capture;
+using Twenty.Ingestion.Returns;
+using Twenty.Ingestion.Tiingo;
 
 try
 {
+    if (args.Length == 9 && args[0] == "french-panel" && args[1] == "--archive" && args[3] == "--from" && args[5] == "--to" && args[7] == "--output")
+    {
+        if (!DateOnly.TryParseExact(args[4], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var from) ||
+            !DateOnly.TryParseExact(args[6], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var to)) throw new Twenty.Core.Research.ResearchException("return-panel-window");
+        using var archive = new CaptureStore(args[2]);
+        var files = FrenchReturnPanel.Build(archive, from, to);
+        var directory = Path.GetFullPath(args[8]); Directory.CreateDirectory(directory);
+        if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(directory, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        foreach (var (suffix, outputBytes) in new[] { (".csv", files.Csv), (".metadata.json", files.Metadata), (".audit.json", files.Audit) })
+        {
+            var path = Path.Combine(directory, files.Id + suffix);
+            if (File.Exists(path)) { if (!File.ReadAllBytes(path).SequenceEqual(outputBytes)) throw new IOException(); continue; }
+            using (var output = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None)) output.Write(outputBytes);
+            if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+        Console.WriteLine(JsonSerializer.Serialize(new { valid = true, panelId = files.Id, researchOnly = true, converter = FrenchReturnPanel.Version }));
+        return 0;
+    }
+    if (args.Length == 3 && args[0] == "tiingo-check" && args[1] == "--archive" ||
+        args.Length == 9 && args[0] == "tiingo-history" && args[2] == "--from" && args[4] == "--to" && args[6] == "--archive" && args[8] == "--capture")
+    {
+        var token = TiingoClient.ReadToken(Environment.GetEnvironmentVariable("TWENTY_TIINGO_KEY"), Environment.GetEnvironmentVariable("TWENTY_TIINGO_KEY_FILE")) ?? throw new Twenty.Core.Research.ResearchException("tiingo-key-missing");
+        using var store = new CaptureStore(args[0] == "tiingo-check" ? args[2] : args[7]);
+        using var http = CaptureCollector.CreateHttpClient(); var client = new TiingoClient(http, store, token);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(35));
+        if (args[0] == "tiingo-check") Console.WriteLine(JsonSerializer.Serialize(new { authenticated = await client.Check(deadline.Token) }));
+        else
+        {
+            if (!DateOnly.TryParseExact(args[3], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var from) ||
+                !DateOnly.TryParseExact(args[5], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var to)) throw new Twenty.Core.Research.ResearchException("tiingo-history-request");
+            Console.WriteLine(JsonSerializer.Serialize(await client.Capture(new(args[1], from, to), deadline.Token), DatasetJson.Options));
+        }
+        return 0;
+    }
+    if (args.Length == 5 && args[0] == "capture-public" && args[1] == "--archive" && args[3] == "--sources")
+    {
+        var sources = CaptureSources.For(CaptureRole.Local, args[4]);
+        using var archive = new CaptureStore(args[2]);
+        using var http = CaptureCollector.CreateHttpClient();
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        var result = await new CaptureCollector(http, archive, CaptureRole.Local, new() { Collector = "offline-research" }).RunDue(sources, deadline.Token);
+        Console.WriteLine(JsonSerializer.Serialize(result, DatasetJson.Options));
+        return result.Any(r => r.Result is not ("captured" or "unchanged" or "not-due")) ? 1 : 0;
+    }
     if (args.Length == 8 && args[0] == "ecb-inspect" && args[2] == "--date" && args[4] == "--base" && args[6] == "--quote")
     {
         if (!DateOnly.TryParseExact(args[3], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
@@ -50,7 +97,11 @@ try
     }
     if (args.Length is not (2 or 4) || args[0] != "validate" || (args.Length == 4 && args[2] != "--archive"))
     {
-        Console.Error.WriteLine("Usage: Twenty.Data validate <dataset.json> [--archive <directory>]\n" +
+        Console.Error.WriteLine("Usage: Twenty.Data french-panel --archive <captures> --from yyyy-mm-dd --to yyyy-mm-dd --output <private-inbox>\n" +
+            "       Twenty.Data tiingo-check --archive <private-directory>\n" +
+            "       Twenty.Data tiingo-history <SYMBOL> --from yyyy-mm-dd --to yyyy-mm-dd --archive <private-directory> --capture\n" +
+            "       Twenty.Data capture-public --archive <private-directory> --sources <comma-separated-source-ids>\n" +
+            "       Twenty.Data validate <dataset.json> [--archive <directory>]\n" +
             "       Twenty.Data sec-inspect <CIK> <submissions.json>\n" +
             "       Twenty.Data sec-collect <CIK> --from yyyy-mm-dd --to yyyy-mm-dd --archive <private-directory>\n" +
             "       Twenty.Data ecb-inspect <xml> --date yyyy-mm-dd --base USD --quote GBP\n" +
@@ -68,6 +119,16 @@ try
         observations = file.Observations.Length, issues = validation.Issues, archive = stored
     }, DatasetJson.Options));
     return validation.IsValid ? 0 : 1;
+}
+catch (Twenty.Core.Research.ResearchException error)
+{
+    Console.Error.WriteLine(JsonSerializer.Serialize(new { valid = false, code = error.Code }));
+    return 1;
+}
+catch (CaptureException error)
+{
+    Console.Error.WriteLine(JsonSerializer.Serialize(new { valid = false, code = error.Code }));
+    return 1;
 }
 catch (EcbDataException error)
 {

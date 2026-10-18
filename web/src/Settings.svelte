@@ -6,6 +6,8 @@
   type Source = { id: string; title: string; defaultHost: string; cadenceHours: number; collectedHere: boolean; lastSuccessAt: string | null; lastAttemptAt: string | null; pausedUntil: string | null; lastError: string | null; observations: number; lastCollector: string | null };
   type Collection = { role: string; collector: string; receivingRemote: boolean; sources: Source[] };
   let collection = $state<Collection | null>(null);
+  type Tiingo = { configured: boolean; lastSuccessAt?: string | null; lastError?: string | null; quota?: { uniqueSymbols: number; dayRequests: number; monthBytes: number } | null };
+  let tiingo = $state<Tiingo | null>(null);
   const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—');
   let runtime = $state<Runtime | null>(null);
   let meta = $state<Meta | null>(null);
@@ -23,10 +25,22 @@
   const post = (path: string, body: unknown = {}) =>
     fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Twenty-Request': '1' }, body: JSON.stringify(body) });
   async function load() {
-    const [r, m, c] = await Promise.all([fetch('/api/execution/broker'), fetch('/api/meta'), fetch('/api/ingest/status')]);
+    const [r, m, c, t] = await Promise.all([fetch('/api/execution/broker'), fetch('/api/meta'), fetch('/api/ingest/status'), fetch('/api/ingest/tiingo')]);
     if (r.ok) runtime = await r.json();
     if (m.ok) meta = await m.json();
     if (c.ok) collection = await c.json();
+    if (t.ok) tiingo = await t.json();
+  }
+  async function checkTiingo() {
+    busy = true; error = notice = '';
+    try {
+      const response = await post('/api/ingest/tiingo/check');
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error === 'tiingo-request-not-due' ? 'Wait at least 90 seconds between Tiingo requests.' : result.error ?? 'Tiingo check failed.');
+      notice = result.authenticated ? 'Tiingo authentication succeeded. No backfill or trade was started.' : 'Tiingo authentication was not confirmed.';
+      await load();
+    } catch (e) { error = e instanceof Error ? e.message : 'Tiingo check failed.'; }
+    finally { busy = false; }
   }
   async function changePassword(e: SubmitEvent) {
     e.preventDefault();
@@ -149,6 +163,15 @@
     </table>
   </div>
   <p class="dataset-note">Raw files are kept privately on this server, one copy per distinct version, with every check recorded, so an unchanged daily list still counts as evidence for that day. Collection is set with <code>TWENTY_COLLECTOR_ROLE</code>; remote collectors ship here with a private ingest token. See docs/collectors.md.</p>
+</section>
+
+<section class="panel compact" aria-labelledby="tiingo-title">
+  <p class="eyebrow">FREE HISTORICAL DATA</p><h2 id="tiingo-title">Tiingo Starter</h2>
+  <p>{tiingo?.configured ? 'Private API key configured.' : 'No Tiingo key configured.'} Last successful request: {when(tiingo?.lastSuccessAt ?? null)}.</p>
+  <p>One request per 90 seconds, at most 900 per UTC day, 500 symbols per calendar month and an 800 MB monthly response budget. Usage survives restarts. Bulk backfills are off.</p>
+  {#if tiingo?.quota}<p class="dataset-note">Recorded usage: {tiingo.quota.uniqueSymbols} symbols this month · {tiingo.quota.dayRequests} requests in the recorded day · {(tiingo.quota.monthBytes / 1000000).toFixed(2)} MB captured or reserved this month. Other clients using the same key are outside this counter.</p>{/if}
+  {#if tiingo?.lastError}<p class="error">{tiingo.lastError}</p>{/if}
+  <button class="secondary" disabled={busy || !tiingo?.configured} onclick={()=>void checkTiingo()}>Check read-only connection</button>
 </section>
 
 <section class="panel compact settings-about" aria-labelledby="about-title">

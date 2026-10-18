@@ -9,9 +9,11 @@ Implemented 16 October 2026. Twenty collects free public data in two places from
 | `nasdaq-listed`, `nasdaq-other`: Nasdaq Trader symbol directories | day | any | exact column header and the `File Creation Time` trailer |
 | `tiingo-tickers`: Tiingo's public `supported_tickers.zip` | day | any | zip entry and column header |
 | `french-factors-monthly`, `french-factors-daily`: Fama–French factors | week | local | zip entry and column header after the notes |
+| `french-industry-monthly`: ten value-weighted industry returns | week | local | zip entry and monthly section header |
+| `ecb-reference-history`: ECB reference FX history | week | local | XML envelope; full parsing at conversion |
 | `shiller-ie-data`: Shiller's `ie_data.xls`, found from the link on shillerdata.com | week | local | a real spreadsheet (OLE2 signature) |
 
-None needs an account. "Default host" decides which role collects a source when none is named: a local collector takes `local` and `any`; a remote collector takes `remote` only. `TWENTY_COLLECTOR_SOURCES` overrides that with a comma-separated list, or `all`. Sources that need a free key (Tiingo prices, FRED) or the SEC contact are not wired in yet.
+None needs an account. "Default host" decides which role collects a source when none is named: a local collector takes `local` and `any`; a remote collector takes `remote` only. `TWENTY_COLLECTOR_SOURCES` overrides that with a comma-separated list, or `all`. Tiingo prices now support explicit, quota-limited private-key requests; see [real-data integration](real-data-milestone.md). FRED and the SEC contact remain separate inputs.
 
 ## How a capture is kept
 
@@ -21,7 +23,7 @@ Under `<data>/captures/capture-v1/`:
 - `observations/<source>/<yyyy-mm>.jsonl`: one line per successful check, including unchanged ones (`notModified: true`), with URL, hash, size, time, collector name, and for shipped captures the time Quark received it. An unchanged daily listing is still evidence the symbols were listed that day.
 - `status/<source>.json`: last success, validators for conditional requests, failures and any pause.
 
-Files are owner-only and the store has a single writer. Nothing here goes into Git or the published image. Turning these raw files into dataset observations (French and Shiller into return series, listing snapshots into listing intervals) is the next step and needs the data-contract change approved in the plan.
+Files are owner-only and the store has a single writer. Nothing here goes into Git or the published image. The offline French industry/market converter now produces an explicitly non-executable research panel; see [real-data integration](real-data-milestone.md). Shiller return observations and listing intervals remain unimplemented. The v1 stock observation contract is unchanged.
 
 ## Politeness and failure
 

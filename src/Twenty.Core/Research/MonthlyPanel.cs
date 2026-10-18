@@ -23,10 +23,12 @@ public sealed partial class MonthlyPanel
     public string Sha256 { get; }
     public string Source { get; }
     public bool Synthetic { get; }
+    public bool ResearchOnly { get; }
+    public string? ResearchOnlyReason { get; }
     private readonly decimal[,] values;
     [GeneratedRegex("^[A-Z0-9][A-Z0-9_.:-]{0,31}$", RegexOptions.CultureInvariant)] private static partial Regex Symbol();
-    private MonthlyPanel(ImmutableArray<DateOnly> dates, ImmutableArray<string> symbols, decimal[,] values, string benchmark, string hash, string source, bool synthetic)
-    { Dates = dates; Symbols = symbols; Assets = symbols.Where(x => x != benchmark).ToImmutableArray(); this.values = values; Benchmark = benchmark; Sha256 = hash; Source = source; Synthetic = synthetic; }
+    private MonthlyPanel(ImmutableArray<DateOnly> dates, ImmutableArray<string> symbols, decimal[,] values, string benchmark, string hash, string source, bool synthetic, bool researchOnly, string? reason)
+    { Dates = dates; Symbols = symbols; Assets = symbols.Where(x => x != benchmark).ToImmutableArray(); this.values = values; Benchmark = benchmark; Sha256 = hash; Source = source; Synthetic = synthetic; ResearchOnly = researchOnly; ResearchOnlyReason = reason; }
     public static MonthlyPanel Read(byte[] csv, byte[] metadata)
     {
         if (csv.Length > 8 * 1024 * 1024 || metadata.Length > 65536) throw new ResearchException("panel-size-limit");
@@ -40,6 +42,14 @@ public sealed partial class MonthlyPanel
                 m.GetProperty("benchmark").GetString() is not { } benchmark || !Symbol().IsMatch(benchmark) ||
                 m.GetProperty("synthetic").ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw new ResearchException("panel-metadata");
             var synthetic = m.GetProperty("synthetic").GetBoolean();
+            var researchOnly = false;
+            if (m.TryGetProperty("researchOnly", out var restricted))
+            {
+                if (restricted.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) throw new ResearchException("panel-research-only");
+                researchOnly = restricted.GetBoolean();
+            }
+            var reason = m.TryGetProperty("researchOnlyReason", out var reasonValue) ? reasonValue.GetString() : null;
+            if (researchOnly && reason is not { Length: > 0 and <= 512 }) throw new ResearchException("panel-research-only");
             using var reader = new StringReader(new UTF8Encoding(false, true).GetString(csv));
             if (reader.ReadLine()?.TrimStart('\uFEFF') != "date,symbol,total_return_index_gbp") throw new ResearchException("panel-header");
             var records = new SortedDictionary<DateOnly, Dictionary<string, decimal>>();
@@ -69,7 +79,7 @@ public sealed partial class MonthlyPanel
             }
             var payload = new byte[csv.Length + metadata.Length + 1];
             csv.CopyTo(payload, 0); metadata.CopyTo(payload, csv.Length + 1);
-            return new(dates, symbols, values, benchmark, Convert.ToHexStringLower(SHA256.HashData(payload)), source, synthetic);
+            return new(dates, symbols, values, benchmark, Convert.ToHexStringLower(SHA256.HashData(payload)), source, synthetic, researchOnly, reason);
         }
         catch (Exception error) when (error is JsonException or KeyNotFoundException or InvalidOperationException or DecoderFallbackException)
         { throw new ResearchException("panel-metadata-or-encoding"); }
