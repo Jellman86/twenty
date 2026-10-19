@@ -72,6 +72,31 @@ try
             subjects = files.Subjects.Select(s => new { s.Symbol, s.TerminalClass, s.Findings }) }));
         return 0;
     }
+    if ((args.Length == 11 || args.Length == 13) && args[0] == "sec-facts" && args[1] == "--dataset" && args[3] == "--bulk" &&
+        args[5] == "--retrieved-at" && args[7] == "--concepts" && args[9] == "--archive" && (args.Length == 11 || args[11] == "--dataset-id"))
+    {
+        if (!DateTimeOffset.TryParse(args[6], System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var retrievedAt) ||
+            !(args[6].EndsWith('Z') || args[6].Contains('+') || args[6].LastIndexOf('-') > 10))
+            throw new Twenty.Ingestion.Sec.SecCollectionException("sec-facts-retrieved-at");
+        var input = DatasetJson.Read(DatasetArchive.ReadBounded(Path.GetFullPath(args[2])));
+        string bulkSha;
+        using (var hashStream = File.OpenRead(Path.GetFullPath(args[4])))
+            bulkSha = Convert.ToHexStringLower(await System.Security.Cryptography.SHA256.HashDataAsync(hashStream));
+        var concepts = System.Collections.Immutable.ImmutableArray.CreateRange(
+            args[8].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        using var bulk = File.OpenRead(Path.GetFullPath(args[4]));
+        var result = SecCompanyFacts.Convert(input, bulk, bulkSha, new(concepts, ["us-gaap", "dei"], retrievedAt.ToUniversalTime()));
+        var dataset = args.Length == 13
+            ? result.Dataset with { Manifest = result.Dataset.Manifest with { DatasetId = args[12] } }
+            : result.Dataset;
+        var mergedBytes = JsonSerializer.SerializeToUtf8Bytes(dataset, DatasetJson.Options);
+        var storedPath = DatasetArchive.Store(Path.GetFullPath(args[10]), mergedBytes);
+        Console.WriteLine(JsonSerializer.Serialize(new { valid = true, datasetId = dataset.Manifest.DatasetId, companies = result.Companies,
+            factsAdded = result.FactsAdded, factsSkippedExisting = result.FactsSkippedExisting, bulkSha256 = result.BulkSha256,
+            converter = SecCompanyFacts.ParserVersion, stored = storedPath }));
+        return 0;
+    }
     if (args.Length == 3 && args[0] == "tiingo-check" && args[1] == "--archive" ||
         args.Length == 9 && args[0] == "tiingo-history" && args[2] == "--from" && args[4] == "--to" && args[6] == "--archive" && args[8] == "--capture")
     {
@@ -147,6 +172,7 @@ try
             "       Twenty.Data tiingo-history <SYMBOL> --from yyyy-mm-dd --to yyyy-mm-dd --archive <private-directory> --capture\n" +
             "       Twenty.Data listing-intervals --archive <captures> --output <private-directory> [--sources nasdaq-listed,nasdaq-other,tiingo-tickers]\n" +
             "       Twenty.Data listing-audit --intervals <interval-id.csv> --archive <tiingo-captures> --symbols AAA,BBB --output <private-directory>\n" +
+            "       Twenty.Data sec-facts --dataset <input.json> --bulk <companyfacts.zip> --retrieved-at <iso8601> --concepts Revenues,Assets --archive <dataset-archive> [--dataset-id <id>]\n" +
             "       Twenty.Data capture-public --archive <private-directory> --sources <comma-separated-source-ids>\n" +
             "       Twenty.Data validate <dataset.json> [--archive <directory>]\n" +
             "       Twenty.Data sec-inspect <CIK> <submissions.json>\n" +
