@@ -33,7 +33,8 @@ public sealed class ChangingUniversePanelTests
         DateTimeOffset from, DateTimeOffset? until, bool eligible, string? revisionOf = null) =>
         new(id, Ev(available, revisionOf), "research-universe", listing, from, until, eligible);
 
-    // AAA splits 2:1 in February and continues; BBB enters in February; CCC exits in April.
+    // AAA splits 2:1 in February and continues; BBB enters in February; CCC exits 29 March,
+    // known 8 April.
     private static DatasetFile Scenario(TerminalOutcome outcome = TerminalOutcome.Zero, decimal? cash = null,
         ExitKind exit = ExitKind.Delisted, bool cccSplitBeforeExit = false, bool bbbBarsAfterFebruary = true,
         decimal aaaFebruaryAdjusted = 55m)
@@ -67,22 +68,22 @@ public sealed class ChangingUniversePanelTests
             observations.Add(Bar($"ccc-adj-{id}", "ccc", month, day, PriceBasis.TotalReturnAdjusted, close));
             observations.Add(Bar($"ccc-raw-{id}", "ccc", month, day, PriceBasis.Raw, close));
         }
-        // Exit effective 5 April, known 8 April: listing/membership intervals close in revisions.
-        observations.Add(ListingRow("listing-ccc-closed", "ccc", "CCC", At(4, 8), At(1, 1), At(4, 5), ListingStatus.Active, "listing-ccc"));
-        observations.Add(Member("member-ccc-closed", "ccc", At(4, 8), At(1, 1), At(4, 5), true, "member-ccc"));
-        observations.Add(Member("member-ccc-exit", "ccc", At(4, 8), At(4, 5), null, false));
+        // Exit effective 29 March, known 8 April: listing/membership intervals close in revisions.
+        observations.Add(ListingRow("listing-ccc-closed", "ccc", "CCC", At(4, 8), At(1, 1), At(3, 29, 12), ListingStatus.Active, "listing-ccc"));
+        observations.Add(Member("member-ccc-closed", "ccc", At(4, 8), At(1, 1), At(3, 29, 12), true, "member-ccc"));
+        observations.Add(Member("member-ccc-exit", "ccc", At(4, 8), At(3, 29, 12), null, false));
         if (exit == ExitKind.Delisted)
         {
-            observations.Add(ListingRow("listing-ccc-delisted", "ccc", "CCC", At(4, 8), At(4, 5), null, ListingStatus.Delisted));
+            observations.Add(ListingRow("listing-ccc-delisted", "ccc", "CCC", At(4, 8), At(3, 29, 12), null, ListingStatus.Delisted));
             observations.Add(new CorporateAction("ccc-delisting", Ev(At(4, 8)), "ccc", "ccc-delisting-event",
-                CorporateActionKind.Delisting, At(4, 5), null, cash, cash is null ? null : "USD", null, null, outcome));
+                CorporateActionKind.Delisting, At(3, 29, 12), null, cash, cash is null ? null : "USD", null, null, outcome));
             if (cccSplitBeforeExit)
                 observations.Add(new CorporateAction("ccc-split", Ev(At(4, 1)), "ccc", "ccc-split-event",
-                    CorporateActionKind.Split, At(4, 2), 2m, null, null, null, null, TerminalOutcome.NotApplicable));
+                    CorporateActionKind.Split, At(3, 29), 2m, null, null, null, null, TerminalOutcome.NotApplicable));
         }
         else
         {
-            observations.Add(ListingRow("listing-ccc-continues", "ccc", "CCC", At(4, 8), At(4, 5), null, ListingStatus.Active));
+            observations.Add(ListingRow("listing-ccc-continues", "ccc", "CCC", At(4, 8), At(3, 29, 12), null, ListingStatus.Active));
         }
 
         var manifest = new DatasetManifest(DatasetValidator.SchemaVersion, "changing-universe-fixture", At(5, 2),
@@ -179,14 +180,17 @@ public sealed class ChangingUniversePanelTests
     [Fact]
     public void DelistingKnownAfterTheExitPeriodStartsStillExplainsTheExit()
     {
-        // At 6 April the 5 April delisting is not yet known (published 8 April), so CCC is
-        // still eligible and carries its March close; the loss lands in the next period.
-        var decisions = new[] { At(3, 31, 23), At(4, 6, 23), At(4, 30, 23) };
+        // The 29 March exit is not yet known at the 31 March decision (published 8 April), so
+        // CCC is still eligible there and carries its March close; the loss lands in the next
+        // period, not at the effective date and not never.
+        var decisions = new[] { At(2, 29, 23), At(3, 31, 23), At(4, 30, 23) };
         var panel = Build(Scenario(), decisions);
         Assert.Contains("ccc", panel.Months[1].EligibleListingIds);
-        Assert.Equal(0m, Return(panel, 0, "ccc").Return);
+        Assert.Equal(UniverseReturnStatus.Priced, Return(panel, 0, "ccc").Status);
+        Assert.Equal(-0.0526m, Return(panel, 0, "ccc").Return!.Value, 4); // 18/19 - 1
         Assert.Equal(UniverseReturnStatus.TerminalZero, Return(panel, 1, "ccc").Status);
         Assert.Equal(-1m, Return(panel, 1, "ccc").Return);
+        Assert.False(panel.HasGaps);
     }
 
     [Fact]
@@ -207,7 +211,16 @@ public sealed class ChangingUniversePanelTests
             dataset, "research-universe", [At(2, 29, 23), At(1, 31, 23)], TimeSpan.FromDays(45)));
         Assert.Throws<ResearchException>(() => ChangingUniversePanel.FromDataset(
             dataset, "research-universe", Decisions, TimeSpan.Zero));
+        // Past the snapshot cutoff: the monthly grid passes and the AsOf slice refuses.
         Assert.Throws<InvalidDatasetException>(() => ChangingUniversePanel.FromDataset(
-            dataset, "research-universe", [At(4, 30, 23), At(6, 30, 23)], TimeSpan.FromDays(45)));
+            dataset, "research-universe", [At(4, 30, 23), At(5, 31, 23)], TimeSpan.FromDays(45)));
+        // The grid must be monthly: hourly, twice-monthly and month-skipping cadences are
+        // refused rather than later deposited, measured and annualised as if they were months.
+        Assert.Throws<ResearchException>(() => ChangingUniversePanel.FromDataset(
+            dataset, "research-universe", [At(1, 31, 23), At(1, 31, 23).AddHours(1), At(1, 31, 23).AddHours(2)], TimeSpan.FromDays(45)));
+        Assert.Throws<ResearchException>(() => ChangingUniversePanel.FromDataset(
+            dataset, "research-universe", [At(1, 15, 23), At(1, 31, 23)], TimeSpan.FromDays(45)));
+        Assert.Throws<ResearchException>(() => ChangingUniversePanel.FromDataset(
+            dataset, "research-universe", [At(1, 31, 23), At(3, 31, 23)], TimeSpan.FromDays(45)));
     }
 }

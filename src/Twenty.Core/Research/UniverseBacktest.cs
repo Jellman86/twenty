@@ -41,9 +41,15 @@ public static class UniverseBacktest
             var period = panel.Periods[p];
             var returns = period.Returns.Where(r => r.Return is not null)
                 .ToDictionary(r => r.ListingId, r => r.Return!.Value, StringComparer.Ordinal);
-            // Names holdable at this decision: eligible then and bearing a realized return.
-            // With gaps refused, every eligible name has one (priced or terminal).
+            // Names holdable at this decision: eligible then, bearing a realized return, and
+            // actually observable then. A late-published first price can compute an ex-post
+            // return while the panel recorded the listing as unpriced at the decision; buying
+            // it would spend knowledge nobody had. With gaps refused, an eligible name held
+            // from the previous period is always priced at this decision (its previous period
+            // would otherwise have gapped), so this gate only ever refuses fresh buys.
+            var unpriced = panel.Months[p].UnpricedListingIds;
             var holdable = panel.Months[p].EligibleListingIds.Where(returns.ContainsKey)
+                .Where(id => !unpriced.Contains(id))
                 .Order(StringComparer.Ordinal).ToImmutableArray();
             if (holdable.IsEmpty) throw new ResearchException("universe-backtest-empty-month");
             var momentum = holdable.Select(id => (Id: id, Score: TrailingMomentum(panel, p, id)))
@@ -81,7 +87,8 @@ public static class UniverseBacktest
             ["Returns are local-currency ratios of adjusted closes with no FX conversion; GBP notionals are an accounting unit only, not achievable GBP wealth.",
              "Terminal returns cover only zero and simple cash proceeds; merger stock consideration, spinoffs and suspensions are unmodelled and gap panels are refused.",
              "Full-rebalance fractional notionals with flat per-side costs approximate execution; these are not broker quantities, fills or ISA eligibility evidence.",
-             "Momentum ranks require a complete priced trailing window; entrants are excluded until one exists, which is a disclosed selection rule, not evidence of an edge."]);
+             "Momentum ranks require a complete priced trailing window; entrants are excluded until one exists, which is a disclosed selection rule, not evidence of an edge.",
+             "A listing with no observable price at the decision (for example a late-published first bar) is not buyable at that decision, even though its realized period return remains in the panel."]);
     }
 
     // Compounded return over the MomentumPeriods periods ending one period before p.

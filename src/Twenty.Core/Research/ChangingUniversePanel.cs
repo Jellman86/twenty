@@ -12,7 +12,10 @@ public sealed record UniverseReturn(string ListingId, UniverseReturnStatus Statu
 public sealed record UniversePeriod(DateTimeOffset From, DateTimeOffset To, ImmutableArray<UniverseReturn> Returns);
 
 /// <summary>Realized monthly returns over a point-in-time changing universe, built from a
-/// validated v1 dataset. Eligibility at each decision uses only information available then;
+/// validated v1 dataset. Decisions must form a monthly grid (consecutive calendar months,
+/// 20-45 days apart): the consuming backtest deposits, measures momentum and annualises in
+/// monthly units, so a denser or sparser grid would be silently misinterpreted as months.
+/// Eligibility at each decision uses only information available then;
 /// each period return is priced from the later slice at both endpoints so split/dividend
 /// adjustments form one consistent vintage (realized outcomes, never decision features).
 /// A holding that leaves the universe is never silently dropped: its exit is classified,
@@ -60,12 +63,29 @@ public sealed class ChangingUniversePanel
     private static InvalidDatasetException Fail(string code, string message) =>
         new(new([new(code, "selection", message)]));
 
+    // Monthly by contract: consecutive decisions sit in consecutive calendar months (evaluated
+    // on their UTC instants) and span 20-45 days. Hourly, weekly, twice-monthly or quarterly
+    // grids would otherwise build successfully and later be annualised as if they were months.
+    private static bool MonthlyGrid(IReadOnlyList<DateTimeOffset> decisions)
+    {
+        for (var i = 0; i + 1 < decisions.Count; i++)
+        {
+            var from = decisions[i].ToUniversalTime();
+            var to = decisions[i + 1].ToUniversalTime();
+            var months = (to.Year * 12 + to.Month) - (from.Year * 12 + from.Month);
+            var days = (to - from).TotalDays;
+            if (months != 1 || days is < 20 or > 45) return false;
+        }
+        return true;
+    }
+
     public static ChangingUniversePanel FromDataset(PointInTimeDataset dataset, string universeId,
         IReadOnlyList<DateTimeOffset> decisions, TimeSpan maximumPriceAge)
     {
         ArgumentNullException.ThrowIfNull(dataset);
         if (string.IsNullOrWhiteSpace(universeId) || decisions is null || decisions.Count is < 2 or > 600 ||
             decisions.Any(d => d == default) || decisions.Zip(decisions.Skip(1)).Any(p => p.Second <= p.First) ||
+            !MonthlyGrid(decisions) ||
             maximumPriceAge <= TimeSpan.Zero || maximumPriceAge > TimeSpan.FromDays(92))
             throw new ResearchException("universe-panel-decisions");
         var slices = decisions.Select(dataset.AsOf).ToArray();

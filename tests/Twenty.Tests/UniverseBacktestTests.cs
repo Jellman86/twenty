@@ -118,6 +118,29 @@ public sealed class UniverseBacktestTests
     }
 
     [Fact]
+    public void EntrantWhoseFirstPriceWasNotObservableAtTheDecisionIsNotBoughtThere()
+    {
+        // ddd-bar-15 only becomes visible after the 15th decision (late publication): the panel
+        // computes an ex-post return for it, yet nobody could have priced or bought it then.
+        var source = Scenario();
+        var late = source with
+        {
+            Observations = source.Observations.Select(o => o is PriceBar b && b.Id == "ddd-bar-15"
+                ? b with { Evidence = b.Evidence with { PublishedAt = Decision(16).AddMinutes(-10), AvailableAt = Decision(16).AddMinutes(-10) } }
+                : o).ToImmutableArray()
+        };
+        var panel = Panel(late);
+        Assert.Contains("ddd", panel.Months[15].UnpricedListingIds);
+        Assert.False(panel.HasGaps);
+        var report = UniverseBacktest.Run(panel, new(), ZeroCosts);
+        var at15 = Step(report, "equal_weight", 15 - 12).State;
+        Assert.DoesNotContain(at15.Trades, t => t.Symbol == "ddd");
+        // Once a decision-time price exists (decision 16), the entrant becomes buyable.
+        var at16 = Step(report, "equal_weight", 16 - 12).State;
+        Assert.Contains(at16.Trades, t => t.Symbol == "ddd" && t.Side == "buy");
+    }
+
+    [Fact]
     public void CashEarnsNothingAndReportBindsThePanel()
     {
         var panel = Panel(Scenario());
