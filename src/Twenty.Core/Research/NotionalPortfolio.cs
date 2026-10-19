@@ -29,7 +29,7 @@ public sealed class NotionalPortfolio
     public decimal Equity => Cash + holdings.Values.Sum();
     public IReadOnlyDictionary<string, decimal> Holdings => holdings.ToImmutableDictionary(StringComparer.Ordinal);
     public PortfolioStep Step(decimal monthly, IReadOnlyDictionary<string, decimal> weights, IReadOnlyDictionary<string, decimal> returns, ResearchCosts costs,
-        bool contributionOnly = false, int maximumHoldings = 100, decimal maximumWeight = 1m)
+        bool contributionOnly = false, int maximumHoldings = 100, decimal maximumWeight = 1m, IReadOnlySet<string>? terminalExits = null)
     {
         costs.Validate();
         if (contributionOnly && (maximumHoldings is < 1 or > 100 || maximumWeight is <= 0 or > 1 || weights.Values.Any(w => w > maximumWeight)))
@@ -111,6 +111,21 @@ public sealed class NotionalPortfolio
         cash = Math.Max(0, cash);
         next = next.Where(x => x.Value > 0).ToDictionary(x => x.Key, x => x.Value * (1 + returns[x.Key]), StringComparer.Ordinal)
             .Where(x => x.Value > 0).ToDictionary(x => x.Key, x => x.Value, StringComparer.Ordinal);
+        // Terminal returns (zero or cash) are realized outcomes, not continuing positions:
+        // move their proceeds into cash and drop the phantom holding so the next step's
+        // return lookup cannot fail on a name that has left the universe. Zero proceeds
+        // contribute nothing; cash proceeds are the realized value already computed.
+        if (terminalExits is not null)
+        {
+            var cashFromTerminal = 0m;
+            foreach (var symbol in terminalExits)
+                if (next.TryGetValue(symbol, out var proceeds))
+                {
+                    cashFromTerminal += proceeds;
+                    next.Remove(symbol);
+                }
+            cash += cashFromTerminal;
+        }
         var equity = cash + next.Values.Sum();
         var periodReturn = before > 0 ? equity / before - 1 : 0;
         var unit = UnitPrice * (1 + periodReturn);

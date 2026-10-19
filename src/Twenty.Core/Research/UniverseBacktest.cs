@@ -67,7 +67,9 @@ public static class UniverseBacktest
                 var slots = strategy == "equal_weight" ? holdable.Length : strategy == "momentum" ? config.TopK : 1;
                 var cap = strategy == "momentum" ? config.MaximumWeight : strategy == "equal_weight" ? EqualFraction(holdable.Length) : 1m;
                 equity.Add(new(DateOnly.FromDateTime(period.From.UtcDateTime), DateOnly.FromDateTime(period.To.UtcDateTime),
-                    strategy, portfolios[strategy].Step(config.MonthlyGbp, allocations[strategy], returns, costs, false, slots, cap)));
+                    strategy, portfolios[strategy].Step(config.MonthlyGbp, allocations[strategy], returns, costs, false, slots, cap,
+                        period.Returns.Where(r => r.Status is UniverseReturnStatus.TerminalZero or UniverseReturnStatus.TerminalCash)
+                            .Select(r => r.ListingId).ToImmutableHashSet(StringComparer.Ordinal))));
             }
         }
         var summaries = Strategies.Select(s =>

@@ -37,7 +37,7 @@ public static class ListingPrices
     /// factors implied by adjOpen/adjHigh/adjLow on the same row.</summary>
     public const decimal AdjustmentTolerance = 0.000001m;
 
-    public static ListingPricesResult Convert(CaptureStore store, DatasetFile identity, string datasetId)
+    public static ListingPricesResult Convert(CaptureStore store, DatasetFile identity, string datasetId, DateTimeOffset createdAt)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(identity);
@@ -50,6 +50,14 @@ public static class ListingPrices
         var listings = identity.Observations.OfType<Listing>().GroupBy(l => l.ListingId, StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.ToImmutableArray(), StringComparer.Ordinal);
         if (listings.Count == 0) throw new ResearchException("price-conversion-empty");
+        // v1 identities carry no revisions; accepting them here would silently merge
+        // superseded intervals. Refuse rather than guess.
+        foreach (var group in listings.Values)
+        {
+            if (group.Any(l => l.Evidence.RevisionOf is not null)) throw new ResearchException("price-conversion-revision");
+            if (group.Select(l => (l.Symbol, string.Join(",", l.ProviderIds.Select(p => p.Namespace + "=" + p.Value)), l.CalendarId, l.Denomination)).Distinct().Count() != 1)
+                throw new ResearchException("price-conversion-listing-conflict");
+        }
 
         var excluded = ImmutableArray.CreateBuilder<ListingPricesExclusion>();
         var excludedIds = new HashSet<string>(StringComparer.Ordinal);
@@ -71,6 +79,19 @@ public static class ListingPrices
             if (latest.Select(o => o.Sha256).Distinct(StringComparer.Ordinal).Count() != 1)
                 throw new ResearchException("price-conversion-capture-conflict");
             var capture = latest.OrderBy(o => o.Id, StringComparer.Ordinal).First();
+            // v1 only converts NYSE-timezone listings; any other calendar is outside its scope.
+            if (calendars[rows[0].CalendarId] != "America/New_York")
+                throw new ResearchException("price-conversion-calendar");
+            // Latest capture wins, but only if it still covers every date an earlier capture
+            // carried: a narrower follow-up fetch must not silently drop older history.
+            if (captures.Count > 1)
+            {
+                var parsed = captures.ToDictionary(c => c, c => TiingoClient.ParseHistory(store.Bytes(c.Sha256)));
+                var earliestFirst = parsed.Values.Where(h => h.Length > 0).Min(h => h[0].Date);
+                var latestHistory = parsed[capture];
+                if (latestHistory.Length == 0 || latestHistory[0].Date > earliestFirst)
+                    throw new ResearchException("price-conversion-vintage-narrower");
+            }
             var history = TiingoClient.ParseHistory(store.Bytes(capture.Sha256));
             if (history.Any(b => !AdjustmentConsistent(b)))
             { excluded.Add(new(symbol, "adjustment-inconsistent")); excludedIds.Add(listingId); continue; }
@@ -118,6 +139,7 @@ public static class ListingPrices
         var manifest = identity.Manifest;
         var maxCapture = usedCaptures.Values.Max(o => o.ObservedAt);
         var minCapture = usedCaptures.Values.Min(o => o.ObservedAt);
+        if (createdAt < maxCapture) throw new ResearchException("price-conversion-created-at");
         var bundle = new StringBuilder();
         foreach (var source in usedCaptures.Keys.Order(StringComparer.Ordinal))
             bundle.Append(source).Append(':').Append(usedCaptures[source].Sha256).Append('\n');
@@ -133,7 +155,7 @@ public static class ListingPrices
         var dataset = new DatasetFile(manifest with
         {
             DatasetId = datasetId,
-            CreatedAt = manifest.CreatedAt > maxCapture ? manifest.CreatedAt : maxCapture,
+            CreatedAt = createdAt,
             Features = [new FeatureDefinition("daily-prices", "v1",
                 "Captured Tiingo daily OHLC on raw and total-return bases", "Available at capture time only")],
             Sources = manifest.Sources.Add(new SourceSnapshot(SourceId, SourceLocation,
@@ -156,10 +178,13 @@ public static class ListingPrices
 
     // Every adjusted field must imply the same factor as adjClose on a row; the audit checks
     // the steps between rows, conversion only checks that one row describes one adjustment.
+    // The tolerance is applied to the relative deviation of each field's factor from adjClose's
+    // so that heavily back-adjusted rows are judged on the same scale as unadjusted ones.
     private static bool AdjustmentConsistent(TiingoBar bar)
     {
+        if (bar.AdjLow > bar.AdjOpen || bar.AdjOpen > bar.AdjHigh || bar.AdjLow > bar.AdjHigh) return false;
         var factor = bar.AdjClose / bar.Close;
-        bool Same(decimal adjusted, decimal raw) => Math.Abs(adjusted / raw - factor) <= AdjustmentTolerance;
+        bool Same(decimal adjusted, decimal raw) => Math.Abs(adjusted / raw / factor - 1m) <= AdjustmentTolerance;
         return Same(bar.AdjOpen, bar.Open) && Same(bar.AdjHigh, bar.High) && Same(bar.AdjLow, bar.Low);
     }
 }

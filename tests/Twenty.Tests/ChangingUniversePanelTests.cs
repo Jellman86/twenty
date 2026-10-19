@@ -222,5 +222,10 @@ public sealed class ChangingUniversePanelTests
             dataset, "research-universe", [At(1, 15, 23), At(1, 31, 23)], TimeSpan.FromDays(45)));
         Assert.Throws<ResearchException>(() => ChangingUniversePanel.FromDataset(
             dataset, "research-universe", [At(1, 31, 23), At(3, 31, 23)], TimeSpan.FromDays(45)));
+        // The 20/45-day bounds are independently enforced, not merely implied by the month count.
+        Assert.Throws<ResearchException>(() => ChangingUniversePanel.FromDataset(
+            dataset, "research-universe", [At(1, 31, 23), At(2, 1, 1)], TimeSpan.FromDays(45)));
+        Assert.Throws<ResearchException>(() => ChangingUniversePanel.FromDataset(
+            dataset, "research-universe", [At(1, 1, 23), At(2, 28, 23)], TimeSpan.FromDays(45)));
     }
 }

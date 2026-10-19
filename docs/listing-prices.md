@@ -21,13 +21,12 @@ Inputs are a `CaptureStore` holding `tiingo-history-<ticker>` response captures 
 
 ## Why a full backtest-over-converted-data test is not yet possible
 
-The obvious end-to-end claim — capture histories, convert, backtest over years of genuine returns — is impossible *by design* with today's single-capture vintage, and the omission is deliberate rather than unfinished:
+Two independent constraints, not one:
 
-- availability-at-capture means the first genuine price appears at its capture instant;
-- a `ChangingUniversePanel` decision needs a price no more than `maximumPriceAge` (≤ 92 days) old;
-- the backtest needs 14 consecutive monthly decisions, hence ~14 months of *prior* captured history per decision.
+1. **Availability-at-capture.** Prices for a session only become visible at the capture that carried them, so the first honest monthly decision needs a capture at least 20 days before it, and a two-decision panel needs the dataset's `CreatedAt` at least 20 days after the capture (m4 of the review). A genuine panel is only buildable once a capture is old enough — a wall-clock wait.
+2. **Vintage merging.** `Convert` keeps only the latest capture per symbol and stamps *all* its bars with that capture's availability. A later full-history capture supersedes earlier ones entirely, so accumulating captures gains nothing for historical sessions: every decision after each capture sees only the newest vintage's (restated) prices. An honest multi-year point-in-time backtest needs each bar to become available at the *first* capture that carried it, with later restatements as `RevisionOf` chains on the `(listing, date, basis)` series key — which the validator's revision-chain rule already requires. That is a code change, not a wait, and it is **not implemented**.
 
-One capture therefore yields at most one or two honest decision points, not a backtest. The registered pipeline test stops where honesty stops: captures → identity → conversion → point-in-time panel, asserting prices appear exactly at capture and the first monthly decision prices cleanly. Months of accumulated capture vintages are required before an honest genuine-data backtest exists; that accumulation is a wall-clock prerequisite, not a code gap. The panel builder's `UniverseBacktest`-level coverage continues to use authored synthetic fixtures, and the French panels remain fixed-universe research-only inputs.
+The registered pipeline test stops where honesty stops: captures → identity → conversion → point-in-time panel, asserting prices appear exactly at capture and the first monthly decision prices cleanly. The panel builder's `UniverseBacktest`-level coverage continues to use authored synthetic fixtures, and the French panels remain fixed-universe research-only inputs.
 
 ## Validation
 

@@ -90,7 +90,7 @@ public sealed class ListingPricesTests
             var adj = rows[t].Close * factor;
             if (t > 0) json.Append(',');
             json.Append(CultureInfo.InvariantCulture,
-                $"{{\"date\":\"{rows[t].Date}T00:00:00.000Z\",\"open\":{rows[t].Close},\"high\":{rows[t].Close},\"low\":{rows[t].Close},\"close\":{rows[t].Close},\"adjClose\":{adj:0.##########},\"adjOpen\":{(adjOpenOverride ?? adj):0.##########},\"adjHigh\":{adj:0.##########},\"adjLow\":{adj:0.##########},\"volume\":1000,\"divCash\":{rows[t].Div},\"splitFactor\":{rows[t].Split}}}");
+                $"{{\"date\":\"{rows[t].Date}T00:00:00.000Z\",\"open\":{rows[t].Close},\"high\":{rows[t].Close},\"low\":{rows[t].Close},\"close\":{rows[t].Close},\"adjClose\":{adj:0.##########},\"adjOpen\":{(t == 0 && adjOpenOverride.HasValue ? adjOpenOverride.Value : adj):0.##########},\"adjHigh\":{adj:0.##########},\"adjLow\":{adj:0.##########},\"volume\":1000,\"divCash\":{rows[t].Div},\"splitFactor\":{rows[t].Split}}}");
         }
         return json.Append(']').ToString();
     }
@@ -120,7 +120,7 @@ public sealed class ListingPricesTests
         Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
         Record(w.Store, "OLD", HistoryJson(OldBars), CaptureAt);
 
-        var result = ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "converted-fixture");
+        var result = ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "converted-fixture", Created);
 
         // NOH never had its history captured: excluded with a reason, and its identity rows
         // are dropped with it so no unpriced listing survives into a priced dataset.
@@ -183,7 +183,7 @@ public sealed class ListingPricesTests
         Record(w.Store, "AAA", HistoryJson(aaa), CaptureAt);
         Record(w.Store, "OLD", HistoryJson(old), CaptureAt);
 
-        var result = ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "converted-fixture");
+        var result = ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "converted-fixture", Created);
 
         Assert.Equal(1, result.OutsideIntervalSkipped);
         Assert.Equal(2, result.ActionsAdded);
@@ -209,7 +209,7 @@ public sealed class ListingPricesTests
         Record(w.Store, "AAA", HistoryJson([( "2026-01-02", 10.0m, 0m, 1m), ("2026-01-05", 10.1m, 0m, 1m)], adjOpenOverride: 5.0m), CaptureAt);
         Record(w.Store, "OLD", HistoryJson(OldBars), CaptureAt);
 
-        var result = ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "converted-fixture");
+        var result = ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "converted-fixture", Created);
 
         Assert.Contains(result.Excluded, e => e.Symbol == "AAA" && e.Reason == "adjustment-inconsistent");
         Assert.Contains(result.Excluded, e => e.Symbol == "NOH" && e.Reason == "history-not-captured");
@@ -226,12 +226,12 @@ public sealed class ListingPricesTests
         using var w = new Workspace();
         Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
         var identity = BaseIdentity().Dataset;
-        var result = ListingPrices.Convert(w.Store, identity, "converted-fixture");
+        var result = ListingPrices.Convert(w.Store, identity, "converted-fixture", Created);
 
-        var blank = Assert.Throws<ResearchException>(() => ListingPrices.Convert(w.Store, identity, " "));
+        var blank = Assert.Throws<ResearchException>(() => ListingPrices.Convert(w.Store, identity, " ", Created));
         Assert.Equal("price-conversion-dataset-id", blank.Code);
         // An identity dataset that already carries prices must be rebuilt, never re-priced.
-        var duplicate = Assert.Throws<ResearchException>(() => ListingPrices.Convert(w.Store, result.Dataset, "converted-again"));
+        var duplicate = Assert.Throws<ResearchException>(() => ListingPrices.Convert(w.Store, result.Dataset, "converted-again", Created));
         Assert.Equal("price-conversion-duplicate", duplicate.Code);
         // A manifest that already declares the history source cannot absorb another one.
         var poisoned = identity with
@@ -242,11 +242,11 @@ public sealed class ListingPricesTests
                     NasdaqObserved, NasdaqObserved, new string('d', 64), "v1", "policy"))
             }
         };
-        var conflict = Assert.Throws<ResearchException>(() => ListingPrices.Convert(w.Store, poisoned, "converted-fixture"));
+        var conflict = Assert.Throws<ResearchException>(() => ListingPrices.Convert(w.Store, poisoned, "converted-fixture", Created));
         Assert.Equal("price-conversion-source-conflict", conflict.Code);
         // Two captures claiming the same latest instant with different bytes are unreconcilable.
         Record(w.Store, "AAA", HistoryJson([( "2026-01-02", 11.0m, 0m, 1m)]), CaptureAt);
-        var tie = Assert.Throws<ResearchException>(() => ListingPrices.Convert(w.Store, identity, "converted-fixture"));
+        var tie = Assert.Throws<ResearchException>(() => ListingPrices.Convert(w.Store, identity, "converted-fixture", Created));
         Assert.Equal("price-conversion-capture-conflict", tie.Code);
     }
 
@@ -255,8 +255,25 @@ public sealed class ListingPricesTests
     {
         using var w = new Workspace();
         // Every listing lacks a capture, so there is no priced dataset to build.
-        var empty = Assert.Throws<ResearchException>(() => ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "converted-fixture"));
+        var empty = Assert.Throws<ResearchException>(() => ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "converted-fixture", Created));
         Assert.Equal("price-conversion-empty", empty.Code);
+    }
+
+    [Fact]
+    public void LatestCaptureWinsAndStampsAvailabilityAtCapture()
+    {
+        using var w = new Workspace();
+        var early = HistoryJson([("2026-01-02", 9.0m, 0m, 1m)]);
+        var late = HistoryJson([("2026-01-02", 11.0m, 0m, 1m)]);
+        Record(w.Store, "AAA", early, CaptureAt.AddDays(-1));
+        Record(w.Store, "AAA", late, CaptureAt);
+
+        var result = ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "converted-fixture", Created);
+
+        Assert.DoesNotContain(result.Excluded, e => e.Symbol == "AAA");
+        var bar = result.Dataset.Observations.OfType<PriceBar>().Single(b => b.Id == "listing-aaa-20150102-raw-20260102");
+        Assert.Equal(11.0m, bar.Close);
+        Assert.Equal(CaptureAt, bar.Evidence.AvailableAt);
     }
 
     [Fact]
@@ -267,8 +284,8 @@ public sealed class ListingPricesTests
         Record(w.Store, "OLD", HistoryJson(OldBars), CaptureAt);
         var identity = BaseIdentity().Dataset;
 
-        var first = ListingPrices.Convert(w.Store, identity, "converted-fixture");
-        var second = ListingPrices.Convert(w.Store, identity, "converted-fixture");
+        var first = ListingPrices.Convert(w.Store, identity, "converted-fixture", Created);
+        var second = ListingPrices.Convert(w.Store, identity, "converted-fixture", Created);
 
         Assert.Equal(
             JsonSerializer.SerializeToUtf8Bytes(first.Dataset, DatasetJson.Options),
@@ -296,7 +313,7 @@ public sealed class ListingPricesTests
                 rows.Add((day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), 10.25m, 0m, 1m));
         Record(w.Store, "AAA", HistoryJson([.. rows]), DateTimeOffset.Parse("2024-10-11T12:00:00Z"));
 
-        var result = ListingPrices.Convert(w.Store, identity.Dataset, "converted-fixture");
+        var result = ListingPrices.Convert(w.Store, identity.Dataset, "converted-fixture", DateTimeOffset.Parse("2024-12-01T12:00:00Z"));
         Assert.Equal("NOH", Assert.Single(result.Excluded).Symbol);
         Assert.Equal(2 * rows.Count, result.BarsAdded);
 
