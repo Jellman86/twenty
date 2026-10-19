@@ -119,6 +119,40 @@ public class SecCollectorTests
     }
 
     [Fact]
+    public void NonPeriodicRowsMayHaveBlankOrFutureReportDatesButPeriodicReportsMustAlreadyHaveEnded()
+    {
+        // Genuine Apple submissions carry blank report dates (e.g. Form 144) and DEF 14A proxies whose
+        // reportDate is the future shareholder-meeting date. Both must catalogue; malformed values must not.
+        var bytes = Change(root =>
+        {
+            var recent = root["filings"]!["recent"]!.AsObject();
+            void Append(string accession, string form, string filing, string report, string accepted, string document)
+            {
+                recent["accessionNumber"]!.AsArray().Add(accession);
+                recent["form"]!.AsArray().Add(form);
+                recent["filingDate"]!.AsArray().Add(filing);
+                recent["reportDate"]!.AsArray().Add(report);
+                recent["acceptanceDateTime"]!.AsArray().Add(accepted);
+                recent["primaryDocument"]!.AsArray().Add(document);
+                recent["unrecognisedUpstreamField"]!.AsArray().Add("retained in original");
+            }
+            Append("0000000001-24-000003", "144", "2024-02-05", "", "2024-02-05T17:00:00Z", "notice.htm");
+            Append("0000000001-24-000004", "DEF 14A", "2024-01-11", "2024-02-28", "2024-01-11T17:00:00Z", "proxy.htm");
+        });
+        var page = SecParser.Parse(bytes, "1", false, Now);
+        Assert.Equal(4, page.Filings.Length);
+        Assert.Null(Assert.Single(page.Filings, f => f.Form == "144").ReportDate);
+        Assert.Equal(new DateOnly(2024, 2, 28), Assert.Single(page.Filings, f => f.Form == "DEF 14A").ReportDate);
+
+        var futurePeriodic = Change(root => root["filings"]!["recent"]!["reportDate"]![1] = "2024-02-02");
+        Assert.Equal("invalid-report-period", Assert.Throws<SecCollectionException>(() =>
+            SecParser.Parse(futurePeriodic, "1", false, Now)).Code);
+        var malformed = Change(root => root["filings"]!["recent"]!["reportDate"]![0] = "31-12-2023");
+        Assert.Equal("invalid-filing-date", Assert.Throws<SecCollectionException>(() =>
+            SecParser.Parse(malformed, "1", false, Now)).Code);
+    }
+
+    [Fact]
     public async Task StaleCacheUsesConditionalGetAnd304PreservesFirstSeen()
     {
         var calls = 0;

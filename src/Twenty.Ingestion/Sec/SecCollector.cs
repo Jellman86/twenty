@@ -5,7 +5,7 @@ namespace Twenty.Ingestion.Sec;
 public sealed class SecCollector(SecClient client, SecArchive archive, SecLimits limits, ISecClock? clock = null)
 {
     private readonly ISecClock clock = clock ?? SecSystemClock.Instance;
-    private static readonly HashSet<string> Forms = ["10-K", "10-K/A", "10-Q", "10-Q/A", "20-F", "20-F/A", "40-F", "40-F/A"];
+    private static readonly HashSet<string> Forms = [.. SecParser.PeriodicForms];
     public async Task<SecCollectionResult> Collect(string cik, DateOnly from, DateOnly to, CancellationToken ct = default)
     {
         limits.Validate();

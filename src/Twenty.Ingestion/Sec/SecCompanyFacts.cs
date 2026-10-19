@@ -106,7 +106,7 @@ public static partial class SecCompanyFacts
         sources.AddRange(input.Manifest.Sources);
         var prior = input.Manifest.Sources.FirstOrDefault(s => s.Id == SourceId);
         if (prior is null)
-            sources.Add(new(SourceId, "https://www.sec.gov/files/companyfacts.zip",
+            sources.Add(new(SourceId, "https://www.sec.gov/Archives/edgar/daily-index/xbrl/companyfacts.zip",
                 "SEC EDGAR public bulk data; verify current SEC terms before any redistribution; raw payload remains private outside Git",
                 request.RetrievedAt, request.RetrievedAt, bulkSha256, ParserVersion,
                 "Append-only conversion; day-precision conservative availability; superseding values chain by revisionOf"));
@@ -141,7 +141,16 @@ public static partial class SecCompanyFacts
             }
             byKey[key] = point;
         }
-        return byKey.Values.ToList();
+        // The same value for one series filed the same day under several accessions is republication
+        // (genuinely: an earnings 8-K and the 10-Q filed together), not a revision - day precision
+        // cannot order them and does not need to. Keep the lowest accession deterministically.
+        // Differing values filed the same day stay for the chain builder to reject.
+        return byKey.Values
+            .GroupBy(p => (p.SeriesConcept, p.Unit, p.Start, p.End, p.Filed))
+            .SelectMany(group => group.Select(p => p.Value).Distinct().Count() == 1
+                ? new[] { group.OrderBy(p => p.Accession, StringComparer.Ordinal).First() }.AsEnumerable()
+                : group.AsEnumerable())
+            .ToList();
     }
 
     private static void ReadBulk(Stream bulkZip, Dictionary<string, string> byCik, SecFactsRequest request,

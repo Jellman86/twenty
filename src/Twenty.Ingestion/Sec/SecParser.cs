@@ -9,6 +9,8 @@ namespace Twenty.Ingestion.Sec;
 public static partial class SecParser
 {
     public const string Version = "sec-submissions-v1";
+    /// <summary>Periodic-report forms whose report period must already have ended by the filing date.</summary>
+    public static readonly ImmutableArray<string> PeriodicForms = ["10-K", "10-K/A", "10-Q", "10-Q/A", "20-F", "20-F/A", "40-F", "40-F/A"];
     [GeneratedRegex("^[A-Z0-9][A-Z0-9 /-]{0,31}$", RegexOptions.CultureInvariant)] private static partial Regex FormPattern();
     [GeneratedRegex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,7})?(?:Z|[+-][0-9]{2}:[0-9]{2})$", RegexOptions.CultureInvariant)]
     private static partial Regex ZonedTime();
@@ -49,7 +51,10 @@ public static partial class SecParser
                     throw new SecCollectionException("invalid-acceptance-time");
                 var filingDate = Date(dto.FilingDate[i]);
                 var period = string.IsNullOrEmpty(dto.ReportDate[i]) ? (DateOnly?)null : Date(dto.ReportDate[i]);
-                if (period > filingDate) throw new SecCollectionException("invalid-report-period");
+                // Only periodic reports assert an ended period. Other forms use reportDate differently
+                // (genuine DEF 14A proxies carry a future meeting date); they catalogue as-is and are
+                // never selected. Malformed non-blank dates still fail above for every form.
+                if (period > filingDate && PeriodicForms.Contains(form)) throw new SecCollectionException("invalid-report-period");
                 rows.Add(new(expectedCik, accession, form, filingDate, period, accepted.ToUniversalTime(), document));
             }
             var unique = Merge(rows);

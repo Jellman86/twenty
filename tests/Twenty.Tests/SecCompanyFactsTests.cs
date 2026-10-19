@@ -96,6 +96,12 @@ public sealed class SecCompanyFactsTests
     [Fact]
     public void SameDayRevisionsAndInterleavedExistingFactsFailClosed()
     {
+        // Identical value republished the same day under another accession dedupes to the lowest accession.
+        var republished = FruitFacts.Replace("\"val\":105", "\"val\":100").Replace("\"filed\":\"2024-02-01\"", "\"filed\":\"2023-11-03\"");
+        var deduped = Convert(Base(), Bulk(("CIK0000320193.json", republished)));
+        Assert.Equal(2, deduped.FactsAdded);
+        Assert.Equal("0000320193-23-000001", Assert.Single(deduped.Dataset.Observations.OfType<FundamentalFact>(),
+            f => f.Concept == "us-gaap:Revenues").Accession);
         var sameDay = FruitFacts.Replace("\"filed\":\"2024-02-01\"", "\"filed\":\"2023-11-03\"");
         Assert.Equal("sec-facts-same-day-revision", Assert.Throws<SecCollectionException>(() =>
             Convert(Base(), Bulk(("CIK0000320193.json", sameDay)))).Code);
