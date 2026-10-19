@@ -16,10 +16,10 @@ public sealed class UniverseBacktestTests
     private static Evidence Ev(DateTimeOffset available, string? revisionOf = null) =>
         new("fixture-source", available, available, AvailabilityEvidence.ArchivedPublication, TimePrecision.Second, null, revisionOf);
 
-    private static PriceBar Bar(string listing, int i, decimal close) =>
-        new($"{listing}-bar-{i}", Ev(Decision(i).AddHours(-2).AddMinutes(2)), listing,
+    private static PriceBar Bar(string listing, int i, decimal close, PriceBasis basis = PriceBasis.TotalReturnAdjusted) =>
+        new($"{listing}-{(basis == PriceBasis.Raw ? "raw-" : "")}bar-{i}", Ev(Decision(i).AddHours(-2).AddMinutes(2)), listing,
             DateOnly.FromDateTime(Decision(i).UtcDateTime), Decision(i).AddHours(-2),
-            new Denomination("USD", QuoteUnit.Major), PriceBasis.TotalReturnAdjusted, close, close, close, close, 100m);
+            new Denomination("USD", QuoteUnit.Major), basis, close, close, close, close, 100m);
 
     private static Listing ListingRow(string id, string listing, string symbol, DateTimeOffset available,
         DateTimeOffset from, DateTimeOffset? until, ListingStatus status, string? revisionOf = null) =>
@@ -33,7 +33,7 @@ public sealed class UniverseBacktestTests
 
     // aaa +1%/mo, bbb flat, ccc -2%/mo then zero-proceeds delisting in period 23,
     // ddd enters at decision 15 with +5%/mo.
-    internal static DatasetFile Scenario(bool gapBbb = false)
+    internal static DatasetFile Scenario(bool gapBbb = false, TerminalOutcome cccOutcome = TerminalOutcome.Zero, decimal? cccCash = null)
     {
         var start = new DateTimeOffset(2022, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var observations = new List<Observation>
@@ -50,7 +50,7 @@ public sealed class UniverseBacktestTests
         {
             observations.Add(Bar("aaa", i, aaa)); aaa *= 1.01m;
             if (!gapBbb || i is not (20 or 21)) observations.Add(Bar("bbb", i, 10m));
-            if (i <= 23) { observations.Add(Bar("ccc", i, ccc)); ccc *= 0.98m; }
+            if (i <= 23) { observations.Add(Bar("ccc", i, ccc)); observations.Add(Bar("ccc", i, ccc, PriceBasis.Raw)); ccc *= 0.98m; }
         }
         var exitEffective = new DateTimeOffset(2024, 1, 5, 0, 0, 0, TimeSpan.Zero);
         var exitKnown = new DateTimeOffset(2024, 1, 8, 0, 0, 0, TimeSpan.Zero);
@@ -59,7 +59,7 @@ public sealed class UniverseBacktestTests
         observations.Add(Member("member-ccc-closed", "ccc", exitKnown, start, exitEffective, true, "member-ccc"));
         observations.Add(Member("member-ccc-exit", "ccc", exitKnown, exitEffective, null, false));
         observations.Add(new CorporateAction("ccc-delisting", Ev(exitKnown), "ccc", "ccc-delisting-event",
-            CorporateActionKind.Delisting, exitEffective, null, null, null, null, null, TerminalOutcome.Zero));
+            CorporateActionKind.Delisting, exitEffective, null, cccCash, cccCash is null ? null : "USD", null, null, cccOutcome));
 
         var dddFrom = new DateTimeOffset(2023, 4, 1, 0, 0, 0, TimeSpan.Zero);
         var dddKnown = new DateTimeOffset(2023, 3, 20, 0, 0, 0, TimeSpan.Zero);
@@ -104,6 +104,19 @@ public sealed class UniverseBacktestTests
         // Period 23 is the 12th evaluated period (first evaluated is period 12).
         var terminal = Step(report, "equal_weight", 23 - 12).State;
         Assert.Equal(-0.235m, terminal.PeriodReturn, 4); // (0.01 + 0 + 0.05 - 1) / 4
+    }
+
+    [Fact]
+    public void CashTerminalDelistingMidRunDoesNotCrashTheBacktest()
+    {
+        // ccc exits with cash proceeds mid-evaluation (period 27). Before the fix, the
+        // realized proceeds stayed in holdings under ccc's id and the next step threw
+        // invalid-portfolio-step because ccc had left the universe. Now they move to cash.
+        var report = UniverseBacktest.Run(Panel(Scenario(cccOutcome: TerminalOutcome.Cash, cccCash: 5m)), new(), ZeroCosts);
+        Assert.NotNull(report);
+        // The run reaches the final evaluated period without throwing.
+        var finalStep = Step(report, "equal_weight", report.Equity.Where(e => e.Strategy == "equal_weight").Count() - 1).State;
+        Assert.True(finalStep.EquityGbp > 0m);
     }
 
     [Fact]
