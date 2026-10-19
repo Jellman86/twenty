@@ -22,7 +22,10 @@ public sealed class SecCollector(SecClient client, SecArchive archive, SecLimits
         foreach (var chunk in chunks.Take(limits.MaximumHistoryFiles))
         {
             var page = await Page(SecIdentity.History(cik, chunk.Name), history: true);
-            if (page.Page.Filings.Length != chunk.FilingCount || page.Page.Filings.Any(x => x.FilingDate < chunk.From || x.FilingDate > chunk.To))
+            // Count equality binds chunk identity. Genuine SEC range metadata can spill one
+            // day at a boundary (AAPL submissions-001: claimed end 2015-09-16, three rows
+            // dated 2015-09-17, count exact at 1267), so the range check tolerates one day.
+            if (page.Page.Filings.Length != chunk.FilingCount || page.Page.Filings.Any(x => x.FilingDate < chunk.From.AddDays(-1) || x.FilingDate > chunk.To.AddDays(1)))
             {
                 archive.Quarantine(SecIdentity.History(cik, chunk.Name), page.Payload.Bytes, "history-range-mismatch", clock.UtcNow);
                 throw new SecCollectionException("history-range-mismatch");
@@ -44,6 +47,8 @@ public sealed class SecCollector(SecClient client, SecArchive archive, SecLimits
         var collected = ImmutableArray.CreateBuilder<CollectedSecFiling>();
         foreach (var item in selected.Take(limits.MaximumDocuments))
         {
+            if (string.IsNullOrWhiteSpace(item.Row.PrimaryDocument))
+                throw new SecCollectionException("document-path-missing");
             var document = await client.Fetch(SecIdentity.PrimaryDocument(cik, item.Row.Accession, item.Row.PrimaryDocument),
                 json: false, (bytes, type, _) => SecParser.ValidateDocument(bytes, type), ct);
             if (document.Receipt.FirstSeenAt < item.Row.AcceptedAt) throw new SecCollectionException("document-before-acceptance");

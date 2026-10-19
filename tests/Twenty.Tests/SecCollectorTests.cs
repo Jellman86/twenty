@@ -153,6 +153,56 @@ public class SecCollectorTests
     }
 
     [Fact]
+    public void BlankPrimaryDocumentsCatalogueButInvalidOnesStillFail()
+    {
+        // Genuine ASML/AAPL payloads carry blank primaryDocument on paper-era rows
+        // (1995 SC 13D, pre-2001 10-Q). They catalogue; only fetch selection needs a path.
+        var bytes = Change(root =>
+        {
+            var recent = root["filings"]!["recent"]!.AsObject();
+            void Append(string accession, string form, string filing, string report, string accepted, string? document)
+            {
+                recent["accessionNumber"]!.AsArray().Add(accession);
+                recent["form"]!.AsArray().Add(form);
+                recent["filingDate"]!.AsArray().Add(filing);
+                recent["reportDate"]!.AsArray().Add(report);
+                recent["acceptanceDateTime"]!.AsArray().Add(accepted);
+                recent["primaryDocument"]!.AsArray().Add(document);
+                recent["unrecognisedUpstreamField"]!.AsArray().Add("retained in original");
+            }
+            Append("0000000001-95-000005", "SC 13D", "1995-05-19", "", "1995-05-19T17:00:00Z", "");
+            Append("0000000001-00-000006", "10-Q", "2000-05-11", "2000-03-31", "2000-05-11T17:00:00Z", null);
+            // Genuine filer naming with a double dot before the extension is not traversal.
+            Append("0000000001-14-000007", "SC 13G/A", "2014-10-08", "", "2014-10-08T17:00:00Z", "synthetic.inc..txt");
+        });
+        var page = SecParser.Parse(bytes, "1", false, Now);
+        Assert.Equal(5, page.Filings.Length);
+        Assert.Equal("synthetic.inc..txt", Assert.Single(page.Filings, f => f.Form == "SC 13G/A").PrimaryDocument);
+        Assert.Equal("", Assert.Single(page.Filings, f => f.Form == "SC 13D").PrimaryDocument);
+        Assert.Equal("", Assert.Single(page.Filings, f => f.FilingDate == new DateOnly(2000, 5, 11)).PrimaryDocument);
+
+        var traversal = Change(root => root["filings"]!["recent"]!["primaryDocument"]![0] = "../evil.htm");
+        Assert.Equal("invalid-document-name", Assert.Throws<SecCollectionException>(() =>
+            SecParser.Parse(traversal, "1", false, Now)).Code);
+    }
+
+    [Fact]
+    public async Task SelectedFilingWithoutDocumentPathFailsBeforeAnyDocumentFetch()
+    {
+        var changed = Change(root =>
+        {
+            var documents = root["filings"]!["recent"]!["primaryDocument"]!.AsArray();
+            for (var i = 0; i < documents.Count; i++) documents[i] = "";
+        });
+        using var rig = new Rig(request => request.RequestUri!.Host == "www.sec.gov"
+            ? Response(Encoding.UTF8.GetBytes("<html>doc</html>"), "text/html")
+            : Response(request.RequestUri.AbsolutePath.Contains("-submissions-", StringComparison.Ordinal) ? Fixture("history") : changed));
+        var error = await Assert.ThrowsAsync<SecCollectionException>(() => rig.Collect());
+        Assert.Equal("document-path-missing", error.Code);
+        Assert.DoesNotContain(rig.Requests, r => r.Uri.Host == "www.sec.gov");
+    }
+
+    [Fact]
     public async Task StaleCacheUsesConditionalGetAnd304PreservesFirstSeen()
     {
         var calls = 0;
@@ -478,6 +528,34 @@ public class SecCollectorTests
         using var rig = new Rig(request => Response(request.RequestUri!.AbsolutePath.Contains("-submissions-", StringComparison.Ordinal) ? Fixture("history") : invalid));
         var error = await Assert.ThrowsAsync<SecCollectionException>(() => rig.Collect());
         Assert.Equal("history-range-mismatch", error.Code);
+    }
+
+    [Fact]
+    public async Task OneDayHistoryRangeSpillIsToleratedTwoDaysIsNot()
+    {
+        // Genuine AAPL submissions-001 claims an end of 2015-09-16 but holds rows dated
+        // 2015-09-17, with the declared count exact. One day of spill is SEC metadata
+        // imprecision; larger spill remains a mismatch.
+        static byte[] HistoryOn(string date)
+        {
+            var json = JsonNode.Parse(Fixture("history"))!;
+            json["filingDate"]![0] = date;
+            return Encoding.UTF8.GetBytes(json.ToJsonString());
+        }
+        using (var rig = new Rig(request => request.RequestUri!.Host == "www.sec.gov"
+            ? Response(Encoding.UTF8.GetBytes("<html>doc</html>"), "text/html")
+            : Response(request.RequestUri.AbsolutePath.Contains("-submissions-", StringComparison.Ordinal) ? HistoryOn("2023-02-02") : Fixture())))
+        {
+            var result = await rig.Collect();
+            Assert.Equal(3, result.Filings.Length);
+        }
+        using (var rig = new Rig(request => request.RequestUri!.Host == "www.sec.gov"
+            ? Response(Encoding.UTF8.GetBytes("<html>doc</html>"), "text/html")
+            : Response(request.RequestUri.AbsolutePath.Contains("-submissions-", StringComparison.Ordinal) ? HistoryOn("2023-02-03") : Fixture())))
+        {
+            var error = await Assert.ThrowsAsync<SecCollectionException>(() => rig.Collect());
+            Assert.Equal("history-range-mismatch", error.Code);
+        }
     }
 
     [Fact]

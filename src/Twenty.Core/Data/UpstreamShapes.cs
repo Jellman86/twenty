@@ -21,9 +21,12 @@ public sealed record SecRecentFilingsDto(ImmutableArray<string?> AccessionNumber
             Form.IsDefault ? -1 : Form.Length, PrimaryDocument.IsDefault ? -1 : PrimaryDocument.Length];
         if (lengths.Any(x => x < 0) || lengths.Distinct().Count() != 1)
             return new([new("upstream-shape", "filings.recent", "Required SEC arrays are missing or have unequal lengths; quarantine the payload.")]);
+        // PrimaryDocument may legitimately be blank: genuine SEC payloads leave it empty for
+        // paper-era rows (e.g. 1995 SC 13D, pre-2001 10-Q). Document presence is enforced
+        // only when a filing is selected for fetch, never as a whole-payload identity rule.
         if (AccessionNumber.Any(string.IsNullOrWhiteSpace) || AcceptanceDateTime.Any(string.IsNullOrWhiteSpace) ||
-            Form.Any(string.IsNullOrWhiteSpace) || PrimaryDocument.Any(string.IsNullOrWhiteSpace))
-            return new([new("upstream-shape", "filings.recent", "Required filing identity/timing/document values are missing; quarantine the payload.")]);
+            Form.Any(string.IsNullOrWhiteSpace))
+            return new([new("upstream-shape", "filings.recent", "Required filing identity/timing values are missing; quarantine the payload.")]);
         return new([]);
     }
 }

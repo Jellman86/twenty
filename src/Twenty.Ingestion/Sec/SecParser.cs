@@ -43,8 +43,11 @@ public static partial class SecParser
                 SecIdentity.Accession(accession);
                 var form = dto.Form[i]!;
                 if (!FormPattern().IsMatch(form)) throw new SecCollectionException("invalid-form");
-                var document = dto.PrimaryDocument[i]!;
-                SecIdentity.Document(document);
+                var document = dto.PrimaryDocument[i] ?? "";
+                // Blank document paths catalogue as-is: genuine paper-era rows have none.
+                // Non-blank paths must still be constrained relative names for every row.
+                if (!string.IsNullOrWhiteSpace(document)) SecIdentity.Document(document);
+                else document = "";
                 var time = dto.AcceptanceDateTime[i]!;
                 if (!ZonedTime().IsMatch(time) || !DateTimeOffset.TryParse(time, CultureInfo.InvariantCulture,
                         DateTimeStyles.None, out var accepted) || accepted == default || accepted > observedAt)

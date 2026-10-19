@@ -56,9 +56,12 @@ public static partial class SecIdentity
     {
         // SEC non-target forms can use relative XSL paths (e.g. xslF345X05/ownership.xml).
         // Keep every segment constrained; absolute URLs, escapes and traversal are not filenames.
+        // Segments must start alphanumeric, so "." and ".." segments are already unreachable:
+        // a ".." substring inside one filename segment is genuine filer naming, not traversal
+        // (e.g. "asml.holding.n.v..txt" in real 2013-2014 SC 13G rows).
         var segments = value.Split('/');
         if (value.Length > 400 || segments.Length > 4 ||
-            segments.Any(segment => !DocumentPattern().IsMatch(segment) || segment.Contains("..", StringComparison.Ordinal)))
+            segments.Any(segment => !DocumentPattern().IsMatch(segment)))
             throw new SecCollectionException("invalid-document-name");
     }
     public static string UserAgent(string contact)
