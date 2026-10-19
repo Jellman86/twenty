@@ -11,7 +11,7 @@ public enum AssetClass { Stock, Etf }
 public enum ListingStatus { Active, Suspended, Delisted }
 public enum PriceBasis { Raw, SplitAdjusted, TotalReturnAdjusted }
 public enum CorporateActionKind { Split, Dividend, SymbolChange, Delisting, Merger, SpinOff }
-public enum TerminalOutcome { NotApplicable, Cash, Zero, Missing }
+public enum TerminalOutcome { NotApplicable, Cash, Zero, Missing, Stock }
 public enum FxPurpose { Reference, Indicative, Executable }
 
 public sealed record SourceSnapshot(string Id, string Location, string LicenceReference,

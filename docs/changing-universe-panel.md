@@ -21,6 +21,7 @@ For consecutive decisions `t → t+1`, every listing eligible at either endpoint
 | `Entered` | Eligible at `t+1` only | none — no backfilled return |
 | `TerminalZero` | Delisted with zero proceeds | `−1` |
 | `TerminalCash` | Delisted with known cash per share | `cash / rawClose(t) − 1` |
+| `TerminalStock` | Delisted into successor shares at an exchange ratio | `ratio × successorRawClose(exit) / rawClose(t) − 1` |
 | `ExitedUnexplained` | Left the universe with no known delisting | none — disclosed gap |
 | `MissingPrice` | Eligible but no fresh close at an endpoint | none — disclosed gap |
 
@@ -53,6 +54,6 @@ Universe backtests can now be *registered trials* rather than ad-hoc CLI output.
 ## Limits and next steps
 
 - Returns are decimal ratios of adjusted closes; they inherit whatever adjustment quality the dataset asserts. Nothing here validates a vendor's adjustments against independent records (still open in [#5](https://github.com/Jellman86/twenty/issues/5)).
-- Terminal-cash handling covers only the simple no-intervening-action case. Merger consideration in successor shares, spinoff distributions and partial cash/stock mixes are unimplemented and fail closed or classify as unexplained exits.
+- Terminal-cash handling covers only the simple no-intervening-action case; `TerminalStock` now covers a simple stock merger (successor raw close at exit times the exchange ratio, same no-intervening-action guard and currency checks), and spinoffs, partial cash/stock mixes and suspensions remain unimplemented and fail closed or classify as unexplained exits.
 - Suspended listings leave `Universe` (it returns active listings only) and surface as unexplained exits unless a delisting action exists; suspension/resumption round-trips are not yet modelled as one holding period.
 - The backtest is wired into its own trial register (above) but not into studies, diagnostics or any feature pipeline. A registered study over changing universes now has a genuine point-in-time stock dataset path — two-source [listing identities](listing-identity.md) converted to prices by [ListingPrices](listing-prices.md) — but its availability-at-capture rule means history only accumulates from the first capture forward; the multi-year capture vintages a study needs do not exist yet, and the French panels remain fixed-universe research-only inputs.

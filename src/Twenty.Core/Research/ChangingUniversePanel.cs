@@ -6,7 +6,7 @@ using Twenty.Core.Data;
 
 namespace Twenty.Core.Research;
 
-public enum UniverseReturnStatus { Priced, Entered, TerminalZero, TerminalCash, ExitedUnexplained, MissingPrice }
+public enum UniverseReturnStatus { Priced, Entered, TerminalZero, TerminalCash, TerminalStock, ExitedUnexplained, MissingPrice }
 public sealed record UniverseMonth(DateTimeOffset DecisionAt, ImmutableArray<string> EligibleListingIds, ImmutableArray<string> UnpricedListingIds);
 public sealed record UniverseReturn(string ListingId, UniverseReturnStatus Status, decimal? Return);
 public sealed record UniversePeriod(DateTimeOffset From, DateTimeOffset To, ImmutableArray<UniverseReturn> Returns);
@@ -151,6 +151,10 @@ public sealed class ChangingUniversePanel
                         returns.Add(new(listing, UniverseReturnStatus.TerminalCash,
                             CashTerminalReturn(slices[later], later, listing, action, decisions[i], LatestClose)));
                         break;
+                    case TerminalOutcome.Stock:
+                        returns.Add(new(listing, UniverseReturnStatus.TerminalStock,
+                            StockTerminalReturn(slices[later], later, listing, action, decisions[i], decisions[later], LatestClose)));
+                        break;
                     case TerminalOutcome.Missing:
                         throw Fail("universe-panel-terminal-missing",
                             "A held listing delisted with unknown proceeds; dropping it would fabricate survivorship-biased returns.");
@@ -182,5 +186,31 @@ public sealed class ChangingUniversePanel
         if (complex)
             throw Fail("universe-panel-terminal-complex", "A corporate action between the raw close and delisting prevents a simple cash terminal return.");
         return action.CashPerShare!.Value / raw.Major - 1m;
+    }
+
+    // Stock proceeds: the holder receives successor shares at the exchange ratio, valued at
+    // the successor's raw close at the exit decision. The same no-intervening-action guard
+    // applies, because any split/dividend/merger/spinoff between the original raw close and
+    // the exit would make the simple ratio wrong.
+    private static decimal StockTerminalReturn(DataSlice laterSlice, int later, string listing, CorporateAction action,
+        DateTimeOffset fromDecision, DateTimeOffset toDecision, Func<int, string, PriceBasis, DateTimeOffset, Close?> latestClose)
+    {
+        if (string.IsNullOrWhiteSpace(action.SuccessorListingId))
+            throw Fail("universe-panel-terminal-successor", "A stock delisting needs a successor listing.");
+        if (action.SplitRatio is null or <= 0)
+            throw Fail("universe-panel-terminal-ratio", "A stock delisting needs a positive exchange ratio.");
+        var originalRaw = latestClose(later, listing, PriceBasis.Raw, fromDecision)
+            ?? throw Fail("universe-panel-terminal-price", "A stock delisting needs a fresh raw close before exit.");
+        var successorRaw = latestClose(later, action.SuccessorListingId, PriceBasis.Raw, toDecision)
+            ?? throw Fail("universe-panel-terminal-successor-price", "A stock delisting needs a fresh successor raw close at exit.");
+        if (action.CashCurrency is not null && action.CashCurrency != originalRaw.Currency)
+            throw Fail("universe-panel-terminal-currency", "Terminal currency differs from the raw price currency; explicit FX handling is required.");
+        if (successorRaw.Currency != originalRaw.Currency)
+            throw Fail("universe-panel-terminal-currency", "Successor and original price currencies differ; explicit FX handling is required.");
+        var complex = laterSlice.EffectiveActions(listing).Any(a => a.EffectiveAt > originalRaw.SessionCloseAt &&
+            a.Action is CorporateActionKind.Split or CorporateActionKind.Dividend or CorporateActionKind.Merger or CorporateActionKind.SpinOff);
+        if (complex)
+            throw Fail("universe-panel-terminal-complex", "A corporate action between the raw close and delisting prevents a simple stock terminal return.");
+        return action.SplitRatio.Value * successorRaw.Major / originalRaw.Major - 1m;
     }
 }
