@@ -250,6 +250,57 @@ public static class ListingIntervals
         _ => throw new ResearchException("listing-source-unsupported")
     };
 
+    public sealed record ListingSourceData(ImmutableArray<ListingInterval> Intervals, ImmutableArray<ListingGap> Gaps,
+        DateTimeOffset EarliestObservedAt, DateTimeOffset LatestObservedAt, string LatestSha256);
+
+    private static (List<TimedSnapshot> Timed, List<object> SnapshotAudit, IReadOnlyList<CaptureObservation> Observations) LoadTimed(
+        CaptureStore store, string sourceId)
+    {
+        var source = CaptureSources.Find(sourceId);
+        var observations = store.Observations(sourceId);
+        if (observations.Count == 0) throw new ResearchException("listing-capture-missing");
+        // Replays of one observation and same-instant duplicates of identical bytes are one snapshot;
+        // the same instant naming different bytes is ambiguous and must not be ordered by guesswork.
+        var instants = observations.GroupBy(o => o.ObservedAt).OrderBy(g => g.Key).ToArray();
+        var parsed = new Dictionary<string, ListingSnapshot>();
+        var timed = new List<TimedSnapshot>();
+        var snapshotAudit = new List<object>();
+        foreach (var group in instants)
+        {
+            var hashes = group.Select(o => o.Sha256).Distinct().ToArray();
+            if (hashes.Length != 1) throw new ResearchException("listing-snapshot-conflict");
+            var observation = group.First();
+            if (!parsed.TryGetValue(hashes[0], out var snapshot))
+            {
+                var captured = store.Bytes(hashes[0]);
+                if (source.Validate(captured) is not null) throw new ResearchException("listing-capture-invalid");
+                snapshot = parsed[hashes[0]] = Parse(sourceId, captured);
+            }
+            timed.Add(new(observation.ObservedAt, snapshot));
+            snapshotAudit.Add(new
+            {
+                observationId = observation.Id, observedAt = observation.ObservedAt, sha256 = hashes[0],
+                collector = observation.Collector, notModified = observation.NotModified,
+                rows = snapshot.Rows.Length, testIssuesExcluded = snapshot.TestIssuesExcluded,
+                exactDuplicatesDeduped = snapshot.ExactDuplicatesDeduped,
+                segmentRowsCollapsed = snapshot.SegmentRowsCollapsed,
+                producerCreation = snapshot.ProducerCreation
+            });
+        }
+        return (timed, snapshotAudit, observations);
+    }
+
+    /// <summary>Loads one source's intervals with capture bounds, for identity conversion.</summary>
+    public static ListingSourceData LoadSource(CaptureStore store, string sourceId)
+    {
+        if (!SupportedSources.Contains(sourceId)) throw new ResearchException("listing-source-unsupported");
+        var (timed, _, observations) = LoadTimed(store, sourceId);
+        var (intervals, gaps) = IntervalsFor(sourceId, timed);
+        var latest = timed.Max(t => t.ObservedAt);
+        return new(intervals, gaps, timed.Min(t => t.ObservedAt), latest,
+            observations.Where(o => o.ObservedAt == latest).Select(o => o.Sha256).Distinct().Single());
+    }
+
     /// <summary>Builds the immutable interval artifact from every captured snapshot of the named sources.</summary>
     public static ListingIntervalFiles Build(CaptureStore store, ImmutableArray<string> sourceIds)
     {
@@ -259,37 +310,7 @@ public static class ListingIntervals
         var auditSources = new List<object>();
         foreach (var sourceId in sourceIds.Order(StringComparer.Ordinal))
         {
-            var source = CaptureSources.Find(sourceId);
-            var observations = store.Observations(sourceId);
-            if (observations.Count == 0) throw new ResearchException("listing-capture-missing");
-            // Replays of one observation and same-instant duplicates of identical bytes are one snapshot;
-            // the same instant naming different bytes is ambiguous and must not be ordered by guesswork.
-            var instants = observations.GroupBy(o => o.ObservedAt).OrderBy(g => g.Key).ToArray();
-            var parsed = new Dictionary<string, ListingSnapshot>();
-            var timed = new List<TimedSnapshot>();
-            var snapshotAudit = new List<object>();
-            foreach (var group in instants)
-            {
-                var hashes = group.Select(o => o.Sha256).Distinct().ToArray();
-                if (hashes.Length != 1) throw new ResearchException("listing-snapshot-conflict");
-                var observation = group.First();
-                if (!parsed.TryGetValue(hashes[0], out var snapshot))
-                {
-                    var captured = store.Bytes(hashes[0]);
-                    if (source.Validate(captured) is not null) throw new ResearchException("listing-capture-invalid");
-                    snapshot = parsed[hashes[0]] = Parse(sourceId, captured);
-                }
-                timed.Add(new(observation.ObservedAt, snapshot));
-                snapshotAudit.Add(new
-                {
-                    observationId = observation.Id, observedAt = observation.ObservedAt, sha256 = hashes[0],
-                    collector = observation.Collector, notModified = observation.NotModified,
-                    rows = snapshot.Rows.Length, testIssuesExcluded = snapshot.TestIssuesExcluded,
-                    exactDuplicatesDeduped = snapshot.ExactDuplicatesDeduped,
-                    segmentRowsCollapsed = snapshot.SegmentRowsCollapsed,
-                    producerCreation = snapshot.ProducerCreation
-                });
-            }
+            var (timed, snapshotAudit, observations) = LoadTimed(store, sourceId);
             var (sourceIntervals, gaps) = IntervalsFor(sourceId, timed);
             intervals.AddRange(sourceIntervals);
             auditSources.Add(new

@@ -50,6 +50,25 @@ try
         Console.WriteLine(JsonSerializer.Serialize(new { valid = true, intervalId = files.Id, intervals = files.Intervals, converter = ListingIntervals.Version, sources = sourceIds }));
         return 0;
     }
+    if ((args.Length == 7 || args.Length == 9 && args[7] == "--dataset-id") && args[0] == "listing-identity" &&
+        args[1] == "--archive" && args[3] == "--symbols" && args[5] == "--dataset-archive")
+    {
+        var symbols = System.Collections.Immutable.ImmutableArray.CreateRange(
+            args[4].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+        using var archive = new CaptureStore(args[2]);
+        var datasetId = args.Length == 9 ? args[8] : "listing-identity-sample";
+        var (result, intervalId) = ListingIdentity.Build(archive, symbols, DateTimeOffset.UtcNow, datasetId);
+        var datasetBytes = JsonSerializer.SerializeToUtf8Bytes(result.Dataset, DatasetJson.Options);
+        var storedPath = DatasetArchive.Store(Path.GetFullPath(args[6]), datasetBytes);
+        var sha = Path.GetFileNameWithoutExtension(storedPath);
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            valid = true, datasetId, datasetSha256 = sha, intervalId, converter = ListingIdentity.Version,
+            listings = result.Dataset.Observations.Count(o => o is Twenty.Core.Data.Listing),
+            included = result.IncludedSymbols, excluded = result.Excluded
+        }, DatasetJson.Options));
+        return 0;
+    }
     if (args.Length == 9 && args[0] == "listing-audit" && args[1] == "--intervals" && args[3] == "--archive" && args[5] == "--symbols" && args[7] == "--output")
     {
         var intervalsPath = Path.GetFullPath(args[2]);
@@ -239,6 +258,7 @@ try
             "       Twenty.Data tiingo-check --archive <private-directory>\n" +
             "       Twenty.Data tiingo-history <SYMBOL> --from yyyy-mm-dd --to yyyy-mm-dd --archive <private-directory> --capture\n" +
             "       Twenty.Data listing-intervals --archive <captures> --output <private-directory> [--sources nasdaq-listed,nasdaq-other,tiingo-tickers]\n" +
+            "       Twenty.Data listing-identity --archive <captures> --symbols AAA,BBB --dataset-archive <dataset-archive> [--dataset-id <id>]\n" +
             "       Twenty.Data listing-audit --intervals <interval-id.csv> --archive <tiingo-captures> --symbols AAA,BBB --output <private-directory>\n" +
             "       Twenty.Data sec-facts --dataset <input.json> --bulk <companyfacts.zip> --retrieved-at <iso8601> --concepts Revenues,Assets --archive <dataset-archive> [--dataset-id <id>]\n" +
             "       Twenty.Data universe-backtest --dataset <input.json> --universe <id> --decisions <iso8601,iso8601,...> [--max-price-age-days 45 [--top-k 3]]\n" +
