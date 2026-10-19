@@ -291,13 +291,17 @@ public sealed class ListingPricesTests
     [Fact]
     public void ConversionIsDeterministic()
     {
-        using var w = new Workspace();
-        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
-        Record(w.Store, "OLD", HistoryJson(OldBars), CaptureAt);
-        var identity = BaseIdentity().Dataset;
+        // Two independent stores with captures recorded in opposite order must serialize
+        // identically: ordering of capture insertion must not affect the output.
+        using var w1 = new Workspace();
+        using var w2 = new Workspace();
+        Record(w1.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
+        Record(w1.Store, "OLD", HistoryJson(OldBars), CaptureAt);
+        Record(w2.Store, "OLD", HistoryJson(OldBars), CaptureAt);
+        Record(w2.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
 
-        var first = ListingPrices.Convert(w.Store, identity, "converted-fixture", Created);
-        var second = ListingPrices.Convert(w.Store, identity, "converted-fixture", Created);
+        var first = ListingPrices.Convert(w1.Store, BaseIdentity().Dataset, "converted-fixture", Created);
+        var second = ListingPrices.Convert(w2.Store, BaseIdentity().Dataset, "converted-fixture", Created);
 
         Assert.Equal(
             JsonSerializer.SerializeToUtf8Bytes(first.Dataset, DatasetJson.Options),
@@ -322,7 +326,7 @@ public sealed class ListingPricesTests
         var rows = new List<(string Date, decimal Close, decimal Div, decimal Split)>();
         for (var day = new DateOnly(2024, 8, 1); day <= new DateOnly(2024, 10, 10); day = day.AddDays(1))
             if (day.DayOfWeek is DayOfWeek.Monday or DayOfWeek.Tuesday or DayOfWeek.Wednesday or DayOfWeek.Thursday or DayOfWeek.Friday)
-                rows.Add((day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), 10.25m, 0m, 1m));
+                rows.Add((day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), 10m + ((day.DayNumber - new DateOnly(2024, 8, 1).DayNumber) % 7) * 0.25m, 0m, 1m));
         Record(w.Store, "AAA", HistoryJson([.. rows]), DateTimeOffset.Parse("2024-10-11T12:00:00Z"));
 
         var result = ListingPrices.Convert(w.Store, identity.Dataset, "converted-fixture", DateTimeOffset.Parse("2024-12-01T12:00:00Z"));
@@ -340,6 +344,10 @@ public sealed class ListingPricesTests
         var ret = Assert.Single(period.Returns);
         Assert.Equal("listing-aaa-20150102", ret.ListingId);
         Assert.Equal(UniverseReturnStatus.Priced, ret.Status);
+        // Both endpoints resolve to the last captured bar (2024-10-10); pin its converted
+        // close so the zero return is not a flat-price artifact.
+        var lastClose = pit.AsOf(decisions[0]).Prices("listing-aaa-20150102", PriceBasis.TotalReturnAdjusted).Last().Close;
+        Assert.Equal(10m, lastClose);
         Assert.Equal(0m, ret.Return);
         Assert.NotEmpty(pit.AsOf(decisions[0]).Prices("listing-aaa-20150102", PriceBasis.TotalReturnAdjusted));
     }

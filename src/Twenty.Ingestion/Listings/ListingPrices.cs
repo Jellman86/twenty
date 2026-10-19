@@ -141,7 +141,7 @@ public static class ListingPrices
                         bar.Open, bar.High, bar.Low, bar.Close, bar.Volume));
                     var traEvidence = evidence with { RevisionOf = priorTraId };
                     bars.Add(new(traId, traEvidence, listingId, date, closeAt, rows[0].Denomination, PriceBasis.TotalReturnAdjusted,
-                        bar.AdjOpen, bar.AdjHigh, bar.AdjLow, bar.AdjClose, bar.Volume));
+                        bar.AdjOpen, bar.AdjHigh, bar.AdjLow, bar.AdjClose, bar.Volume)); // raw share volume on both bases; Tiingo's adjVolume is not parsed in v1
                     listingBars += 2;
                     priorRawId = rawId;
                     priorTraId = traId;
