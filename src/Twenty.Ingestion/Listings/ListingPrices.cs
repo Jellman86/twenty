@@ -12,7 +12,7 @@ namespace Twenty.Ingestion.Listings;
 
 public sealed record ListingPricesExclusion(string Symbol, string Reason);
 public sealed record ListingPricesResult(DatasetFile Dataset, int BarsAdded, int ActionsAdded,
-    int OutsideIntervalSkipped, ImmutableArray<ListingPricesExclusion> Excluded);
+    int OutsideIntervalSkipped, int InProgressSkipped, ImmutableArray<ListingPricesExclusion> Excluded);
 
 /// <summary>
 /// Converts captured Tiingo daily histories into v1 PriceBar observations (raw and
@@ -67,7 +67,7 @@ public static class ListingPrices
         var actions = ImmutableArray.CreateBuilder<CorporateAction>();
         var usedCaptureTimes = new List<DateTimeOffset>();
         var usedCaptures = new HashSet<CaptureObservation>();
-        var outside = 0; var barCount = 0; var actionCount = 0;
+        var outside = 0; var inProgress = 0; var barCount = 0; var actionCount = 0;
         foreach (var listingId in listings.Keys.Order(StringComparer.Ordinal))
         {
             var rows = listings[listingId];
@@ -119,6 +119,8 @@ public static class ListingPrices
                 {
                     var bar = parsed[capture].FirstOrDefault(b => b.Date == date);
                     if (bar is null) continue;
+                    if (closeAt > capture.ObservedAt)
+                    { inProgress++; continue; }
                     usedCaptureTimes.Add(capture.ObservedAt);
                     usedCaptures.Add(capture);
                     var evidence = new Evidence(SourceId, capture.ObservedAt, capture.ObservedAt,
@@ -197,7 +199,7 @@ public static class ListingPrices
         }, kept.Concat(bars.ToImmutable()).Concat(actions.ToImmutable()).ToImmutableArray());
         var validation = DatasetValidator.Validate(dataset);
         if (!validation.IsValid) throw new InvalidDatasetException(validation);
-        return new(dataset, barCount, actionCount, outside,
+        return new(dataset, barCount, actionCount, outside, inProgress,
             excluded.ToImmutable().OrderBy(x => x.Symbol, StringComparer.Ordinal).ToImmutableArray());
     }
 
