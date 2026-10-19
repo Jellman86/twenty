@@ -260,20 +260,32 @@ public sealed class ListingPricesTests
     }
 
     [Fact]
-    public void LatestCaptureWinsAndStampsAvailabilityAtCapture()
+    public void VintagesMergeAndEachBarIsAvailableFromItsFirstCapture()
     {
         using var w = new Workspace();
         var early = HistoryJson([("2026-01-02", 9.0m, 0m, 1m)]);
         var late = HistoryJson([("2026-01-02", 11.0m, 0m, 1m)]);
-        Record(w.Store, "AAA", early, CaptureAt.AddDays(-1));
-        Record(w.Store, "AAA", late, CaptureAt);
+        var firstCapture = CaptureAt.AddDays(-1);
+        var secondCapture = CaptureAt;
+        Record(w.Store, "AAA", early, firstCapture);
+        Record(w.Store, "AAA", late, secondCapture);
 
         var result = ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "converted-fixture", Created);
 
         Assert.DoesNotContain(result.Excluded, e => e.Symbol == "AAA");
-        var bar = result.Dataset.Observations.OfType<PriceBar>().Single(b => b.Id == "listing-aaa-20150102-raw-20260102");
-        Assert.Equal(11.0m, bar.Close);
-        Assert.Equal(CaptureAt, bar.Evidence.AvailableAt);
+        var pit = new PointInTimeDataset(result.Dataset);
+        // Before the first capture: nothing.
+        Assert.Empty(pit.AsOf(firstCapture.AddSeconds(-1)).Prices("listing-aaa-20150102", PriceBasis.Raw));
+        // At the first capture: the first vintage's close, available only then.
+        var firstBar = Assert.Single(pit.AsOf(firstCapture).Prices("listing-aaa-20150102", PriceBasis.Raw));
+        Assert.Equal(9.0m, firstBar.Close);
+        Assert.Equal(firstCapture, firstBar.Evidence.AvailableAt);
+        Assert.Null(firstBar.Evidence.RevisionOf);
+        // At the second capture: the restated close supersedes via a revision chain.
+        var secondBar = Assert.Single(pit.AsOf(secondCapture).Prices("listing-aaa-20150102", PriceBasis.Raw));
+        Assert.Equal(11.0m, secondBar.Close);
+        Assert.Equal(secondCapture, secondBar.Evidence.AvailableAt);
+        Assert.Equal(firstBar.Id, secondBar.Evidence.RevisionOf);
     }
 
     [Fact]
