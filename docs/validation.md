@@ -1,5 +1,9 @@
 # Validation record
 
+## Gap-refusing backtest over the changing-universe panel (19 October 2026)
+
+`UniverseBacktest` (`changing-universe-backtest-v1`) steps the decimal notional portfolio through the changing-universe panel with equal-weight, fixed-constant 12-1 momentum and cash baselines. It refuses gap panels outright and binds the panel hash in its report. Six tests over a generated 30-month synthetic scenario hand-verify the first equal-weight period (19.9333 on £20 across +1%/0%/−2%), the four-name terminal month (−23.5% including a −100% delisting), momentum exclusion of an entrant until its 11-period priced window completes (first held in period 27), cash exactness, determinism, cost drag and gap/short-history refusal (381 .NET tests total). Returns remain local-currency with no FX conversion, stated in-band; nothing is registered as a trial and no market claim is made.
+
 ## Changing-universe panel over the v1 dataset (19 October 2026)
 
 `ChangingUniversePanel` (`changing-universe-v1`) builds realized monthly returns over point-in-time universe membership from a validated v1 dataset, replacing the fixed-universe assumption for future stock-level work. Eleven authored-fixture tests pin the semantics: entrants earn no backfilled return; split months price from one adjustment vintage (+10%, not a fabricated −45%); zero-proceeds delistings realize −100%; simple cash delistings price from raw closes (−50% on $9 vs $18); missing terminal proceeds and cash-after-split fail the build closed; unexplained exits and stale prices are disclosed gaps (`HasGaps`), never dropped; a delisting known three days after its effective date still explains the exit in the following period; and the panel hash is deterministic and price-sensitive. No backtest consumes the panel yet and no market claim is made. Local validation: full .NET and Python suites, Ruff, Svelte check/build, research-boundary probe and sensitive-path guard pass.
