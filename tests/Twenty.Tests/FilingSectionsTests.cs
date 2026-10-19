@@ -155,6 +155,55 @@ public sealed class FilingSectionsTests
     }
 
     [Fact]
+    public void ExhibitSubPartsWithColonsDoNotResetTheFilingPart()
+    {
+        // Genuine Baidu 20-F: an exhibit inside Item 6 uses "Part I: Gender Identity"
+        // and "Part II: Demographic Background" sub-headings. They must not re-key
+        // the filing's own Items 7-12 from Part I to Part II.
+        var doc = "<p>PART I</p><p>ITEM 6. DIRECTORS, SENIOR MANAGEMENT AND EMPLOYEES</p>" +
+                  "<p>Part I: Gender Identity</p><p>employees by gender and region as of year end</p>" +
+                  "<p>Part II: Demographic Background</p><p>employees by age group and geography as of year end</p>" +
+                  "<p>ITEM 7. MAJOR SHAREHOLDERS AND RELATED PARTY TRANSACTIONS</p><p>principal shareholders beneficially own the following shares</p>" +
+                  "<p>PART II</p><p>ITEM 13. DEFAULTS, DIVIDEND ARREARAGES AND DELINQUENCIES</p><p>none during the periods presented in this report</p>";
+        Assert.Equal([("1", "6"), ("1", "7"), ("2", "13")],
+            FilingSections.Split(doc).Select(s => (s.Part, s.Item)).ToArray());
+    }
+
+    [Fact]
+    public void BareDuplicateHeadingsResolveToTheLaterBodySegmentOnTies()
+    {
+        // Contents stub and body both bare with equal scored tokens ("Not applicable"
+        // shells, other contents items between them as in genuine filings): the
+        // later (body) segment wins the tie.
+        var doc = "<p>Part I</p><p>Item 1.</p><p>Identity of Directors and Advisers</p><p>Item 2.</p><p>Offer Statistics</p>" +
+                  "<p>PART I</p><p>ITEM 1.</p><p>IDENTITY OF DIRECTORS AND ADVISERS</p><p>Not applicable.</p>" +
+                  "<p>ITEM 2.</p><p>OFFER STATISTICS</p><p>Not applicable.</p>";
+        var section = FilingSections.Split(doc).Single(s => s.Item == "1");
+        Assert.Equal("ITEM 1.", section.Heading);
+        Assert.Contains("Not applicable", section.Text);
+    }
+
+    [Fact]
+    public void RunningPageHeadersMergeIntoOneBodySection()
+    {
+        // Genuine Microsoft style: "PART I / Item 1" running headers repeat on every
+        // page inside Item 1, fragmenting it. Consecutive same-key fragments merge;
+        // the contents entry stays a separate (losing) candidate.
+        var doc = "<p>PART I</p><p>Item 1.</p><p>Item 1A.</p>" +
+                  "<p>PART I</p><p>ITEM 1. BUSINESS</p><p>first page describes cloud services and devices sold worldwide</p>" +
+                  "<p>PART I</p><p>Item 1</p><p>second page continues describing segments and distribution channels</p>" +
+                  "<p>PART I</p><p>Item 1</p><p>third page describes competition and seasonal revenue patterns</p>" +
+                  "<p>ITEM 1A. RISK FACTORS</p><p>intense competition could harm operating results and margins</p>";
+        var sections = FilingSections.Split(doc);
+        Assert.Equal([("1", "1"), ("1", "1a")], sections.Select(s => (s.Part, s.Item)).ToArray());
+        var business = sections[0];
+        Assert.Equal("ITEM 1. BUSINESS", business.Heading);
+        Assert.Contains("first page", business.Text);
+        Assert.Contains("second page", business.Text);
+        Assert.Contains("third page", business.Text);
+    }
+
+    [Fact]
     public void RepeatedShortBoilerplateLinesAreExcludedFromSectionText()
     {
         var head = string.Concat(Enumerable.Repeat("<p>NOTES TO FINANCIAL STATEMENTS (CONTINUED)</p><p>Table of Contents</p>", 9));

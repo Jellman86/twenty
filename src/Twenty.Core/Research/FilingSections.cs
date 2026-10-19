@@ -9,15 +9,17 @@ public sealed record SectionChange(string Part, string Item, string Heading, Sec
 
 /// <summary>Deterministic Part/Item section extraction for periodic reports and
 /// per-section FilingChange scoring. Heading rules are fixed and were validated against
-/// genuine SEC documents in three styles (modern iXBRL 10-K/10-Q from two issuers and
-/// 2000-2001 SGML-wrapped ASCII/early-HTML filings): a short line "Part &lt;roman|digit&gt;"
-/// followed by end-of-line or a separator (comma cross-references like "Part II, Item 7
-/// of this Form 10-K" are not headings), or "Item &lt;n&gt;[.letter|letter]" terminated by
-/// punctuation (em-dash titles such as "Item 1—Business" included; decimals like
-/// "Item 1.5" excluded) or by whitespace before a capitalized title ("ITEM 2
-/// PROPERTIES"; lowercase continuations like "Item 7 of this..." are cross-references).
-/// Form 20-F dotted sub-items ("Item 3.D.") canonicalize to "3d" (fixture-verified;
-/// genuine 20-F documents currently exceed the SEC collector's response cap).
+/// genuine SEC documents in four styles (modern iXBRL from three issuers, 2000-2001
+/// SGML-wrapped ASCII/early-HTML filings, and a conventional Form 20-F): a short line
+/// "Part &lt;roman|digit&gt;" followed by end-of-line or a dash/dot separator (comma and
+/// colon cross-references like "Part II, Item 7 of this Form 10-K" and exhibit
+/// sub-headings like "Part II: Demographic Background" are not headings), or
+/// "Item &lt;n&gt;[.letter|letter]" terminated by punctuation (em-dash titles such as
+/// "Item 1—Business" included; decimals like "Item 1.5" excluded) or by whitespace
+/// before a capitalized title ("ITEM 2 PROPERTIES"; lowercase continuations like
+/// "Item 7 of this..." are cross-references). Form 20-F dotted sub-items ("Item 3.D.")
+/// canonicalize to "3d". Consecutive same-key segments under bare headings merge:
+/// some filers repeat running page headers ("PART I / Item 1") throughout a section.
 /// Tables of contents repeat every heading, so for a duplicated (part, item) the
 /// titled, token-richest segment wins — the body, not the contents page. Short
 /// non-heading lines repeated at least eight times document-wide (running heads,
@@ -27,17 +29,23 @@ public sealed record SectionChange(string Part, string Item, string Heading, Sec
 /// routine vs substantive change.</summary>
 public static partial class FilingSections
 {
-    public const string Version = "filing-sections-v2";
+    public const string Version = "filing-sections-v3";
     private const int MaximumHeadingCharacters = 200;
     private const int BoilerplateMinimumOccurrences = 8;
     private const int BoilerplateMaximumCharacters = 80;
 
-    [GeneratedRegex(@"^part\s+(iv|iii|ii|i|[1-4])\s*([.\-—:]|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    // No colon: genuine exhibit sub-headings inside a section use it ("Part I: Gender
+    // Identity" inside Baidu's Item 6), while observed filing part headings are bare
+    // or dash-titled ("PART I — FINANCIAL INFORMATION").
+    [GeneratedRegex(@"^part\s+(iv|iii|ii|i|[1-4])\s*([.\-—]|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex PartHeading();
     [GeneratedRegex(@"^item\s+(\d{1,2})(?:\.([a-z])|([a-z]))?", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex ItemPrefix();
 
-    private sealed record Segment(string Part, string Item, string Heading, int FirstLine, int EndLine, bool HasTitle);
+    private sealed record Segment(string Part, string Item, string Heading, List<(int Start, int End)> Ranges, bool HasTitle)
+    {
+        public int FirstLine => Ranges[0].Start;
+    }
 
     public static ImmutableArray<FilingSection> Split(string document) => SplitPlain(FilingText.ToPlainText(document));
 
@@ -105,7 +113,16 @@ public static partial class FilingSections
         var openHasTitle = false;
         void Close(int endLine)
         {
-            if (openItem is not null) segments.Add(new(openPart, openItem, openHeading, openFirstLine, endLine, openHasTitle));
+            if (openItem is null) return;
+            var range = (openFirstLine, endLine);
+            if (segments.Count > 0 && segments[^1].Part == openPart && segments[^1].Item == openItem && !openHasTitle)
+            {
+                // Consecutive same-key segment under a bare heading: a repeated running
+                // page header inside one body section. A titled heading always starts a
+                // new segment, so a contents entry never merges into the body (or back).
+                segments[^1].Ranges.Add(range);
+            }
+            else segments.Add(new(openPart, openItem, openHeading, [range], openHasTitle));
             openItem = null;
         }
         for (var i = 0; i < lines.Length; i++)
@@ -120,13 +137,14 @@ public static partial class FilingSections
         Close(lines.Length);
 
         string TextOf(Segment segment) => string.Join("\n",
-            Enumerable.Range(segment.FirstLine, segment.EndLine - segment.FirstLine)
+            segment.Ranges.SelectMany(r => Enumerable.Range(r.Start, r.End - r.Start))
                 .Where(i => !boilerplate.Contains(lines[i])).Select(i => rawLines[i]));
 
         // Selection among duplicates (contents page vs body): a heading carrying its
-        // title inline beats a bare one, then more scored tokens wins. Genuine tiny
-        // body sections ("None.") must not lose to a bare contents stub whose
-        // segment happens to contain neighbouring contents lines.
+        // title inline beats a bare one, then more scored tokens wins; exact ties go
+        // to the later segment, since the body always follows the contents page.
+        // Genuine tiny body sections ("None.") must not lose to a bare contents stub
+        // whose segment happens to contain neighbouring contents lines.
         var best = new Dictionary<(string, string), (Segment Segment, string Text, int Tokens)>();
         foreach (var segment in segments)
         {
@@ -134,7 +152,7 @@ public static partial class FilingSections
             var tokens = FilingChange.TokenizePlain(text).Length;
             var key = (segment.Part, segment.Item);
             if (!best.TryGetValue(key, out var prior)
-                || (segment.HasTitle, tokens).CompareTo((prior.Segment.HasTitle, prior.Tokens)) > 0)
+                || (segment.HasTitle, tokens).CompareTo((prior.Segment.HasTitle, prior.Tokens)) >= 0)
                 best[key] = (segment, text, tokens);
         }
         return best.Values.Where(v => v.Tokens > 0).OrderBy(v => v.Segment.FirstLine)
