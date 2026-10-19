@@ -1,5 +1,9 @@
 # Validation record
 
+## Independent FX producer comparison: ECB vs Bank of England (19 October 2026)
+
+`scripts/audit_fx_ecb_boe.py` compares the ECB eurofxref history against Bank of England daily spot rates into sterling (`XUDLUSS`/`XUDLERS`), retiring the same-producer caveat for the FX legs. Over the pre-declared calendar-2024 window (253 matched dates): USD-per-GBP median difference −0.33 bp, EUR-per-GBP +0.24 bp — direction, scale and units agree across independent official producers; ECB-only dates are UK bank holidays and the sole BoE-only date is 1 May. Dispersion is fixing-time noise (p95 45.5 bp USD; nine >50 bp dates on US-release/Budget days, max 105 bp), reinforcing that reference rates are not execution prices. Arithmetic was corroborated two ways for 2024-06-03 (+33.712 bp both). Three unit tests pin hand arithmetic, inverted-quote detection and fail-closed parsing. Payload hashes and full results: `docs/fx-independent-audit.json`; raw payloads stay outside Git.
+
 ## Gap-refusing backtest over the changing-universe panel (19 October 2026)
 
 `UniverseBacktest` (`changing-universe-backtest-v1`) steps the decimal notional portfolio through the changing-universe panel with equal-weight, fixed-constant 12-1 momentum and cash baselines. It refuses gap panels outright and binds the panel hash in its report. Six tests over a generated 30-month synthetic scenario hand-verify the first equal-weight period (19.9333 on £20 across +1%/0%/−2%), the four-name terminal month (−23.5% including a −100% delisting), momentum exclusion of an entrant until its 11-period priced window completes (first held in period 27), cash exactness, determinism, cost drag and gap/short-history refusal (381 .NET tests total). Returns remain local-currency with no FX conversion, stated in-band; nothing is registered as a trial and no market claim is made.

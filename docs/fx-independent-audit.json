@@ -1,0 +1,109 @@
+{
+ "reviewedOn": "2026-10-19",
+ "purpose": "Independent-producer comparison of official daily FX publications; not executable broker pricing",
+ "rawPayloadsCommitted": false,
+ "script": "scripts/audit_fx_ecb_boe.py",
+ "producers": {
+  "ecb": {
+   "name": "European Central Bank euro foreign exchange reference rates (currency units per EUR)",
+   "framework": "https://www.ecb.europa.eu/stats/pdf/exchange/Framework_for_the_euro_foreign_exchange_reference_rates.en.pdf",
+   "url": "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-hist.xml",
+   "bytes": 8202267,
+   "sha256": "3cb610894f5098c82e39c476e1593033565565eb66570051c9304fbf708978e9"
+  },
+  "boe": {
+   "name": "Bank of England daily spot exchange rates into sterling (XUDLUSS USD per GBP, XUDLERS EUR per GBP)",
+   "database": "https://www.bankofengland.co.uk/boeapps/database/",
+   "url": "https://www.bankofengland.co.uk/boeapps/database/_iadb-fromshowcolumns.asp?csv.x=yes&Datefrom=01/Jan/2024&Dateto=31/Dec/2024&SeriesCodes=XUDLUSS,XUDLERS&CSVF=TN&UsingCodes=Y&VPD=Y",
+   "bytes": 6828,
+   "sha256": "154539e5896f0203479baf84ccdd26c82278839beb57689698632d9bc143d69e"
+  }
+ },
+ "derivedComparisons": {
+  "usdPerGbp": "BoE XUDLUSS vs ECB EURUSD/EURGBP",
+  "eurPerGbp": "BoE XUDLERS vs ECB 1/EURGBP (audit arithmetic on published values)"
+ },
+ "result": {
+  "valid": true,
+  "window": {
+   "start": "2024-01-01",
+   "end": "2024-12-31"
+  },
+  "ecbDatesInWindow": 256,
+  "boeDatesInWindow": 254,
+  "ecbOnlyDates": [
+   "2024-05-06",
+   "2024-05-27",
+   "2024-08-26"
+  ],
+  "boeOnlyDates": [
+   "2024-05-01"
+  ],
+  "pairs": {
+   "usdPerGbp": {
+    "matchedDates": 253,
+    "medianBps": -0.33,
+    "meanBps": -1.027,
+    "p95AbsBps": 45.53,
+    "maxAbsBps": 105.417,
+    "over10Bps": 161,
+    "over50Bps": 9
+   },
+   "eurPerGbp": {
+    "matchedDates": 253,
+    "medianBps": 0.242,
+    "meanBps": 0.651,
+    "p95AbsBps": 27.279,
+    "maxAbsBps": 81.97,
+    "over10Bps": 88,
+    "over50Bps": 1
+   }
+  },
+  "over50BpsDates": {
+   "usdPerGbp": [
+    {
+     "date": "2024-01-05",
+     "bps": 66.39
+    },
+    {
+     "date": "2024-02-02",
+     "bps": -83.86
+    },
+    {
+     "date": "2024-02-13",
+     "bps": -64.67
+    },
+    {
+     "date": "2024-04-10",
+     "bps": -105.14
+    },
+    {
+     "date": "2024-06-07",
+     "bps": -61.78
+    },
+    {
+     "date": "2024-06-12",
+     "bps": 65.02
+    },
+    {
+     "date": "2024-09-11",
+     "bps": -55.78
+    },
+    {
+     "date": "2024-10-31",
+     "bps": -105.42
+    },
+    {
+     "date": "2024-12-30",
+     "bps": -63.31
+    }
+   ],
+   "eurPerGbp": [
+    {
+     "date": "2024-10-31",
+     "bps": -81.97
+    }
+   ]
+  }
+ }
+}

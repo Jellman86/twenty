@@ -42,6 +42,14 @@ That authored fixture returns 0.64 GBP per USD and is explicitly synthetic. The 
 
 The parsed reference date remains a `DateOnly`: no observation, publication or availability instant is invented. There is no automatic `FxRate` dataset import. A later import must bind original hashes, first-seen evidence or a reviewed conservative policy, declared time precision and a decision cutoff. Broker execution FX remains a separate source/purpose.
 
+## Independent-producer comparison (Bank of England, 19 October 2026)
+
+The same-producer caveat above is now partly retired for the FX legs. `scripts/audit_fx_ecb_boe.py` compares caller-supplied ECB eurofxref history against the Bank of England's daily spot rates into sterling (IADB `XUDLUSS`, USD per GBP; `XUDLERS`, EUR per GBP) — a genuinely independent official producer. Neither payload is committed; retrieval hashes and full results are in [fx-independent-audit.json](fx-independent-audit.json).
+
+For the pre-declared calendar-2024 window: 253 matched dates. USD-per-GBP relative differences (BoE vs ECB-derived EURUSD/EURGBP) have median −0.33 bp and mean −1.03 bp; EUR-per-GBP median +0.24 bp. Medians at zero across two independent publications confirm quote direction, scale and units on both sides — an inverted or mis-scaled series would differ by thousands of basis points (pinned by unit test). Calendar asymmetry also matches independently: ECB-only dates are UK bank holidays (6/27 May, 26 Aug) and the single BoE-only date is 1 May, when the ECB does not publish.
+
+Dispersion is fixing-time noise, not error: p95 absolute difference is 45.5 bp (USD) / 27.3 bp (EUR), and the nine USD dates over 50 bp (max 105 bp, 10 Apr and 31 Oct 2024) coincide with major US data releases and the UK Budget aftermath. ECB rates are determined around 14:10 CET (≈13:10 London, before 13:30 London US releases) and published around 16:00 CET ([ECB framework](https://www.ecb.europa.eu/stats/pdf/exchange/Framework_for_the_euro_foreign_exchange_reference_rates.en.pdf)); neither payload carries intraday timestamps, so that explanation is interpretation, not proof. The practical consequence stands: a daily reference rate can differ from an achievable afternoon conversion by ~1% on event days. Reference FX remains unsuitable as an execution price, and this comparison certifies neither producer's vintage history.
+
 ## Remaining acceptance work
 
 Issue #5 stays open: select an affordable licensed stock-price source; audit splits, distributions, inactive securities and terminal returns; establish historical universe/ISA coverage; verify exchange sessions/calendars; and define revision/publication policies. A current ECB history file alone cannot make a historical stock-selection backtest trustworthy.
