@@ -1,5 +1,9 @@
 # Validation record
 
+## Universe-backtest CLI (19 October 2026)
+
+`Twenty.Data universe-backtest` exposes the changing-universe panel and backtest over any v1 dataset file with an explicit decision grid. Verified end-to-end against a dataset JSON generated independently (Python) from the C# test scenario: validator-clean, panel hash bound, status counts 95 priced / 1 entered / 1 terminal-zero, 17 evaluated periods (£340 contributions, cash exact, equal-weight drawdown −23.5% at the terminal month). Negative paths verified: undeclared universe and unzoned decision tokens fail with structured codes, and a short history prints the panel block with `refusal: universe-backtest-history` and exit 1. The CLI's generic dataset-error output now carries the first structured issue code instead of a blanket `input-or-archive`.
+
 ## Independent FX producer comparison: ECB vs Bank of England (19 October 2026)
 
 `scripts/audit_fx_ecb_boe.py` compares the ECB eurofxref history against Bank of England daily spot rates into sterling (`XUDLUSS`/`XUDLERS`), retiring the same-producer caveat for the FX legs. Over the pre-declared calendar-2024 window (253 matched dates): USD-per-GBP median difference −0.33 bp, EUR-per-GBP +0.24 bp — direction, scale and units agree across independent official producers; ECB-only dates are UK bank holidays and the sole BoE-only date is 1 May. Dispersion is fixing-time noise (p95 45.5 bp USD; nine >50 bp dates on US-release/Budget days, max 105 bp), reinforcing that reference rates are not execution prices. Arithmetic was corroborated two ways for 2024-06-03 (+33.712 bp both). Three unit tests pin hand arithmetic, inverted-quote detection and fail-closed parsing. Payload hashes and full results: `docs/fx-independent-audit.json`; raw payloads stay outside Git.

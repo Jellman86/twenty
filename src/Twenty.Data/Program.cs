@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Twenty.Core.Data;
+using Twenty.Core.Research;
 using Twenty.Ingestion.Sec;
 using Twenty.Ingestion.Fx;
 using Twenty.Ingestion.Capture;
@@ -165,6 +166,44 @@ try
         }
         finally { Console.CancelKeyPress -= cancel; }
     }
+    if (args.Length is 7 or 9 or 11 && args[0] == "universe-backtest" && args[1] == "--dataset" && args[3] == "--universe" && args[5] == "--decisions" &&
+        (args.Length < 9 || args[7] == "--max-price-age-days") && (args.Length < 11 || args[9] == "--top-k"))
+    {
+        var maxAgeDays = 45; var topK = 3;
+        if ((args.Length >= 9 && !int.TryParse(args[8], out maxAgeDays)) || (args.Length == 11 && !int.TryParse(args[10], out topK)))
+            throw new ResearchException("universe-backtest-arguments");
+        var decisions = new List<DateTimeOffset>();
+        foreach (var token in args[6].Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!DateTimeOffset.TryParse(token, CultureInfo.InvariantCulture, DateTimeStyles.None, out var decision) ||
+                !(token.EndsWith('Z') || token.Contains('+') || token.LastIndexOf('-') > 10))
+                throw new ResearchException("universe-backtest-decisions");
+            decisions.Add(decision.ToUniversalTime());
+        }
+        var dataset = new PointInTimeDataset(DatasetJson.Read(DatasetArchive.ReadBounded(Path.GetFullPath(args[2]))));
+        var panel = ChangingUniversePanel.FromDataset(dataset, args[4], decisions, TimeSpan.FromDays(maxAgeDays));
+        UniverseBacktestReport? report = null; string? refusal = null;
+        try { report = UniverseBacktest.Run(panel, new(TopK: topK), new()); }
+        catch (ResearchException error) { refusal = error.Code; }
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            valid = true,
+            panel = new
+            {
+                sha256 = panel.Sha256, datasetId = panel.DatasetId, universeId = panel.UniverseId, synthetic = panel.Synthetic,
+                months = panel.Months.Length, periods = panel.Periods.Length, hasGaps = panel.HasGaps,
+                statusCounts = panel.ReturnStatusCounts.ToDictionary(x => x.Key.ToString(), x => x.Value),
+                builder = ChangingUniversePanel.BuilderVersion
+            },
+            backtest = report is null ? null : new
+            {
+                engine = report.EngineVersion, evaluationStart = report.EvaluationStart, evaluationEnd = report.EvaluationEnd,
+                summaries = report.Summaries.Select(s => new { s.Strategy, s.EndingEquityGbp, s.ContributionsGbp, s.ProfitGbp, s.TradingCostGbp, s.MaxDrawdown })
+            },
+            refusal
+        }, DatasetJson.Options));
+        return report is null ? 1 : 0;
+    }
     if (args.Length is not (2 or 4) || args[0] != "validate" || (args.Length == 4 && args[2] != "--archive"))
     {
         Console.Error.WriteLine("Usage: Twenty.Data french-panel --archive <captures> --from yyyy-mm-dd --to yyyy-mm-dd --output <private-inbox> [--portfolios industry|size-value25]\n" +
@@ -173,6 +212,7 @@ try
             "       Twenty.Data listing-intervals --archive <captures> --output <private-directory> [--sources nasdaq-listed,nasdaq-other,tiingo-tickers]\n" +
             "       Twenty.Data listing-audit --intervals <interval-id.csv> --archive <tiingo-captures> --symbols AAA,BBB --output <private-directory>\n" +
             "       Twenty.Data sec-facts --dataset <input.json> --bulk <companyfacts.zip> --retrieved-at <iso8601> --concepts Revenues,Assets --archive <dataset-archive> [--dataset-id <id>]\n" +
+            "       Twenty.Data universe-backtest --dataset <input.json> --universe <id> --decisions <iso8601,iso8601,...> [--max-price-age-days 45 [--top-k 3]]\n" +
             "       Twenty.Data capture-public --archive <private-directory> --sources <comma-separated-source-ids>\n" +
             "       Twenty.Data validate <dataset.json> [--archive <directory>]\n" +
             "       Twenty.Data sec-inspect <CIK> <submissions.json>\n" +
@@ -223,7 +263,12 @@ catch (JsonException error)
     Console.Error.WriteLine(JsonSerializer.Serialize(new { valid = false, code = "json-shape", line = error.LineNumber, position = error.BytePositionInLine }));
     return 1;
 }
-catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDatasetException)
+catch (InvalidDatasetException error)
+{
+    Console.Error.WriteLine(JsonSerializer.Serialize(new { valid = false, code = error.Validation.Issues.FirstOrDefault()?.Code ?? "dataset-invalid", issues = error.Validation.Issues }, DatasetJson.Options));
+    return 1;
+}
+catch (Exception error) when (error is IOException or UnauthorizedAccessException)
 {
     Console.Error.WriteLine("{\"valid\":false,\"code\":\"input-or-archive\"}");
     return 1;

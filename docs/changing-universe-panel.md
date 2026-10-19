@@ -38,6 +38,14 @@ Pricing choices are deliberate:
 
 `UniverseBacktest.Run` (`changing-universe-backtest-v1`) steps the existing decimal `NotionalPortfolio` through the panel with three non-learned baselines: equal-weight over every holdable listing, 12-1 momentum (compounded `Priced` period returns over 11 periods skipping the most recent; fixed constants, not searched), and cash. It **refuses gap panels** (`universe-backtest-gaps`): a portfolio cannot be stepped honestly through a month in which a possible holding has no return. Momentum candidates need a complete priced trailing window, so entrants are excluded until one exists — a disclosed selection rule. The report binds the panel `Sha256`, dataset and universe ids and synthetic flag, and states its limits in-band: local-currency returns with no FX conversion (GBP notionals are an accounting unit, not achievable GBP wealth), simple terminal proceeds only, fractional full-rebalance accounting. Tests hand-verify the first equal-weight period, the −23.5% four-name terminal month, the entrant's first momentum eligibility, gap/short-history refusal and cost drag. This is an engineering baseline over synthetic fixtures; it is not connected to the experiment registry and makes no market claim.
 
+## Offline CLI
+
+```sh
+dotnet run --project src/Twenty.Data -c Release -- universe-backtest --dataset <input.json> --universe <id> --decisions <iso8601,iso8601,...> [--max-price-age-days 45 [--top-k 3]]
+```
+
+Decisions must carry explicit UTC offsets. The command prints one JSON object: panel identity/hash, month/period counts, per-status return counts and `hasGaps`, plus backtest summaries (default £20/month and default research costs) when the backtest runs. A refused backtest (gaps, insufficient history, invalid config) still prints the panel block with a `refusal` code and exits 1; dataset-selection failures exit 1 with the structured issue code. Smoke-verified against an independently generated JSON copy of the test scenario: 17 evaluated periods, £340 contributions, cash exact, equal-weight maximum drawdown −23.5% at the terminal month.
+
 ## Limits and next steps
 
 - Returns are decimal ratios of adjusted closes; they inherit whatever adjustment quality the dataset asserts. Nothing here validates a vendor's adjustments against independent records (still open in [#5](https://github.com/Jellman86/twenty/issues/5)).
