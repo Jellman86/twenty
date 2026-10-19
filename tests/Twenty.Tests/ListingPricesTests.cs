@@ -260,6 +260,31 @@ public sealed class ListingPricesTests
     }
 
     [Fact]
+    public void CapturesThatCarryNoRowsAreRefusedRatherThanCrashing()
+    {
+        using var w = new Workspace();
+        // The producer can answer a valid window with an empty array; that is a capture with
+        // no rows at all, not a fabricated price history.
+        Record(w.Store, "AAA", "[]", CaptureAt);
+        var error = Assert.Throws<ResearchException>(() =>
+            ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "converted-fixture", Created));
+        Assert.Equal("price-conversion-vintage-narrower", error.Code);
+    }
+
+    [Fact]
+    public void ALaterCaptureThatDropsEarlierHistoryIsRefused()
+    {
+        using var w = new Workspace();
+        // History may accumulate across captures, never shrink: a later capture that starts
+        // after an earlier one's first session is refused rather than silently dropping rows.
+        Record(w.Store, "AAA", HistoryJson([("2026-01-02", 10m, 0m, 1m), ("2026-01-05", 10.1m, 0m, 1m)]), CaptureAt);
+        Record(w.Store, "AAA", HistoryJson([("2026-01-05", 10.1m, 0m, 1m)]), CaptureAt.AddHours(1));
+        var error = Assert.Throws<ResearchException>(() =>
+            ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "converted-fixture", Created));
+        Assert.Equal("price-conversion-vintage-narrower", error.Code);
+    }
+
+    [Fact]
     public void VintagesMergeAndEachBarIsAvailableFromItsFirstCapture()
     {
         using var w = new Workspace();

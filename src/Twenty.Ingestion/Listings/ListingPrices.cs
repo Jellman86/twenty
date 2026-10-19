@@ -90,7 +90,8 @@ public static class ListingPrices
             var parsed = captures.ToDictionary(c => c, c => TiingoClient.ParseHistory(store.Bytes(c.Sha256)));
             if (parsed.Values.Any(h => h.Any(b => !AdjustmentConsistent(b))))
             { excluded.Add(new(symbol, "adjustment-inconsistent")); excludedIds.Add(listingId); continue; }
-            var earliestFirst = parsed.Values.Where(h => h.Length > 0).DefaultIfEmpty().Min(h => h.Length == 0 ? DateOnly.MaxValue : h[0].Date);
+            var earliestFirst = parsed.Values.Where(h => h.Length > 0).Select(h => h[0].Date)
+                .DefaultIfEmpty(DateOnly.MaxValue).Min();
             var latestHistory = parsed[latest.OrderBy(c => c.Id, StringComparer.Ordinal).First()];
             if (latestHistory.Length == 0 || latestHistory[0].Date > earliestFirst)
                 throw new ResearchException("price-conversion-vintage-narrower");
