@@ -18,11 +18,11 @@ dotnet run --project src/Twenty.Data -c Release -- filing-change <prior-document
 
 The CLI prints the score plus both documents' SHA-256, so any quoted number binds exact input bytes.
 
-## Section-level extraction (`FilingSections`, added later the same day)
+## Section-level extraction (`FilingSections`, v2 later the same day)
 
-`FilingSections.Split` (`filing-sections-v1`) extracts Part/Item sections from periodic reports after the shared normalization (block tags become newlines, so heading structure survives). A heading is a short line starting `Part <roman>` or `Item <n>[letter][./-/—/:]`; sections are keyed by (part, item) because 10-Q item numbers repeat across parts. Tables of contents repeat every heading, so among duplicate segments the winner is the one whose heading carries its title inline, then the most scored tokens — the body, not the contents page. Segments with no scored tokens are not sections. `FilingSections.Compare` joins two filings section-by-section and classifies each as `Compared` (with the whole-document scorer applied to section text), `OnlyPrior` or `OnlyCurrent`; nothing is silently dropped.
+`FilingSections.Split` extracts Part/Item sections from periodic reports after the shared normalization (block tags become newlines, so heading structure survives). A part heading is a short line `Part <roman|digit>` followed by end-of-line or a separator — comma cross-references ("Part II, Item 7 of this Form 10-K…", genuine wrapped lines in 2000-era ASCII filings) are not headings. An item heading is `Item <n>[.letter|letter]` terminated by punctuation (em-dash titles glued without a space, "Item 1—Business", included; decimals like "Item 1.5" excluded) or by whitespace before a capitalized title ("ITEM 2 PROPERTIES"); lowercase continuations ("Item 7 of this…") are cross-references. Sections are keyed by (part, item) because 10-Q item numbers repeat across parts; Form 20-F dotted sub-items ("Item 3.D.") canonicalize to `3d`. Tables of contents repeat every heading, so among duplicate segments the winner is the one whose heading carries its title inline, then the most scored tokens — the body, not the contents page. Short non-heading lines repeated at least eight times document-wide (running heads, "Table of Contents" furniture) are boilerplate and excluded from section text. Segments with no scored tokens are not sections. `FilingSections.Compare` joins two filings section-by-section and classifies each as `Compared`, `OnlyPrior` or `OnlyCurrent`; nothing is silently dropped.
 
-The selection rule was corrected against genuine data: choosing merely the longest segment let a bare contents stub ("Item 1B.", 3 tokens of neighbouring contents lines) beat Apple's genuine one-token body ("None."). Titled-heading preference fixes the inventory exactly: the September 2025 10-K yields all 23 body sections in document order, from Item 1 Business (2,366 tokens) and Item 1A Risk Factors (10,034) down to one-token Items 1B/9.
+The v1 selection rule was corrected against genuine data: choosing merely the longest segment let a bare contents stub ("Item 1B.", 3 tokens of neighbouring contents lines) beat Apple's genuine one-token body ("None."). Titled-heading preference fixes the inventory exactly: the September 2025 10-K yields all 23 body sections in document order, from Item 1 Business (2,366 tokens) and Item 1A Risk Factors (10,034) down to one-token Items 1B/9. v2 then generalized the heading rules and added boilerplate exclusion after genuine multi-style checks (next section); the `filing-change-v1` scorer and its tokenization are unchanged, so whole-document scores are stable across the bump.
 
 Per-section genuine results (same archived Apple filings; whole-document cosines were 0.972 and 0.986):
 
@@ -33,7 +33,20 @@ Per-section genuine results (same archived Apple filings; whole-document cosines
 | Part II Item 1 Legal Proceedings | 0.999 (790→777) | 0.996 (777→837) |
 | Part II Item 1A Risk Factors | 0.654 (62→3,242) | 0.979 (3,242→2,854) |
 
-The December risk-factor section is the short fiscal-Q1 form ("no material changes" style, 62 tokens) against March's full text — a routine reporting-pattern difference, not necessarily substantive change, and exactly the confound a future experiment must model. Tiny sections (e.g. Mine Safety, 2–7 tokens) produce unstable scores and would need minimum-size treatment before any research use. The Mar→Jun MD&A score was recomputed with an independent Python implementation: identical token counts (3,081/3,020) and cosine 0.976546 in both.
+The December risk-factor section is the short fiscal-Q1 form ("no material changes" style, 62 tokens) against March's full text — a routine reporting-pattern difference, not necessarily substantive change, and exactly the confound a future experiment must model. Tiny sections (e.g. Mine Safety, 2–7 tokens) produce unstable scores and would need minimum-size treatment before any research use. The Mar→Jun MD&A score was recomputed with an independent Python implementation: identical token counts (3,081/3,020) and cosine 0.976546 in both at v1; under v2 boilerplate exclusion the same pair is 3,031/2,970 tokens at 0.985789, again agreed exactly by the independent implementation.
+
+## Labelled extraction checks across issuer styles (19 October 2026)
+
+Expected section inventories were labelled from each genuine document's own headings before running the extractor; documents were collected with the bounded [SEC collector](sec-collector.md) (private archives, hashes in the run output) after the genuine-shape fixes recorded there. Authored regression fixtures in `FilingSectionsTests` pin each style's rules for CI; the genuine documents themselves are not committed.
+
+| Style (genuine sample) | Labelled expectation | Result |
+|---|---|---|
+| Apple modern iXBRL (10-K Sep 2025; 10-Qs 2025–26) | 23 sections (10-K), 11 (10-Q), document order | Exact. MD&A v2 corroborated independently (0.985789) |
+| Costco modern iXBRL (10-Ks 2025/2026, em-dash titles) | 23 headed items; Item 6 body genuinely empty | 22 sections; Item 6 [Reserved] has no scored tokens (page number only) and is correctly absent. Year-on-year MD&A 0.996294, corroborated independently |
+| Apple legacy SGML/ASCII (10-K Dec 2000; 10-Qs 2000–01) | 15 sections (10-K: Parts I–IV, Items 1–14, pre-1A era); cross-reference lines must not split | Exact, parts correct despite wrapped "Part II, Item 7 of…" lines. Cross-format 10-Q pair (.txt→.htm) whole-cosine 0.996; Part II Item 4 genuinely OnlyCurrent (annual-meeting quarter); Part II Items 2/3/5 genuinely absent in both |
+| Form 20-F dotted sub-items (authored fixture only) | `Item 3.D.` → `3d`, `Item 4.B` → `4b` | Fixture-verified. Genuine 20-F documents (ASML, Sify attempts) exceed the collector's 8 MiB response cap, so no genuine 20-F check exists yet |
+
+Boilerplate evidence was genuine before it was implemented: Costco's document repeats "Table of Contents" 69 times, and the 2000 10-K repeats "NOTES TO CONSOLIDATED FINANCIAL STATEMENTS (CONTINUED)" 24 times; both are excluded from section text at the ≥8-occurrence threshold, while a 7-time repeated line is retained in the regression fixture.
 
 ## Genuine smoke (19 October 2026)
 

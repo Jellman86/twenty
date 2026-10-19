@@ -92,6 +92,83 @@ public sealed class FilingSectionsTests
     }
 
     [Fact]
+    public void EmDashTitlesWithoutFollowingSpaceAreHeadings()
+    {
+        // Genuine Costco style: "Item 1—Business" with the title glued to the dash.
+        var doc = "<p>PART I</p><p>Item 1—Business</p><p>warehouse club operations across north america and other regions</p>" +
+                  "<p>Item 1A—Risk Factors</p><p>competition and international operations involve substantial risks</p>" +
+                  "<p>Item 7—Management's Discussion and Analysis of Financial Condition and Results of Operations (amounts in millions)</p>" +
+                  "<p>net sales increased primarily due to comparable sales growth and new warehouses</p>";
+        var sections = FilingSections.Split(doc);
+        Assert.Equal([("1", "1"), ("1", "1a"), ("1", "7")], sections.Select(s => (s.Part, s.Item)).ToArray());
+        Assert.Contains("warehouse club", sections[0].Text);
+    }
+
+    [Fact]
+    public void LegacyPlainTextStyleWithCrossReferencesSplitsCorrectly()
+    {
+        // Genuine 2000-era ASCII style: ALL-CAPS headings, wrapped cross-references that
+        // begin lines with "Part II, Item 7 of..." or "Item 7 of..." must not split.
+        var doc = """
+            PART I
+            ITEM 1. BUSINESS
+            The Company designs manufacture and markets personal computers and related software. Additional
+            information about future products appears in
+            Part II, Item 7 of this Form 10-K under the subheading "Product Introductions and Transitions."
+            Item 7 of this Form 10-K under the heading "Net Sales" describes quarterly variation in detail.
+            ITEM 2. PROPERTIES
+            The Company leases facilities for research and development manufacturing and administration worldwide.
+            PART II
+            ITEM 7. MANAGEMENT'S DISCUSSION AND ANALYSIS OF FINANCIAL CONDITION AND RESULTS
+            Net sales rose during the year driven by strong demand for newly introduced products and services.
+            ITEM 7A. DISCLOSURES ABOUT MARKET RISK
+            The Company uses derivative instruments to manage foreign currency and interest rate exposures.
+            """;
+        var sections = FilingSections.Split(doc);
+        Assert.Equal([("1", "1"), ("1", "2"), ("2", "7"), ("2", "7a")],
+            sections.Select(s => (s.Part, s.Item)).ToArray());
+        Assert.Contains("Product Introductions", sections.Single(s => s is { Part: "1", Item: "1" }).Text);
+    }
+
+    [Fact]
+    public void ForeignFormDottedSubItemsCanonicalize()
+    {
+        // Authored 20-F-style fixture ("Item 3.D."): genuine 20-F documents currently
+        // exceed the SEC collector response cap, so this style is fixture-verified only.
+        var doc = "<p>PART I</p><p>Item 3.D. Risk Factors</p><p>investing in our securities involves a high degree of risk across markets</p>" +
+                  "<p>Item 4.B Business Overview</p><p>we design and manufacture lithography systems for semiconductor producers</p>" +
+                  "<p>ITEM 5. OPERATING AND FINANCIAL REVIEW</p><p>net sales increased due to higher system shipments to customers</p>";
+        var sections = FilingSections.Split(doc);
+        Assert.Equal([("1", "3d"), ("1", "4b"), ("1", "5")], sections.Select(s => (s.Part, s.Item)).ToArray());
+    }
+
+    [Fact]
+    public void BareHeadingsWithoutPunctuationNeedACapitalizedTitle()
+    {
+        var doc = "<p>PART I</p><p>ITEM 2 PROPERTIES</p><p>facilities are located in several countries and regions worldwide</p>" +
+                  "<p>ITEM 3 LEGAL PROCEEDINGS</p><p>the company is subject to various legal proceedings and claims</p>";
+        Assert.Equal([("1", "2"), ("1", "3")], FilingSections.Split(doc).Select(s => (s.Part, s.Item)).ToArray());
+        // A decimal is not an item number.
+        var notHeading = "<p>PART I</p><p>Item 1.5 percent of revenue came from services during the year</p>" +
+                         "<p>Item 1. Business</p><p>the company designs and sells consumer electronics products globally</p>";
+        Assert.Equal([("1", "1")], FilingSections.Split(notHeading).Select(s => (s.Part, s.Item)).ToArray());
+    }
+
+    [Fact]
+    public void RepeatedShortBoilerplateLinesAreExcludedFromSectionText()
+    {
+        var head = string.Concat(Enumerable.Repeat("<p>NOTES TO FINANCIAL STATEMENTS (CONTINUED)</p><p>Table of Contents</p>", 9));
+        var rare = string.Concat(Enumerable.Repeat("<p>See accompanying notes</p>", 7));
+        var doc = "<p>PART I</p><p>Item 8. Financial Statements</p>" + head +
+                  "<p>inventories consist of raw materials work in process and finished goods held for sale</p>" + rare;
+        var section = FilingSections.Split(doc).Single();
+        Assert.DoesNotContain("CONTINUED", section.Text);
+        Assert.DoesNotContain("Table of Contents", section.Text);
+        Assert.Contains("See accompanying notes", section.Text); // 7 repeats stay below the boilerplate threshold
+        Assert.Contains("inventories consist", section.Text);
+    }
+
+    [Fact]
     public void SplittingAndComparisonAreDeterministic()
     {
         Assert.Equal(FilingSections.Split(Prior).ToArray(), FilingSections.Split(Prior).ToArray());
