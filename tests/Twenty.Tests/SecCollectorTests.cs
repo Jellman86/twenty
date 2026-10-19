@@ -336,6 +336,18 @@ public class SecCollectorTests
     }
 
     [Fact]
+    public void ResponseSizeBoundCoversMeasuredGenuineDocuments()
+    {
+        // Genuine primary documents measured from SEC filing indexes (Oct 2026):
+        // Microsoft 2026 10-K 8.19 MiB, ASML 20-Fs 23.71/32.3 MiB. All were
+        // uncollectable at the former 8 MiB cap.
+        Assert.Equal(48 * 1024 * 1024, new SecLimits().MaximumResponseBytes);
+        new SecLimits { MaximumResponseBytes = 33 * 1024 * 1024 }.Validate();
+        Assert.Equal("invalid-limits", Assert.Throws<SecCollectionException>(
+            () => new SecLimits { MaximumResponseBytes = 48 * 1024 * 1024 + 1 }.Validate()).Code);
+    }
+
+    [Fact]
     public async Task OversizedResponseIsRejectedBeforeArchiving()
     {
         using var rig = new Rig(_ => Response(new byte[2048]), new SecLimits { MaximumResponseBytes = 1024 });

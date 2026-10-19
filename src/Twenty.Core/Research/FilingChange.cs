@@ -12,7 +12,9 @@ public sealed record FilingChangeScore(double CosineSimilarity, double JaccardSi
 /// all other tags become spaces. Tokenization is unaffected by the distinction.</summary>
 internal static class FilingText
 {
-    internal const int MaximumCharacters = 16 * 1024 * 1024;
+    // Aligned with the SEC collector's per-response cap: the largest measured genuine
+    // primary document (ASML 2024 20-F) is 32.3 MiB, which a 16M-character cap rejected.
+    internal const int MaximumCharacters = 48 * 1024 * 1024;
 
     internal static string ToPlainText(string document)
     {

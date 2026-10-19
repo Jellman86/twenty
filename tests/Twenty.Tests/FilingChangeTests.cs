@@ -59,7 +59,7 @@ public sealed class FilingChangeTests
         Assert.Equal("filing-change-empty",
             Assert.Throws<ResearchException>(() => FilingChange.Compare("<p>2024</p>", "alpha")).Code);
         Assert.Equal("filing-change-size",
-            Assert.Throws<ResearchException>(() => FilingChange.Compare(new string('a', 16 * 1024 * 1024 + 1), "alpha")).Code);
+            Assert.Throws<ResearchException>(() => FilingChange.Compare(new string('a', 48 * 1024 * 1024 + 1), "alpha")).Code);
     }
 
     [Fact]

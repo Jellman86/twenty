@@ -16,7 +16,12 @@ public sealed record SecLimits
     public int MaximumRequests { get; init; } = 25;
     public int MaximumHistoryFiles { get; init; } = 3;
     public int MaximumDocuments { get; init; } = 5;
-    public int MaximumResponseBytes { get; init; } = 8 * 1024 * 1024;
+    // Measured genuine primary documents set this bound: Microsoft's 2026 10-K is
+    // 8.19 MiB, ASML's 2025 20-F 23.71 MiB and its 2024 20-F 32.3 MiB (filing index
+    // sizes, Oct 2026). 48 MiB covers the largest measured with headroom while one
+    // buffered response stays well inside the archive cap below; larger documents
+    // still fail response-size-limit.
+    public int MaximumResponseBytes { get; init; } = 48 * 1024 * 1024;
     public long MaximumArchiveBytes { get; init; } = 256L * 1024 * 1024;
     public int MaximumQuarantineEntries { get; init; } = 20;
     public long MaximumQuarantineBytes { get; init; } = 16L * 1024 * 1024;
@@ -26,7 +31,7 @@ public sealed record SecLimits
     public void Validate()
     {
         if (MaximumRequests is < 1 or > 100 || MaximumHistoryFiles is < 0 or > 10 ||
-            MaximumDocuments is < 1 or > 20 || MaximumResponseBytes is < 1024 or > 8 * 1024 * 1024 ||
+            MaximumDocuments is < 1 or > 20 || MaximumResponseBytes is < 1024 or > 48 * 1024 * 1024 ||
             MaximumArchiveBytes is < 1024 or > 1024L * 1024 * 1024 ||
             MaximumQuarantineEntries is < 1 or > 100 || MaximumQuarantineBytes is < 1024 or > 64L * 1024 * 1024 ||
             CacheLifetime < TimeSpan.Zero || CacheLifetime > TimeSpan.FromDays(7) ||

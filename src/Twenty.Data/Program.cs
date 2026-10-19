@@ -206,10 +206,18 @@ try
     }
     if ((args.Length == 3 || args.Length == 4 && args[3] == "--sections") && args[0] == "filing-change")
     {
+        // Filing documents use their own bound, aligned with the SEC collector cap;
+        // the shared 8 MiB dataset read bound is for dataset JSON, not EDGAR HTML.
+        byte[] ReadBytes(string path)
+        {
+            var full = Path.GetFullPath(path);
+            var info = new FileInfo(full);
+            if (!info.Exists || info.Length is 0 or > 48L * 1024 * 1024) throw new ResearchException("filing-change-size");
+            return File.ReadAllBytes(full);
+        }
         string ReadDocument(string path)
         {
-            var bytes = DatasetArchive.ReadBounded(Path.GetFullPath(path));
-            try { return new System.Text.UTF8Encoding(false, true).GetString(bytes); }
+            try { return new System.Text.UTF8Encoding(false, true).GetString(ReadBytes(path)); }
             catch (System.Text.DecoderFallbackException) { throw new ResearchException("filing-change-encoding"); }
         }
         var prior = ReadDocument(args[1]); var current = ReadDocument(args[2]);
@@ -220,8 +228,8 @@ try
             sections = args.Length == 4 ? FilingSections.Compare(prior, current)
                 .Select(s => new { s.Part, s.Item, s.Heading, Status = s.Status.ToString(), s.Score }) : null,
             sectionsVersion = args.Length == 4 ? FilingSections.Version : null,
-            priorSha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(DatasetArchive.ReadBounded(Path.GetFullPath(args[1])))),
-            currentSha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(DatasetArchive.ReadBounded(Path.GetFullPath(args[2]))))
+            priorSha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(ReadBytes(args[1]))),
+            currentSha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(ReadBytes(args[2])))
         }, DatasetJson.Options));
         return 0;
     }
