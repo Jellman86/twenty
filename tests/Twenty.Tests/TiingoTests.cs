@@ -11,7 +11,7 @@ public sealed class TiingoTests
 {
     private const string FakeToken = "AuthoredUnitTestCredentialOnly0000";
     private const string Success = "{\"message\":\"You successfully sent a request\"}";
-    private const string Row = "{\"date\":\"2020-01-02T00:00:00.000Z\",\"open\":10,\"high\":12,\"low\":9,\"close\":11,\"adjClose\":5.5,\"volume\":100,\"divCash\":0,\"splitFactor\":1}";
+    private const string Row = "{\"date\":\"2020-01-02T00:00:00.000Z\",\"open\":10,\"high\":12,\"low\":9,\"close\":11,\"adjClose\":5.5,\"adjOpen\":5,\"adjHigh\":6,\"adjLow\":4.5,\"volume\":100,\"divCash\":0,\"splitFactor\":1}";
     private sealed class Clock : TimeProvider
     {
         public DateTimeOffset Now = new(2026, 10, 18, 12, 0, 0, TimeSpan.Zero);

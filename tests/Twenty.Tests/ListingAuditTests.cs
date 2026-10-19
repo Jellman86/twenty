@@ -49,7 +49,7 @@ public sealed class ListingAuditTests
             var adj = adjOverride?.Invoke(t) ?? rows[t].Close * factor;
             if (t > 0) json.Append(',');
             json.Append(CultureInfo.InvariantCulture,
-                $"{{\"date\":\"{rows[t].Date}T00:00:00.000Z\",\"open\":{rows[t].Close},\"high\":{rows[t].Close},\"low\":{rows[t].Close},\"close\":{rows[t].Close},\"adjClose\":{adj:0.##########},\"volume\":1000,\"divCash\":{rows[t].Div},\"splitFactor\":{rows[t].Split}}}");
+                $"{{\"date\":\"{rows[t].Date}T00:00:00.000Z\",\"open\":{rows[t].Close},\"high\":{rows[t].Close},\"low\":{rows[t].Close},\"close\":{rows[t].Close},\"adjClose\":{adj:0.##########},\"adjOpen\":{adj:0.##########},\"adjHigh\":{adj:0.##########},\"adjLow\":{adj:0.##########},\"volume\":1000,\"divCash\":{rows[t].Div},\"splitFactor\":{rows[t].Split}}}");
         }
         return json.Append(']').ToString();
     }
