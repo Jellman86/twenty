@@ -50,6 +50,12 @@ public static class ResearchModule
         api.MapPost("/studies", (StudyRequest request) => Results.Accepted("/api/research/studies", store.RegisterStudy(request, Commit())));
         api.MapPost("/studies/{id}/evaluate", (string id, StudyEvaluationRequest request) => Results.Accepted("/api/research/studies/" + id, store.EvaluateStudy(id, request, Commit())));
         api.MapPost("/studies/{id}/cancel", (string id) => store.CancelStudy(id));
+        api.MapPost("/universe-runs/import-dataset", (UniverseDatasetImportRequest request) =>
+            Results.Ok(new { datasetSha256 = store.ImportUniverseDatasetInbox(request) }));
+        api.MapGet("/universe-runs", () => store.ListUniverseRuns().Take(100));
+        api.MapPost("/universe-runs", (UniverseRunRequest request) => Results.Ok(store.ExecuteUniverseRun(request, Commit())));
+        api.MapGet("/universe-runs/{id}", (string id) => store.FindUniverseRun(id) is { } run ? Results.Ok(run) : Results.NotFound());
+        api.MapGet("/universe-runs/{id}/report", (string id) => store.UniverseReport(id) is { } report ? Results.Ok(report) : Results.NotFound());
         api.MapGet("/diagnostics", () => diagnostics.History());
         api.MapGet("/diagnostics/{id}", (string id) => diagnostics.Find(id) is { } result ? Results.Ok(result) : Results.NotFound());
         api.MapPost("/diagnostics", async (DiagnosticRequest request, CancellationToken ct) => await diagnostics.Create(request, ct));
@@ -58,6 +64,7 @@ public static class ResearchModule
             registeredStudyFinalEvaluation = true,
             registeredStudy = new { protocol = StudyProtocol.Version, codeSha256 = ResearchStore.StudyCodeSha256, identityScheme = ResearchIdentity.Scheme, finalWindowRequestRequired = true },
             researchIdentity = ResearchIdentity.Current,
-            searchDiagnostics = new { method = SearchDiagnostics.Version, pairedCalendarResampling = true, preregisteredPromotion = false }, broker = brokerCapabilities() });
+            searchDiagnostics = new { method = SearchDiagnostics.Version, pairedCalendarResampling = true, preregisteredPromotion = false },
+            changingUniverse = new { panel = ChangingUniversePanel.BuilderVersion, backtest = UniverseBacktest.Version, registeredTrials = true }, broker = brokerCapabilities() });
     }
 }

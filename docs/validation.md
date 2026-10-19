@@ -1,5 +1,9 @@
 # Validation record
 
+## Registered universe-backtest trials (19 October 2026)
+
+Changing-universe backtests are now registerable trials. `ResearchStore` gained a `universe_runs` register (partial class, same SQLite/lease/event discipline as runs and studies): datasets import content-addressed after validation, each attempt is inserted `started` before computation and reaches one terminal state, failed attempts (gap panels, missing terminal proceeds) are retained with their refusal code and panel hash, request-id replay returns the original entry and semantic changes conflict, and store reopening marks stale `started` rows `interrupted`. Reports are immutable and hash-verified on read. HTTP endpoints under `/api/research/universe-runs` expose import, execution and retrieval; capabilities advertise `changingUniverse.registeredTrials`. Six new store tests cover success/replay/conflict/retained-failure/unknown-dataset/restart/tamper paths (387 .NET tests total). The register is deliberately separate from frozen studies and diagnostics; offline CLI runs remain unregistered exploratory output.
+
 ## Universe-backtest CLI (19 October 2026)
 
 `Twenty.Data universe-backtest` exposes the changing-universe panel and backtest over any v1 dataset file with an explicit decision grid. Verified end-to-end against a dataset JSON generated independently (Python) from the C# test scenario: validator-clean, panel hash bound, status counts 95 priced / 1 entered / 1 terminal-zero, 17 evaluated periods (£340 contributions, cash exact, equal-weight drawdown −23.5% at the terminal month). Negative paths verified: undeclared universe and unzoned decision tokens fail with structured codes, and a short history prints the panel block with `refusal: universe-backtest-history` and exit 1. The CLI's generic dataset-error output now carries the first structured issue code instead of a blanket `input-or-archive`.

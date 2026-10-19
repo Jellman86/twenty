@@ -6,8 +6,8 @@ namespace Twenty.Tests;
 
 public sealed class UniverseBacktestTests
 {
-    private const int Months = 30; // decisions Jan 2022 .. Jun 2024
-    private static DateTimeOffset Decision(int i)
+    internal const int Months = 30; // decisions Jan 2022 .. Jun 2024
+    internal static DateTimeOffset Decision(int i)
     {
         var first = new DateTime(2022, 1, 1).AddMonths(i);
         var last = first.AddMonths(1).AddDays(-1);
@@ -33,7 +33,7 @@ public sealed class UniverseBacktestTests
 
     // aaa +1%/mo, bbb flat, ccc -2%/mo then zero-proceeds delisting in period 23,
     // ddd enters at decision 15 with +5%/mo.
-    private static DatasetFile Scenario(bool gapBbb = false)
+    internal static DatasetFile Scenario(bool gapBbb = false)
     {
         var start = new DateTimeOffset(2022, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var observations = new List<Observation>

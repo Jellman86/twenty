@@ -37,7 +37,9 @@ public sealed partial class ResearchStore : IDisposable
             "CREATE TABLE IF NOT EXISTS events(sequence INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, at TEXT NOT NULL, kind TEXT NOT NULL);" +
             "CREATE TABLE IF NOT EXISTS holdout_access(dataset_id TEXT NOT NULL, run_id TEXT NOT NULL UNIQUE, at TEXT NOT NULL);" );
         InitialiseStudies(db);
+        InitialiseUniverseRuns(db);
         foreach (var run in ListRuns().Where(r => r.Status == "running")) Save(run with { Status = "interrupted", FinishedAt = this.clock.GetUtcNow(), ErrorCode = "process-restarted" }, "restart-interrupted");
+        InterruptStaleUniverseRuns();
     }
     public void Dispose() => lease.Dispose();
     public DatasetEntry ImportInbox(InboxImportRequest request)
