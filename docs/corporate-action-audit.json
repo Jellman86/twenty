@@ -1,0 +1,64 @@
+{
+ "reviewedOn": "2026-10-19",
+ "purpose": "Independent corporate-action sample: vendor cash dividends vs issuer SEC declarations; single-symbol sample, not coverage",
+ "rawPayloadsCommitted": false,
+ "script": "scripts/audit_dividends_tiingo_sec.py",
+ "sample": "AAPL (CIK 320193), Tiingo capture 2015-01-01..2026-10-16 observed 2026-10-18; declared window 2015-01-01..2026-10-16",
+ "producers": {
+  "tiingo": {
+   "urlOrCapture": "capture store object for https://api.tiingo.com/tiingo/daily/AAPL/prices?startDate=2015-01-01&endDate=2026-10-16",
+   "bytes": 771822,
+   "sha256": "049e9cacd31d67d73b2fe13e9762997b47dab32efeb4d9828656149d9f3ad5fc"
+  },
+  "sec": {
+   "urlOrCapture": "https://www.sec.gov/Archives/edgar/daily-index/xbrl/companyfacts.zip",
+   "bytes": 1410683603,
+   "sha256": "12bad36af7417185db1bc318b1a16c13170d4fc45f337c89192705dff5d36702",
+   "retrievedAt": "2026-10-19T06:39:07Z",
+   "entry": "CIK0000320193.json",
+   "concept": "us-gaap:CommonStockDividendsPerShareDeclared (USD/shares)"
+  }
+ },
+ "result": {
+  "valid": true,
+  "tiingoDividends": 47,
+  "secQuarterDeclarations": 46,
+  "matched": 45,
+  "matchedDirect": 38,
+  "matchedDerivedQ4": 7,
+  "daysFromPeriodEnd": {
+   "min": -58,
+   "median": -50,
+   "max": -47
+  },
+  "unmatchedTiingo": [
+   {
+    "date": "2020-08-07",
+    "amount": "0.82"
+   },
+   {
+    "date": "2026-08-10",
+    "amount": "0.27"
+   }
+  ],
+  "unmatchedSec": [
+   {
+    "periodStart": "2014-09-28",
+    "periodEnd": "2014-12-27",
+    "amount": "0.47",
+    "derived": false
+   }
+  ],
+  "secQuartersWithLaterRepublishedValues": 10,
+  "window": {
+   "start": "2015-01-01",
+   "end": "2026-10-16"
+  },
+  "tiingoSplits": [
+   {
+    "date": "2020-08-31",
+    "factor": "4.0"
+   }
+  ]
+ }
+}
