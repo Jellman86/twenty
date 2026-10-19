@@ -141,9 +141,11 @@ public static partial class DatasetValidator
                     Check(x.Action != CorporateActionKind.SymbolChange || Text(x.NewSymbol), "symbol-change", p, "Symbol changes need the new symbol.");
                     Check(x.SuccessorListingId is null || listingIds.Contains(x.SuccessorListingId), "action-successor", p, "A successor must identify a known listing.");
                     Check(x.Action != CorporateActionKind.Delisting || x.TerminalOutcome != TerminalOutcome.NotApplicable,
-                        "terminal-outcome", p, "Delistings must distinguish known cash, zero and missing outcomes.");
+                        "terminal-outcome", p, "Delistings must distinguish known cash, zero, stock and missing outcomes.");
                     Check(x.TerminalOutcome != TerminalOutcome.Cash || x.CashPerShare is not null, "terminal-cash", p, "A known cash outcome needs its distribution.");
-                    Check(x.TerminalOutcome != TerminalOutcome.Zero || x.CashPerShare is null or 0, "terminal-zero", p, "A zero outcome cannot carry positive cash."); break;
+                    Check(x.TerminalOutcome != TerminalOutcome.Zero || x.CashPerShare is null or 0, "terminal-zero", p, "A zero outcome cannot carry positive cash.");
+                    Check(x.TerminalOutcome != TerminalOutcome.Stock || (x.SuccessorListingId is not null && x.SplitRatio > 0),
+                        "terminal-stock", p, "A stock outcome needs a successor listing and a positive exchange ratio."); break;
             }
         }
         foreach (var listing in file.Observations.OfType<Listing>().GroupBy(x => x.ListingId))

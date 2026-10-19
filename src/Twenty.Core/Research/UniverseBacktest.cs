@@ -87,7 +87,7 @@ public static class UniverseBacktest
         return new(Version, panel.Sha256, panel.DatasetId, panel.UniverseId, panel.Synthetic, config, costs,
             panel.Periods[first].From, panel.Periods[^1].To, summaries, equity.ToImmutable(),
             ["Returns are local-currency ratios of adjusted closes with no FX conversion; GBP notionals are an accounting unit only, not achievable GBP wealth.",
-             "Terminal returns cover only zero and simple cash proceeds; merger stock consideration, spinoffs and suspensions are unmodelled and gap panels are refused.",
+             "Terminal returns cover only zero, simple cash and simple stock-merger proceeds; spinoffs, partial cash/stock mixes and suspensions are unmodelled, and gap panels are refused.",
              "Full-rebalance fractional notionals with flat per-side costs approximate execution; these are not broker quantities, fills or ISA eligibility evidence.",
              "Momentum ranks require a complete priced trailing window; entrants are excluded until one exists, which is a disclosed selection rule, not evidence of an edge.",
              "A listing with no observable price at the decision (for example a late-published first bar) is not buyable at that decision, even though its realized period return remains in the panel."]);

@@ -37,7 +37,8 @@ public sealed class ChangingUniversePanelTests
     // known 8 April.
     private static DatasetFile Scenario(TerminalOutcome outcome = TerminalOutcome.Zero, decimal? cash = null,
         ExitKind exit = ExitKind.Delisted, bool cccSplitBeforeExit = false, bool bbbBarsAfterFebruary = true,
-        decimal aaaFebruaryAdjusted = 55m)
+        decimal aaaFebruaryAdjusted = 55m, string? successor = null, decimal? exchangeRatio = null,
+        bool successorHasPrices = true)
     {
         var observations = new List<Observation>
         {
@@ -76,10 +77,18 @@ public sealed class ChangingUniversePanelTests
         {
             observations.Add(ListingRow("listing-ccc-delisted", "ccc", "CCC", At(4, 8), At(3, 29, 12), null, ListingStatus.Delisted));
             observations.Add(new CorporateAction("ccc-delisting", Ev(At(4, 8)), "ccc", "ccc-delisting-event",
-                CorporateActionKind.Delisting, At(3, 29, 12), null, cash, cash is null ? null : "USD", null, null, outcome));
+                CorporateActionKind.Delisting, At(3, 29, 12), exchangeRatio, cash, cash is null ? null : "USD", null, successor, outcome));
             if (cccSplitBeforeExit)
                 observations.Add(new CorporateAction("ccc-split", Ev(At(4, 1)), "ccc", "ccc-split-event",
                     CorporateActionKind.Split, At(3, 29), 2m, null, null, null, null, TerminalOutcome.NotApplicable));
+            if (successor is not null)
+            {
+                // A successor must be a known listing; its raw close at the exit decision prices
+                // the stock leg. No membership: the successor is not in this research universe.
+                observations.Add(ListingRow("listing-ddd", successor, "DDD", At(1, 1), At(1, 1), null, ListingStatus.Active));
+                if (successorHasPrices)
+                    observations.Add(Bar("ddd-raw-apr", successor, 4, 30, PriceBasis.Raw, 45m));
+            }
         }
         else
         {
@@ -155,6 +164,49 @@ public sealed class ChangingUniversePanelTests
     {
         var error = Assert.Throws<InvalidDatasetException>(() =>
             Build(Scenario(TerminalOutcome.Cash, 9m, cccSplitBeforeExit: true)));
+        Assert.Contains(error.Validation.Issues, x => x.Code == "universe-panel-terminal-complex");
+    }
+
+    [Fact]
+    public void StockMergerIsPricedFromTheSuccessorRawClose()
+    {
+        // Ratio 0.5 successor shares per CCC share; CCC's 28 March raw close is 18 and the
+        // successor's 30 April raw close is 45: 0.5 * 45 / 18 - 1 = +25%, not a cash or zero leg.
+        var panel = Build(Scenario(TerminalOutcome.Stock, successor: "ddd", exchangeRatio: 0.5m));
+        Assert.Equal(UniverseReturnStatus.TerminalStock, Return(panel, 2, "ccc").Status);
+        Assert.Equal(0.25m, Return(panel, 2, "ccc").Return);
+        Assert.False(panel.HasGaps);
+    }
+
+    [Fact]
+    public void StockMergerWithoutASuccessorListingIsRefused()
+    {
+        var error = Assert.Throws<InvalidDatasetException>(() =>
+            Build(Scenario(TerminalOutcome.Stock, exchangeRatio: 2m)));
+        Assert.Contains(error.Validation.Issues, x => x.Code == "terminal-stock");
+    }
+
+    [Fact]
+    public void StockMergerWithoutAnExchangeRatioIsRefused()
+    {
+        var error = Assert.Throws<InvalidDatasetException>(() =>
+            Build(Scenario(TerminalOutcome.Stock, successor: "ddd")));
+        Assert.Contains(error.Validation.Issues, x => x.Code == "terminal-stock");
+    }
+
+    [Fact]
+    public void StockMergerWithoutSuccessorPricesFailsClosed()
+    {
+        var error = Assert.Throws<InvalidDatasetException>(() =>
+            Build(Scenario(TerminalOutcome.Stock, successor: "ddd", exchangeRatio: 0.5m, successorHasPrices: false)));
+        Assert.Contains(error.Validation.Issues, x => x.Code == "universe-panel-terminal-successor-price");
+    }
+
+    [Fact]
+    public void StockMergerAfterAnInterveningSplitFailsClosed()
+    {
+        var error = Assert.Throws<InvalidDatasetException>(() =>
+            Build(Scenario(TerminalOutcome.Stock, successor: "ddd", exchangeRatio: 0.5m, cccSplitBeforeExit: true)));
         Assert.Contains(error.Validation.Issues, x => x.Code == "universe-panel-terminal-complex");
     }
 

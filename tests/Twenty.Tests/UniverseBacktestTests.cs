@@ -33,7 +33,8 @@ public sealed class UniverseBacktestTests
 
     // aaa +1%/mo, bbb flat, ccc -2%/mo then zero-proceeds delisting in period 23,
     // ddd enters at decision 15 with +5%/mo.
-    internal static DatasetFile Scenario(bool gapBbb = false, TerminalOutcome cccOutcome = TerminalOutcome.Zero, decimal? cccCash = null)
+    internal static DatasetFile Scenario(bool gapBbb = false, TerminalOutcome cccOutcome = TerminalOutcome.Zero, decimal? cccCash = null,
+        string? cccSuccessor = null, decimal? cccRatio = null)
     {
         var start = new DateTimeOffset(2022, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var observations = new List<Observation>
@@ -59,14 +60,14 @@ public sealed class UniverseBacktestTests
         observations.Add(Member("member-ccc-closed", "ccc", exitKnown, start, exitEffective, true, "member-ccc"));
         observations.Add(Member("member-ccc-exit", "ccc", exitKnown, exitEffective, null, false));
         observations.Add(new CorporateAction("ccc-delisting", Ev(exitKnown), "ccc", "ccc-delisting-event",
-            CorporateActionKind.Delisting, exitEffective, null, cccCash, cccCash is null ? null : "USD", null, null, cccOutcome));
+            CorporateActionKind.Delisting, exitEffective, cccRatio, cccCash, cccCash is null ? null : "USD", null, cccSuccessor, cccOutcome));
 
         var dddFrom = new DateTimeOffset(2023, 4, 1, 0, 0, 0, TimeSpan.Zero);
         var dddKnown = new DateTimeOffset(2023, 3, 20, 0, 0, 0, TimeSpan.Zero);
         observations.Add(ListingRow("listing-ddd", "ddd", "DDD", dddKnown, dddFrom, null, ListingStatus.Active));
         observations.Add(Member("member-ddd", "ddd", dddKnown, dddFrom, null, true));
         var ddd = 20m;
-        for (var i = 15; i < Months; i++) { observations.Add(Bar("ddd", i, ddd)); ddd *= 1.05m; }
+        for (var i = 15; i < Months; i++) { observations.Add(Bar("ddd", i, ddd)); observations.Add(Bar("ddd", i, ddd, PriceBasis.Raw)); ddd *= 1.05m; }
 
         var created = new DateTimeOffset(2024, 7, 2, 0, 0, 0, TimeSpan.Zero);
         var manifest = new DatasetManifest(DatasetValidator.SchemaVersion, "universe-backtest-fixture", created,
@@ -117,6 +118,22 @@ public sealed class UniverseBacktestTests
         // The run reaches the final evaluated period without throwing.
         var finalStep = Step(report, "equal_weight", report.Equity.Where(e => e.Strategy == "equal_weight").Count() - 1).State;
         Assert.True(finalStep.EquityGbp > 0m);
+    }
+
+    [Fact]
+    public void StockMergerTerminalIsRealizedWithoutCrashingTheBacktest()
+    {
+        // ccc delists into successor shares of ddd mid-evaluation (period 23). Equal weight
+        // holds every priced name, so the period return is the average of the four returns:
+        // the stock leg replaces the -100% zero leg rather than throwing or lingering.
+        var panel = Panel(Scenario(cccOutcome: TerminalOutcome.Stock, cccSuccessor: "ddd", cccRatio: 0.5m));
+        var merger = panel.Periods[23].Returns.Single(r => r.ListingId == "ccc");
+        Assert.Equal(UniverseReturnStatus.TerminalStock, merger.Status);
+        var report = UniverseBacktest.Run(panel, new(), ZeroCosts);
+        var terminal = Step(report, "equal_weight", 23 - 12).State;
+        Assert.Equal((0.01m + 0m + 0.05m + merger.Return!.Value) / 4m, terminal.PeriodReturn, 4);
+        // The run continues past the merger without the stale holding tripping the next step.
+        Assert.True(Step(report, "equal_weight", 24 - 12).State.EquityGbp > 0m);
     }
 
     [Fact]

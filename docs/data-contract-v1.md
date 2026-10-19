@@ -24,7 +24,7 @@ Source hashes and licence references are required metadata, **not automatic proo
 | `listing` | Stable listing/security/company IDs, venue, stock/ETF class, source-namespaced provider mappings, calendar | Symbol, denomination, status and effective interval |
 | `membership` | Declared research/Stocks ISA universe and listing | Eligible flag and effective interval, with source evidence |
 | `priceBar` | Listing, exchange-local session date, close instant, adjustment basis | OHLC, volume and explicit price denomination |
-| `corporateAction` | Listing, action ID and effective instant | Split ratio (new shares/old shares), dividend/cash currency, new symbol, successor listing, terminal-outcome status |
+| `corporateAction` | Listing, action ID and effective instant | Split ratio (new shares/old shares; for a stock terminal outcome, successor shares per original share), dividend/cash currency, new symbol, successor listing, terminal-outcome status |
 | `fundamentalFact` | Company, concept, unit, period and filing accession | As-reported decimal value and retained revision ancestry |
 | `filing` | Company, accession, form, reporting period and original hash | Acceptance/publication/availability and amendment accession |
 | `fxRate` | Base/quote currencies, observation instant and purpose | Positive quote-units-per-base decimal rate |
