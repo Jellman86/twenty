@@ -7,59 +7,21 @@ namespace Twenty.Core.Research;
 public sealed record FilingChangeScore(double CosineSimilarity, double JaccardSimilarity, double LengthRatio,
     int PriorTokens, int CurrentTokens, int SharedVocabulary);
 
-/// <summary>Deterministic whole-document text-change baseline in the spirit of Cohen,
-/// Malloy &amp; Nguyen's Lazy Prices similarity measures. Normalization is fixed and
-/// versioned: markup/script/style removal, a small explicit entity set, invariant
-/// lowercase, and letter-bearing alphanumeric tokens (pure numbers are excluded so
-/// financial-statement churn does not dominate the prose signal). This computes a
-/// similarity feature only; it does not classify routine vs substantive change, select
-/// sections, or establish any return relation.</summary>
-public static class FilingChange
+/// <summary>Deterministic markup stripping and entity decoding shared by the filing
+/// text features. Block-level tags become newlines so heading structure survives;
+/// all other tags become spaces. Tokenization is unaffected by the distinction.</summary>
+internal static class FilingText
 {
-    public const string Version = "filing-change-v1";
-    private const int MaximumCharacters = 16 * 1024 * 1024;
+    internal const int MaximumCharacters = 16 * 1024 * 1024;
 
-    public static FilingChangeScore Compare(string prior, string current)
-    {
-        var priorCounts = Counts(Tokenize(prior));
-        var currentCounts = Counts(Tokenize(current));
-        var priorTokens = priorCounts.Values.Sum();
-        var currentTokens = currentCounts.Values.Sum();
-        if (priorTokens == 0 || currentTokens == 0) throw new ResearchException("filing-change-empty");
-        var shared = priorCounts.Keys.Intersect(currentCounts.Keys).ToArray();
-        var dot = shared.Sum(token => (double)priorCounts[token] * currentCounts[token]);
-        var cosine = dot / (Norm(priorCounts) * Norm(currentCounts));
-        var jaccard = (double)shared.Length / (priorCounts.Count + currentCounts.Count - shared.Length);
-        return new(cosine, jaccard, (double)currentTokens / priorTokens, priorTokens, currentTokens, shared.Length);
-    }
-
-    public static ImmutableArray<string> Tokenize(string document)
+    internal static string ToPlainText(string document)
     {
         if (document is null || document.Length > MaximumCharacters) throw new ResearchException("filing-change-size");
-        var text = DecodeEntities(StripMarkup(document)).ToLowerInvariant();
-        var tokens = ImmutableArray.CreateBuilder<string>();
-        var current = new StringBuilder();
-        var hasLetter = false;
-        void Flush()
-        {
-            if (current.Length > 0 && hasLetter) tokens.Add(current.ToString());
-            current.Clear(); hasLetter = false;
-        }
-        foreach (var ch in text)
-        {
-            if (ch is >= 'a' and <= 'z') { current.Append(ch); hasLetter = true; }
-            else if (ch is >= '0' and <= '9') current.Append(ch);
-            else Flush();
-        }
-        Flush();
-        return tokens.ToImmutable();
+        return DecodeEntities(StripMarkup(document));
     }
 
-    private static Dictionary<string, int> Counts(ImmutableArray<string> tokens) =>
-        tokens.GroupBy(t => t, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
-
-    private static double Norm(Dictionary<string, int> counts) =>
-        Math.Sqrt(counts.Values.Sum(v => (double)v * v));
+    private static readonly HashSet<string> BlockTags =
+        ["p", "div", "table", "tr", "td", "th", "ul", "ol", "li", "br", "hr", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6"];
 
     private static string StripMarkup(string document)
     {
@@ -70,20 +32,22 @@ public static class FilingChange
             if (document[i] != '<') { text.Append(document[i++]); continue; }
             if (document.AsSpan(i).StartsWith("<!--"))
             {
-                var end = document.IndexOf("-->", i + 4, StringComparison.Ordinal);
-                i = end < 0 ? document.Length : end + 3;
+                var commentEnd = document.IndexOf("-->", i + 4, StringComparison.Ordinal);
+                i = commentEnd < 0 ? document.Length : commentEnd + 3;
                 text.Append(' ');
                 continue;
             }
             var close = document.IndexOf('>', i + 1);
             if (close < 0) break;
             var tag = document.AsSpan(i + 1, close - i - 1).Trim();
+            var closing = tag.StartsWith("/");
+            if (closing) tag = tag[1..].TrimStart();
             var nameEnd = 0;
-            while (nameEnd < tag.Length && char.IsLetter(tag[nameEnd])) nameEnd++;
+            while (nameEnd < tag.Length && (char.IsLetter(tag[nameEnd]) || char.IsDigit(tag[nameEnd]))) nameEnd++;
             var name = tag[..nameEnd].ToString().ToLowerInvariant();
             i = close + 1;
-            text.Append(' ');
-            if (name is "script" or "style")
+            text.Append(BlockTags.Contains(name) ? '\n' : ' ');
+            if (!closing && name is "script" or "style")
             {
                 var endTag = document.IndexOf("</" + name, i, StringComparison.OrdinalIgnoreCase);
                 if (endTag < 0) break;
@@ -123,4 +87,65 @@ public static class FilingChange
                 ? char.ConvertFromUtf32(parsed) : null;
         }
     }
+}
+
+/// <summary>Deterministic whole-document text-change baseline in the spirit of Cohen,
+/// Malloy &amp; Nguyen's Lazy Prices similarity measures. Normalization is fixed and
+/// versioned: markup/script/style removal, a small explicit entity set, invariant
+/// lowercase, and letter-bearing alphanumeric tokens (pure numbers are excluded so
+/// financial-statement churn does not dominate the prose signal). This computes a
+/// similarity feature only; it does not classify routine vs substantive change or
+/// establish any return relation. Section-level scoring lives in FilingSections.</summary>
+public static class FilingChange
+{
+    public const string Version = "filing-change-v1";
+
+    public static FilingChangeScore Compare(string prior, string current)
+    {
+        var priorTokens = Tokenize(prior);
+        var currentTokens = Tokenize(current);
+        if (priorTokens.IsEmpty || currentTokens.IsEmpty) throw new ResearchException("filing-change-empty");
+        return ScoreTokens(priorTokens, currentTokens);
+    }
+
+    internal static FilingChangeScore ScoreTokens(ImmutableArray<string> priorTokens, ImmutableArray<string> currentTokens)
+    {
+        var priorCounts = Counts(priorTokens);
+        var currentCounts = Counts(currentTokens);
+        var shared = priorCounts.Keys.Intersect(currentCounts.Keys).ToArray();
+        var dot = shared.Sum(token => (double)priorCounts[token] * currentCounts[token]);
+        var cosine = dot / (Norm(priorCounts) * Norm(currentCounts));
+        var jaccard = (double)shared.Length / (priorCounts.Count + currentCounts.Count - shared.Length);
+        return new(cosine, jaccard, (double)currentTokens.Length / priorTokens.Length,
+            priorTokens.Length, currentTokens.Length, shared.Length);
+    }
+
+    public static ImmutableArray<string> Tokenize(string document) => TokenizePlain(FilingText.ToPlainText(document));
+
+    internal static ImmutableArray<string> TokenizePlain(string plain)
+    {
+        var text = plain.ToLowerInvariant();
+        var tokens = ImmutableArray.CreateBuilder<string>();
+        var current = new StringBuilder();
+        var hasLetter = false;
+        void Flush()
+        {
+            if (current.Length > 0 && hasLetter) tokens.Add(current.ToString());
+            current.Clear(); hasLetter = false;
+        }
+        foreach (var ch in text)
+        {
+            if (ch is >= 'a' and <= 'z') { current.Append(ch); hasLetter = true; }
+            else if (ch is >= '0' and <= '9') current.Append(ch);
+            else Flush();
+        }
+        Flush();
+        return tokens.ToImmutable();
+    }
+
+    private static Dictionary<string, int> Counts(ImmutableArray<string> tokens) =>
+        tokens.GroupBy(t => t, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
+
+    private static double Norm(Dictionary<string, int> counts) =>
+        Math.Sqrt(counts.Values.Sum(v => (double)v * v));
 }
