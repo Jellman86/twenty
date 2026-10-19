@@ -204,6 +204,24 @@ try
         }, DatasetJson.Options));
         return report is null ? 1 : 0;
     }
+    if (args.Length == 3 && args[0] == "filing-change")
+    {
+        string ReadDocument(string path)
+        {
+            var bytes = DatasetArchive.ReadBounded(Path.GetFullPath(path));
+            try { return new System.Text.UTF8Encoding(false, true).GetString(bytes); }
+            catch (System.Text.DecoderFallbackException) { throw new ResearchException("filing-change-encoding"); }
+        }
+        var prior = ReadDocument(args[1]); var current = ReadDocument(args[2]);
+        var score = FilingChange.Compare(prior, current);
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            valid = true, version = FilingChange.Version, score,
+            priorSha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(DatasetArchive.ReadBounded(Path.GetFullPath(args[1])))),
+            currentSha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(DatasetArchive.ReadBounded(Path.GetFullPath(args[2]))))
+        }, DatasetJson.Options));
+        return 0;
+    }
     if (args.Length is not (2 or 4) || args[0] != "validate" || (args.Length == 4 && args[2] != "--archive"))
     {
         Console.Error.WriteLine("Usage: Twenty.Data french-panel --archive <captures> --from yyyy-mm-dd --to yyyy-mm-dd --output <private-inbox> [--portfolios industry|size-value25]\n" +
@@ -213,6 +231,7 @@ try
             "       Twenty.Data listing-audit --intervals <interval-id.csv> --archive <tiingo-captures> --symbols AAA,BBB --output <private-directory>\n" +
             "       Twenty.Data sec-facts --dataset <input.json> --bulk <companyfacts.zip> --retrieved-at <iso8601> --concepts Revenues,Assets --archive <dataset-archive> [--dataset-id <id>]\n" +
             "       Twenty.Data universe-backtest --dataset <input.json> --universe <id> --decisions <iso8601,iso8601,...> [--max-price-age-days 45 [--top-k 3]]\n" +
+            "       Twenty.Data filing-change <prior-document> <current-document>\n" +
             "       Twenty.Data capture-public --archive <private-directory> --sources <comma-separated-source-ids>\n" +
             "       Twenty.Data validate <dataset.json> [--archive <directory>]\n" +
             "       Twenty.Data sec-inspect <CIK> <submissions.json>\n" +
