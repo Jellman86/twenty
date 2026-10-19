@@ -41,6 +41,11 @@ class BenchmarkHelperTests(unittest.TestCase):
             bench.parity(base, base[:-1], target_scale=0.5)
         with self.assertRaises(ValueError):
             bench.parity(base, np.full_like(base, np.nan), target_scale=0.5)
+        constant = np.full(16, 0.25)
+        identical = bench.parity(constant, constant.copy(), target_scale=0.5)
+        self.assertEqual(1.0, identical["correlation"])
+        self.assertTrue(identical["within_declared_criteria"])
+        self.assertEqual(0.0, bench.parity(constant, base[:16], target_scale=0.5)["correlation"])
 
     @unittest.skipUnless(find_spec("torch"), "Optional PyTorch dependency is not installed")
     def test_cpu_workload_smoke_is_finite_and_bounded(self):

@@ -101,7 +101,7 @@ public class SelectionDiagnosticsTests
         Assert.True(adjusted.DeflatedSharpeRatio >= byBasis["family-as-independent"].DeflatedSharpeRatio - 1e-12);
         Assert.True(byBasis["registered-snapshot-as-independent"].DeflatedSharpeRatio <= byBasis["family-as-independent"].DeflatedSharpeRatio + 1e-12);
         Assert.All(dsr.Sensitivities, s => Assert.True(s.DeflatedSharpeRatio <= dsr.ProbabilisticSharpeVsZero + 1e-12));
-        Assert.InRange(dsr.AverageCorrelation, 0, 1);
+        Assert.NotNull(dsr.AverageCorrelation); Assert.InRange(dsr.AverageCorrelation!.Value, 0, 1);
         Assert.Equal(dsr.MonthlySharpe * Math.Sqrt(12), dsr.AnnualisedSharpe, 12);
     }
 
@@ -115,6 +115,19 @@ public class SelectionDiagnosticsTests
         Assert.Equal("crashy", result.DeflatedSharpe!.WinnerRunId);
         Assert.True(result.DeflatedSharpe.Skewness < -1);
         Assert.True(result.DeflatedSharpe.Kurtosis > 3);
+    }
+
+    [Fact]
+    public void UndefinedCorrelationIsNullNotMeasuredZero()
+    {
+        var family = new List<(string, double[])>
+        {
+            Candidate("varying", i => .004 + Noise(i, 5) * .2),
+            Candidate("cash", _ => 0d)
+        };
+        var dsr = SelectionDiagnostics.Build(family, family.Count).DeflatedSharpe!;
+        Assert.Null(dsr.AverageCorrelation);
+        Assert.DoesNotContain(dsr.Sensitivities, s => s.Basis == "family-correlation-adjusted");
     }
 
     [Fact]

@@ -68,7 +68,12 @@ def parity(cpu: np.ndarray, other: np.ndarray, target_scale: float) -> dict:
     if not np.isfinite(cpu).all() or not np.isfinite(other).all() or target_scale <= 0:
         raise ValueError("parity inputs must be finite with a positive target scale")
     diff = np.abs(cpu - other)
-    correlation = float(np.corrcoef(cpu, other)[0, 1])
+    if cpu.std() == 0.0 and other.std() == 0.0:
+        correlation = 1.0 if float(diff.max()) == 0.0 else 0.0
+    elif cpu.std() == 0.0 or other.std() == 0.0:
+        correlation = 0.0
+    else:
+        correlation = float(np.corrcoef(cpu, other)[0, 1])
     max_diff = float(diff.max())
     return {
         "max_abs_diff": max_diff,

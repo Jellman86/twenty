@@ -63,7 +63,7 @@ public sealed record PboDiagnostic(int Blocks, int Combinations, double Probabil
     double FractionWinnersNegativeOutOfSample);
 public sealed record SharpeTrialSensitivity(string Basis, double Trials, double ExpectedMaximumMonthlySharpe, double DeflatedSharpeRatio);
 public sealed record DeflatedSharpeDiagnostic(string WinnerRunId, double MonthlySharpe, double AnnualisedSharpe,
-    double Skewness, double Kurtosis, double TrialSharpeStandardDeviation, double AverageCorrelation,
+    double Skewness, double Kurtosis, double TrialSharpeStandardDeviation, double? AverageCorrelation,
     double ProbabilisticSharpeVsZero, ImmutableArray<SharpeTrialSensitivity> Sensitivities);
 public sealed record SelectionDiagnostic(string Statistic, PboDiagnostic? Pbo, DeflatedSharpeDiagnostic? DeflatedSharpe,
     ImmutableArray<string> Limitations);
@@ -212,7 +212,8 @@ public static class SelectionDiagnostics
             var va = a.Sum(v => (v - ma) * (v - ma)); var vb = b.Sum(v => (v - mb) * (v - mb));
             if (va > 1e-30 && vb > 1e-30) correlations.Add(cov / Math.Sqrt(va * vb));
         }
-        var averageCorrelation = correlations.Count > 0 ? Math.Clamp(correlations.Average(), 0, 1) : 0;
+        // Null when no pair has two varying streams: an unestimated correlation must not read as a measured zero.
+        double? averageCorrelation = correlations.Count > 0 ? Math.Clamp(correlations.Average(), 0, 1) : null;
         var sensitivities = ImmutableArray.CreateBuilder<SharpeTrialSensitivity>();
         void Add(string basis, double trials)
         {
@@ -220,7 +221,7 @@ public static class SelectionDiagnostics
             sensitivities.Add(new(basis, trials, threshold, ProbabilisticSharpe(winner.Sharpe, threshold, months, winner.Skewness, winner.Kurtosis)));
         }
         Add("family-as-independent", candidates.Length);
-        if (correlations.Count > 0) Add("family-correlation-adjusted", averageCorrelation + (1 - averageCorrelation) * candidates.Length);
+        if (averageCorrelation is { } rho) Add("family-correlation-adjusted", rho + (1 - rho) * candidates.Length);
         if (registeredTrials > candidates.Length) Add("registered-snapshot-as-independent", registeredTrials);
         return new(winner.RunId, winner.Sharpe, winner.Sharpe * Math.Sqrt(12), winner.Skewness, winner.Kurtosis,
             trialSd, averageCorrelation, psr, sensitivities.ToImmutable());

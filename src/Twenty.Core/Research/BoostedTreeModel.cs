@@ -26,24 +26,39 @@ public sealed class BoostedTreeModel
 
     public static BoostedTreeModel Restore(BoostedTreeSnapshot snapshot)
     {
+        // Restore accepts only snapshots the declared fixed hyperparameters could have produced:
+        // exact learning rate, tree/node caps, depth cap, internal roots and no unreachable nodes.
+        // Minimum leaf rows cannot be re-verified from a snapshot (row counts are not stored).
         if (snapshot is null || snapshot.TreeRoots.IsDefault || snapshot.Nodes.IsDefault ||
-            !double.IsFinite(snapshot.InitialValue) || !double.IsFinite(snapshot.LearningRate) ||
-            snapshot.LearningRate is <= 0 or > 1 || snapshot.TreeRoots.Length > 256 ||
-            snapshot.Nodes.Length > 32768 || (snapshot.TreeRoots.Length == 0) != (snapshot.Nodes.Length == 0))
+            !double.IsFinite(snapshot.InitialValue) || snapshot.LearningRate != LearningRate ||
+            snapshot.TreeRoots.Length > MaximumTrees ||
+            snapshot.Nodes.Length > MaximumTrees * ((1 << (MaximumDepth + 1)) - 1) ||
+            (snapshot.TreeRoots.Length == 0) != (snapshot.Nodes.Length == 0))
             throw new ResearchException("tree-snapshot");
         for (var i = 0; i < snapshot.TreeRoots.Length; i++)
             if (snapshot.TreeRoots[i] < 0 || snapshot.TreeRoots[i] >= snapshot.Nodes.Length ||
-                i > 0 && snapshot.TreeRoots[i] <= snapshot.TreeRoots[i - 1])
+                i > 0 && snapshot.TreeRoots[i] <= snapshot.TreeRoots[i - 1] ||
+                snapshot.Nodes[snapshot.TreeRoots[i]] is { Feature: < 0 })
                 throw new ResearchException("tree-snapshot");
+        var depth = new int[snapshot.Nodes.Length];
+        Array.Fill(depth, -1);
+        foreach (var root in snapshot.TreeRoots) depth[root] = 0;
         for (var i = 0; i < snapshot.Nodes.Length; i++)
         {
             var node = snapshot.Nodes[i];
-            if (node is null || !double.IsFinite(node.Threshold) || !double.IsFinite(node.Value) ||
+            if (node is null || depth[i] < 0 || !double.IsFinite(node.Threshold) || !double.IsFinite(node.Value) ||
                 node.Feature == -1 && (node.Left != -1 || node.Right != -1) ||
                 node.Feature is >= 0 and < Features && (node.Left <= i || node.Right <= i ||
                     node.Left >= snapshot.Nodes.Length || node.Right >= snapshot.Nodes.Length || node.Left == node.Right) ||
                 node.Feature < -1 || node.Feature >= Features)
                 throw new ResearchException("tree-snapshot");
+            if (node.Feature >= 0)
+            {
+                if (depth[i] >= MaximumDepth) throw new ResearchException("tree-snapshot");
+                // Children always follow parents, so one ascending pass assigns every depth.
+                if (depth[node.Left] != -1 || depth[node.Right] != -1) throw new ResearchException("tree-snapshot");
+                depth[node.Left] = depth[node.Right] = depth[i] + 1;
+            }
         }
         return new(snapshot);
     }

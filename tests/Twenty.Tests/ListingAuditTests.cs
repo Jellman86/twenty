@@ -133,6 +133,44 @@ public sealed class ListingAuditTests
     }
 
     [Fact]
+    public void TiingoOnlyArtifactCannotProduceADelistingCandidate()
+    {
+        using var w = new Workspace();
+        var rows = Bars(("2023-09-28", .11m, 0m, 1m), ("2023-09-29", .10m, 0m, 1m));
+        RecordHistory(w.Store, "BBBYQ", HistoryJson(rows), Evidence);
+        var (csv, id) = Intervals(IntervalRow("tiingo-tickers", "BBBYQ", exchange: "PINK", start: "1992-06-05", end: "2023-09-29"));
+        var subject = Assert.Single(ListingAudit.Build(csv, id, w.Store, ["BBBYQ"]).Subjects);
+        // One vendor saying coverage and prices both ended is not cross-source delisting evidence.
+        Assert.Equal("history-ended-unresolved", subject.TerminalClass);
+        Assert.Contains("no-nasdaq-directory-evidence", subject.Findings);
+        Assert.False(subject.NasdaqSourcesPresent);
+    }
+
+    [Fact]
+    public void DegenerateDividendIsFlaggedAndMismatchCountsAreUncapped()
+    {
+        using var w = new Workspace();
+        var many = Enumerable.Range(0, 160).Select(i => (Date: new DateOnly(2023, 1, 3).AddDays(i).ToString("yyyy-MM-dd"), Close: 10m, Div: 0m, Split: i == 0 ? 1m : 2m)).ToArray();
+        // adjClose == close everywhere: every split step mismatches; first bar carries a dividend event.
+        var withFirst = many.Select((r, i) => i == 0 ? (r.Date, r.Close, Div: .5m, r.Split) : r).ToArray();
+        RecordHistory(w.Store, "AAA", HistoryJson(withFirst, t => withFirst[t].Close), Evidence);
+        var (csv, id) = Intervals(IntervalRow("tiingo-tickers", "AAA", end: "2023-06-11"));
+        var subject = Assert.Single(ListingAudit.Build(csv, id, w.Store, ["AAA"]).Subjects);
+        Assert.Equal(159, subject.AdjustmentMismatchCount);
+        Assert.Equal(100, subject.AdjustmentMismatches.Length);
+        Assert.Equal(159, subject.SplitEvents); Assert.Equal(1, subject.DividendEvents);
+
+        using var w2 = new Workspace();
+        var degenerate = Bars(("2023-01-03", 10m, 0m, 1m), ("2023-02-01", 9m, 11m, 1m), ("2023-03-01", 9m, 0m, 1m));
+        RecordHistory(w2.Store, "BBB", HistoryJson(degenerate, t => degenerate[t].Close), Evidence);
+        var (csv2, id2) = Intervals(IntervalRow("tiingo-tickers", "BBB", end: "2023-03-01"));
+        var flagged = Assert.Single(ListingAudit.Build(csv2, id2, w2.Store, ["BBB"]).Subjects);
+        Assert.Contains("degenerate-corporate-action", flagged.Findings);
+        Assert.Contains("adjustment-step-mismatch", flagged.Findings);
+        Assert.Equal(1, flagged.AdjustmentMismatchCount);
+    }
+
+    [Fact]
     public void HistoryContinuingPastProducerEndAndStaleCaptureAreDistinctFromDelisting()
     {
         using var w = new Workspace();

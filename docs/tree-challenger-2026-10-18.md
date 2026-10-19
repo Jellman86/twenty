@@ -79,7 +79,7 @@ Stress costs change nothing in the ordering (ridge 10.96%, tree 10.68%).
 - **The challenger is genuinely different machinery.** On authored data
   containing nonlinear structure it finds returns the linear model cannot
   represent (winners/crashes panel, and the pure-interaction unit test
-  where the tree scores 100% sign accuracy against ridge at chance). That
+  where the tree's sign accuracy is pinned by test above 90% against ridge near chance). That
   proves software behaviour on synthetic inputs only; it is not market
   evidence, per the evaluation protocol.
 - **On the only real panel, nonlinearity bought nothing.** The tree

@@ -114,6 +114,14 @@ public class TreeModelTests
         Rejects(good with { Nodes = good.Nodes.SetItem(0, good.Nodes[0] with { Threshold = double.PositiveInfinity }) });
         Rejects(good with { Nodes = good.Nodes.SetItem(IndexOfLeaf(good), good.Nodes[IndexOfLeaf(good)] with { Left = 1 }) });
         Rejects(new BoostedTreeSnapshot(0, 0.1, [], good.Nodes));
+        // Retuned snapshots must not score under this hypothesis label.
+        Rejects(good with { LearningRate = 0.2 });
+        Rejects(new BoostedTreeSnapshot(0, BoostedTreeModel.LearningRate, [0], [new TreeNode(-1, 0, -1, -1, 1)]));
+        var deep = new BoostedTreeSnapshot(0, BoostedTreeModel.LearningRate, [0], [
+            new(0, 0, 1, 2, 0), new(0, 0, 3, 4, 0), new(-1, 0, -1, -1, 0),
+            new(0, 0, 5, 6, 0), new(-1, 0, -1, -1, 0), new(0, 0, 7, 8, 0),
+            new(-1, 0, -1, -1, 0), new(-1, 0, -1, -1, 0), new(-1, 0, -1, -1, 0)]);
+        Rejects(deep);
         Assert.NotNull(BoostedTreeModel.Restore(good));
         static int IndexOfLeaf(BoostedTreeSnapshot s) => s.Nodes.Select((n, i) => (n, i)).First(p => p.n.Feature == -1).i;
     }

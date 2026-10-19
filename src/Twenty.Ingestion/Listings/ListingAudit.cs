@@ -16,7 +16,8 @@ public sealed record SymbolAudit(string Symbol, string TerminalClass, ImmutableA
     int IntervalRows, int TiingoSegments, DateOnly? ProducerEndLatest, bool NasdaqPresentAtFinal, bool NasdaqSourcesPresent,
     int HistoryRows, DateOnly? HistoryFirst, DateOnly? HistoryLast, DateTimeOffset? HistoryCapturedAt,
     string? HistoryCaptureId, string? HistorySha256, decimal? LastClose,
-    int SplitEvents, int DividendEvents, ImmutableArray<AdjustmentStep> AdjustmentMismatches,
+    int SplitEvents, int DividendEvents, int AdjustmentMismatchCount, int UnexplainedStepCount,
+    ImmutableArray<AdjustmentStep> AdjustmentMismatches,
     ImmutableArray<AdjustmentStep> UnexplainedSteps, decimal MaximumStepRelativeError);
 public sealed record ListingAuditFiles(string Id, byte[] Csv, byte[] Audit, ImmutableArray<SymbolAudit> Subjects);
 
@@ -67,19 +68,21 @@ public static partial class ListingAudit
                     captureId = subject.HistoryCaptureId, sha256 = subject.HistorySha256, capturedAt = subject.HistoryCapturedAt,
                     rows = subject.HistoryRows, first = subject.HistoryFirst, last = subject.HistoryLast, lastClose = subject.LastClose,
                     splitEvents = subject.SplitEvents, dividendEvents = subject.DividendEvents,
+                    adjustmentMismatchCount = subject.AdjustmentMismatchCount, unexplainedStepCount = subject.UnexplainedStepCount,
                     maximumStepRelativeError = subject.MaximumStepRelativeError,
                     mismatches = subject.AdjustmentMismatches, unexplainedSteps = subject.UnexplainedSteps
                 }
             });
         }
         var built = subjects.ToImmutable();
-        var csv = new StringBuilder("symbol,terminal_class,findings,history_rows,history_first,history_last,history_captured_utc,last_close,producer_end_latest,tiingo_segments,nasdaq_present_at_final,split_events,dividend_events,adjustment_mismatches,unexplained_steps,max_step_relative_error\n");
+        var csv = new StringBuilder("symbol,terminal_class,findings,history_rows,history_first,history_last,history_captured_utc,last_close,producer_end_latest,tiingo_segments,nasdaq_sources_present,nasdaq_present_at_final,split_events,dividend_events,adjustment_mismatches,unexplained_steps,max_step_relative_error\n");
         foreach (var s in built)
             csv.AppendJoin(',', Csv(s.Symbol), s.TerminalClass, Csv(string.Join(';', s.Findings)), s.HistoryRows.ToString(CultureInfo.InvariantCulture),
                 Day(s.HistoryFirst), Day(s.HistoryLast), s.HistoryCapturedAt?.ToUniversalTime().ToString("o", CultureInfo.InvariantCulture) ?? "",
                 s.LastClose?.ToString(CultureInfo.InvariantCulture) ?? "", Day(s.ProducerEndLatest), s.TiingoSegments.ToString(CultureInfo.InvariantCulture),
-                s.NasdaqPresentAtFinal ? "true" : "false", s.SplitEvents.ToString(CultureInfo.InvariantCulture), s.DividendEvents.ToString(CultureInfo.InvariantCulture),
-                s.AdjustmentMismatches.Length.ToString(CultureInfo.InvariantCulture), s.UnexplainedSteps.Length.ToString(CultureInfo.InvariantCulture),
+                s.NasdaqSourcesPresent ? "true" : "false", s.NasdaqPresentAtFinal ? "true" : "false",
+                s.SplitEvents.ToString(CultureInfo.InvariantCulture), s.DividendEvents.ToString(CultureInfo.InvariantCulture),
+                s.AdjustmentMismatchCount.ToString(CultureInfo.InvariantCulture), s.UnexplainedStepCount.ToString(CultureInfo.InvariantCulture),
                 s.MaximumStepRelativeError.ToString(CultureInfo.InvariantCulture)).Append('\n');
         var bytes = Encoding.UTF8.GetBytes(csv.ToString());
         var identity = Encoding.UTF8.GetBytes(Version + "\n" + intervalId + "\n" + string.Join(',', requested) + "\n").Concat(bytes).ToArray();
@@ -93,7 +96,7 @@ public static partial class ListingAudit
             findingCounts = built.SelectMany(s => s.Findings).GroupBy(f => f).OrderBy(g => g.Key, StringComparer.Ordinal)
                 .Select(g => new { finding = g.Key, symbols = g.Count() }),
             subjects = subjectAudit,
-            semantics = "For each history date after the first, observedStep = (adjClose[t-1]/close[t-1]) / (adjClose[t]/close[t]). The expected step is (1/splitFactor) on split ex-dates times (1 - divCash/close[t-1]) on dividend ex-dates, else 1. A step is a mismatch (event date) or unexplained (non-event date) when |observed/expected - 1| exceeds the tolerance. Producer-end comparisons use the latest Tiingo segment end for the symbol and the declared tolerance in calendar days. Terminal classes combine history freshness (last bar versus evidence date and versus its own capture time), producer-ended status and Nasdaq directory presence at the final snapshot.",
+            semantics = "For each history date after the first, observedStep = (adjClose[t-1]/close[t-1]) / (adjClose[t]/close[t]). The expected step is (1/splitFactor) on split ex-dates times (1 - divCash/close[t-1]) on dividend ex-dates, else 1. A step is a mismatch (event date) or unexplained (non-event date) when |observed/expected - 1| exceeds the tolerance (absolute step deviation when the expected factor is degenerate). Step lists are capped at 100 recorded entries per symbol; the mismatch/unexplained counts are uncapped totals. Corporate-action events on the first captured bar are counted but cannot be step-checked. Producer-end comparisons use the latest Tiingo segment end for the symbol and the declared tolerance in calendar days. Terminal classes combine history freshness (last bar versus evidence date and versus its own capture time), producer-ended status and Nasdaq directory presence at the final snapshot; the delisting-candidate class additionally requires Nasdaq directory sources to exist in the artifact, otherwise the class stays history-ended-unresolved.",
             limitations = new[]
             {
                 Restriction,
@@ -116,6 +119,7 @@ public static partial class ListingAudit
         if (rows.Any(r => r.ProducerDatesChanged)) findings.Add("producer-dates-changed");
         if (tiingoRows.Select(r => (r.Exchange, r.ProducerStart)).Distinct().Count() > 1) findings.Add("segment-restart");
         if (rows.Any(r => r.Status == "absent-from-later-snapshot")) findings.Add("closed-absent-from-directory");
+        if (!nasdaqSources) findings.Add("no-nasdaq-directory-evidence");
 
         var sourceId = "tiingo-history-" + symbol.ToLowerInvariant().Replace('.', '-');
         var observations = store.Observations(sourceId);
@@ -134,7 +138,7 @@ public static partial class ListingAudit
         if (bars.Length == 0)
             return new(symbol, "no-history-evidence", [.. findings], rows.Length, tiingoRows.Length, producerEndLatest,
                 nasdaqPresent, nasdaqSources, 0, null, null, latest?.ObservedAt, latest?.Id, latest?.Sha256, null,
-                0, 0, [], [], 0);
+                0, 0, 0, 0, [], [], 0);
 
         var capturedDate = DateOnly.FromDateTime(latest!.ObservedAt.UtcDateTime);
         var last = bars[^1].Date;
@@ -155,34 +159,39 @@ public static partial class ListingAudit
 
         var mismatches = ImmutableArray.CreateBuilder<AdjustmentStep>();
         var unexplained = ImmutableArray.CreateBuilder<AdjustmentStep>();
-        decimal maxError = 0; var splits = 0; var dividends = 0;
+        decimal maxError = 0; var mismatchCount = 0; var unexplainedCount = 0;
+        // Events on the first bar are counted but have no prior bar to step-check against.
+        var splits = bars.Count(b => b.SplitFactor != 1m);
+        var dividends = bars.Count(b => b.DivCash > 0);
         for (var t = 1; t < bars.Length; t++)
         {
             var hasSplit = bars[t].SplitFactor != 1m; var hasDividend = bars[t].DivCash > 0;
-            if (hasSplit) splits++;
-            if (hasDividend) dividends++;
             var expected = (hasSplit ? 1m / bars[t].SplitFactor : 1m) * (hasDividend ? 1m - bars[t].DivCash / bars[t - 1].Close : 1m);
             var observed = bars[t - 1].AdjClose / bars[t - 1].Close / (bars[t].AdjClose / bars[t].Close);
-            var error = Math.Abs(observed / expected - 1m);
+            // divCash >= prior close cannot form a valid adjustment factor; report it, never divide by it.
+            if (expected <= 0) findings.Add("degenerate-corporate-action");
+            var error = expected <= 0 ? Math.Abs(observed - expected) : Math.Abs(observed / expected - 1m);
             if (error > maxError) maxError = error;
             if (error <= StepTolerance) continue;
             var step = new AdjustmentStep(bars[t].Date,
                 hasSplit && hasDividend ? "split-dividend" : hasSplit ? "split" : hasDividend ? "dividend" : "none",
                 bars[t].SplitFactor, bars[t].DivCash, expected, observed, error);
-            if (hasSplit || hasDividend) { if (mismatches.Count < MaximumRecordedSteps) mismatches.Add(step); }
-            else if (unexplained.Count < MaximumRecordedSteps) unexplained.Add(step);
+            if (hasSplit || hasDividend) { mismatchCount++; if (mismatches.Count < MaximumRecordedSteps) mismatches.Add(step); }
+            else { unexplainedCount++; if (unexplained.Count < MaximumRecordedSteps) unexplained.Add(step); }
         }
-        if (mismatches.Count > 0) findings.Add("adjustment-step-mismatch");
-        if (unexplained.Count > 0) findings.Add("unexplained-adjustment-step");
+        if (mismatchCount > 0) findings.Add("adjustment-step-mismatch");
+        if (unexplainedCount > 0) findings.Add("unexplained-adjustment-step");
 
         var terminal = historyCurrent ? "history-current"
             : staleCapture ? "history-capture-stale"
-            : producerEnded && !nasdaqPresent ? "delisting-candidate-proceeds-unresolved"
+            // A delisting candidate needs evidence from a second source: without any Nasdaq directory
+            // rows in the artifact, ended Tiingo coverage plus ended Tiingo history is one vendor twice.
+            : producerEnded && nasdaqSources && !nasdaqPresent ? "delisting-candidate-proceeds-unresolved"
             : nasdaqPresent ? "history-ended-but-directory-present"
             : "history-ended-unresolved";
         return new(symbol, terminal, [.. findings], rows.Length, tiingoRows.Length, producerEndLatest,
             nasdaqPresent, nasdaqSources, bars.Length, bars[0].Date, last, latest.ObservedAt, latest.Id, latest.Sha256,
-            bars[^1].Close, splits, dividends, mismatches.ToImmutable(), unexplained.ToImmutable(), maxError);
+            bars[^1].Close, splits, dividends, mismatchCount, unexplainedCount, mismatches.ToImmutable(), unexplained.ToImmutable(), maxError);
     }
 
     private static ImmutableArray<string> NormalizeSymbols(ImmutableArray<string> symbols)
