@@ -1,5 +1,9 @@
 # Validation record
 
+## Simple stock-only successor settlement (20 October 2026)
+
+The v3 changing-universe panel binds successor id, exchange ratio and raw endpoint prices in its hash. The v3 backtest transfers realized original exposure into the successor after period returns, merges existing exposure and charges ordinary costs on subsequent rebalance sales. A successor must be eligible and observably priced at the exit decision; unsupported coverage, chained/overlapping settlements and complex corporate actions remain refused. [Contract and limitations](changing-universe-panel.md#successor-exposure-settlement-20-october-2026). Hand-calculated authored fixtures cover 100 → 125 exposure on exchange, 125 → 150 on a later successor return and 150 → 148.5 cash on a 1% sale, plus merging, entrant/coverage gates and atomic refusal. Local validation: 499 .NET tests, 37 Python tests, Ruff, Svelte check/build (zero errors/warnings), research-boundary probe and secret scan pass. No genuine merger event, model trial, final holdout, accelerator or broker action was used.
+
 ## Nasdaq session calendar (20 October 2026)
 
 `listing-prices-v3` uses a source-reviewed, versioned/hashed XNAS cash-equity calendar for 2015–2026. Genuine AAPL reconversion matches 2,965 expected session dates and changes 46 bar timestamps across 23 early-close sessions, with prices, volumes and capture availability unchanged. Holiday/weekend bars, unsupported years and venue mismatches are refused. [Sources, limits, tests and exact smoke hashes](nasdaq-sessions.md). Local gates pass: 489 .NET tests, 37 Python tests, Ruff, Svelte check/build and the research-boundary probe. No historical study or holdout was opened.

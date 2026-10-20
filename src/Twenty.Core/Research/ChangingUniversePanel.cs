@@ -9,7 +9,10 @@ namespace Twenty.Core.Research;
 // Preserve the numeric values in previously serialized reports when adding new statuses.
 public enum UniverseReturnStatus { Priced = 0, Entered = 1, TerminalZero = 2, TerminalCash = 3, ExitedUnexplained = 4, MissingPrice = 5, TerminalStock = 6 }
 public sealed record UniverseMonth(DateTimeOffset DecisionAt, ImmutableArray<string> EligibleListingIds, ImmutableArray<string> UnpricedListingIds);
-public sealed record UniverseReturn(string ListingId, UniverseReturnStatus Status, decimal? Return);
+public sealed record StockSettlement(string SuccessorListingId, decimal ExchangeRatio, decimal OriginalRawClose,
+    decimal SuccessorRawClose);
+public sealed record UniverseReturn(string ListingId, UniverseReturnStatus Status, decimal? Return,
+    StockSettlement? StockSettlement = null);
 public sealed record UniversePeriod(DateTimeOffset From, DateTimeOffset To, ImmutableArray<UniverseReturn> Returns);
 
 /// <summary>Realized monthly returns over a point-in-time changing universe, built from a
@@ -23,7 +26,7 @@ public sealed record UniversePeriod(DateTimeOffset From, DateTimeOffset To, Immu
 /// and a delisting with missing proceeds fails the whole build.</summary>
 public sealed class ChangingUniversePanel
 {
-    public const string BuilderVersion = "changing-universe-v2";
+    public const string BuilderVersion = "changing-universe-v3";
     public string DatasetId { get; }
     public string UniverseId { get; }
     public bool Synthetic { get; }
@@ -53,9 +56,16 @@ public sealed class ChangingUniversePanel
                 .Append(string.Join(",", month.UnpricedListingIds)).Append('\n');
         foreach (var period in periods)
             foreach (var r in period.Returns)
+            {
                 text.Append("R ").Append(period.From.UtcDateTime.ToString("O", CultureInfo.InvariantCulture)).Append(' ')
                     .Append(r.ListingId).Append(' ').Append(r.Status).Append(' ')
                     .Append(r.Return?.ToString(CultureInfo.InvariantCulture) ?? "null").Append('\n');
+                if (r.StockSettlement is { } stock)
+                    text.Append("S ").Append(stock.SuccessorListingId).Append(' ')
+                        .Append(stock.ExchangeRatio.ToString(CultureInfo.InvariantCulture)).Append(' ')
+                        .Append(stock.OriginalRawClose.ToString(CultureInfo.InvariantCulture)).Append(' ')
+                        .Append(stock.SuccessorRawClose.ToString(CultureInfo.InvariantCulture)).Append('\n');
+            }
         Sha256 = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString())));
     }
 
@@ -153,8 +163,9 @@ public sealed class ChangingUniversePanel
                             CashTerminalReturn(slices[later], later, listing, action, decisions[i], LatestClose)));
                         break;
                     case TerminalOutcome.Stock:
+                        var settlement = StockTerminalSettlement(slices[later], later, listing, action, decisions[i], decisions[later], LatestClose);
                         returns.Add(new(listing, UniverseReturnStatus.TerminalStock,
-                            StockTerminalReturn(slices[later], later, listing, action, decisions[i], decisions[later], LatestClose)));
+                            settlement.ExchangeRatio * settlement.SuccessorRawClose / settlement.OriginalRawClose - 1m, settlement));
                         break;
                     case TerminalOutcome.Missing:
                         throw Fail("universe-panel-terminal-missing",
@@ -193,7 +204,7 @@ public sealed class ChangingUniversePanel
     // the successor's raw close at the exit decision. The same no-intervening-action guard
     // applies, because any split/dividend/merger/spinoff between the original raw close and
     // the exit would make the simple ratio wrong.
-    private static decimal StockTerminalReturn(DataSlice laterSlice, int later, string listing, CorporateAction action,
+    private static StockSettlement StockTerminalSettlement(DataSlice laterSlice, int later, string listing, CorporateAction action,
         DateTimeOffset fromDecision, DateTimeOffset toDecision, Func<int, string, PriceBasis, DateTimeOffset, Close?> latestClose)
     {
         if (string.IsNullOrWhiteSpace(action.SuccessorListingId))
@@ -219,6 +230,6 @@ public sealed class ChangingUniversePanel
             a.Action is CorporateActionKind.Split or CorporateActionKind.Dividend or CorporateActionKind.Merger or
                 CorporateActionKind.SpinOff or CorporateActionKind.Delisting))
             throw Fail("universe-panel-terminal-complex", "Successor corporate actions require explicit share settlement handling.");
-        return action.SplitRatio.Value * successorRaw.Major / originalRaw.Major - 1m;
+        return new(action.SuccessorListingId, action.SplitRatio.Value, originalRaw.Major, successorRaw.Major);
     }
 }

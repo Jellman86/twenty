@@ -175,7 +175,26 @@ public sealed class ChangingUniversePanelTests
         var panel = Build(Scenario(TerminalOutcome.Stock, successor: "ddd", exchangeRatio: 0.5m));
         Assert.Equal(UniverseReturnStatus.TerminalStock, Return(panel, 2, "ccc").Status);
         Assert.Equal(0.25m, Return(panel, 2, "ccc").Return);
+        Assert.Equal(new StockSettlement("ddd", 0.5m, 18m, 45m), Return(panel, 2, "ccc").StockSettlement);
         Assert.False(panel.HasGaps);
+    }
+
+    [Fact]
+    public void PanelHashBindsSettlementTermsEvenWhenTheReturnIsIdentical()
+    {
+        var source = Scenario(TerminalOutcome.Stock, successor: "ddd", exchangeRatio: 0.5m);
+        var original = Build(source);
+        var changed = Build(source with
+        {
+            Observations = source.Observations.Select(o => o switch
+            {
+                CorporateAction { TerminalOutcome: TerminalOutcome.Stock } a => a with { SplitRatio = 0.25m },
+                PriceBar { ListingId: "ddd", Basis: PriceBasis.Raw } b => b with { Open = 90m, High = 90m, Low = 90m, Close = 90m },
+                _ => o
+            }).ToImmutableArray()
+        });
+        Assert.Equal(Return(original, 2, "ccc").Return, Return(changed, 2, "ccc").Return);
+        Assert.NotEqual(original.Sha256, changed.Sha256);
     }
 
     [Fact]

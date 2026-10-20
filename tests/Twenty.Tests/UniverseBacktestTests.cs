@@ -121,13 +121,72 @@ public sealed class UniverseBacktestTests
     }
 
     [Fact]
-    public void StockMergerBacktestRefusesToLiquidateSuccessorSharesForFree()
+    public void StockMergerTransfersIntoExistingSuccessorAndNextRebalanceSellsWithCosts()
     {
         var panel = Panel(Scenario(cccOutcome: TerminalOutcome.Stock, cccSuccessor: "ddd", cccRatio: 0.5m));
-        Assert.Equal(UniverseReturnStatus.TerminalStock,
-            panel.Periods[23].Returns.Single(r => r.ListingId == "ccc").Status);
-        var error = Assert.Throws<ResearchException>(() => UniverseBacktest.Run(panel, new(), ZeroCosts));
-        Assert.Equal("universe-backtest-stock-settlement", error.Code);
+        var costs = new ResearchCosts(0m, 100m, 0m, 0m, 0m); // 1% per side
+        var report = UniverseBacktest.Run(panel, new(), ZeroCosts);
+        var terminal = Step(report, "equal_weight", 23 - 12).State;
+        var transfer = Assert.Single(terminal.StockTransfers);
+        Assert.Equal("ccc", transfer.ListingId);
+        Assert.Equal("ddd", transfer.SuccessorListingId);
+        var settlement = panel.Periods[23].Returns.Single(r => r.ListingId == "ccc").StockSettlement!;
+        // With zero costs, start-of-month equal-weight exposure is exactly
+        // (prior NAV + contribution) / 4; quantity = original exposure / raw close.
+        var target = (Step(report, "equal_weight", 22 - 12).State.EquityGbp + 20m) / 4m;
+        Assert.Equal(target / settlement.OriginalRawClose * 0.5m * settlement.SuccessorRawClose,
+            transfer.NotionalGbp, 18);
+        Assert.All(report.Equity.Where(e => e.Strategy == "cash"), e => Assert.Empty(e.State.StockTransfers));
+        // The inherited value joins existing ddd. Next decision's ordinary rebalance
+        // trims the overweight successor and charges the sell cost; no phantom ccc.
+        var next = Step(report, "equal_weight", 24 - 12).State;
+        var sale = Assert.Single(next.Trades.Where(t => t.Symbol == "ddd" && t.Side == "sell"));
+        Assert.True(sale.NotionalGbp > 0m);
+        var costly = UniverseBacktest.Run(panel, new(), costs);
+        var costedSale = Assert.Single(Step(costly, "equal_weight", 24 - 12).State.Trades
+            .Where(t => t.Symbol == "ddd" && t.Side == "sell"));
+        Assert.Equal(costedSale.NotionalGbp * 0.01m, costedSale.CostGbp);
+        Assert.DoesNotContain(next.Trades, t => t.Symbol == "ccc");
+        Assert.Empty(next.StockTransfers);
+    }
+
+    [Fact]
+    public void SuccessorOutsideTrackedUniverseIsRefusedRatherThanDropped()
+    {
+        var source = Scenario(cccOutcome: TerminalOutcome.Stock, cccSuccessor: "ddd", cccRatio: 0.5m);
+        var file = source with { Observations = source.Observations.Where(o => o is not Membership { ListingId: "ddd" }).ToImmutableArray() };
+        var error = Assert.Throws<ResearchException>(() => UniverseBacktest.Run(Panel(file), new(), ZeroCosts));
+        Assert.Equal("universe-backtest-stock-successor-coverage", error.Code);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void NewlyEligibleSuccessorIsCarriedOnlyWithAnObservableEndpointPrice(bool latePrice)
+    {
+        var source = Scenario(cccOutcome: TerminalOutcome.Stock, cccSuccessor: "ddd", cccRatio: 0.5m);
+        var file = source with
+        {
+            Observations = source.Observations.Select(o => o switch
+            {
+                Membership { ListingId: "ddd" } m => m with { EffectiveFrom = Decision(24).AddDays(-1) },
+                PriceBar { ListingId: "ddd", Basis: PriceBasis.TotalReturnAdjusted } b when latePrice && b.SessionCloseAt < Decision(24)
+                    => b with { Evidence = b.Evidence with { PublishedAt = Decision(25).AddMinutes(-5), AvailableAt = Decision(25).AddMinutes(-5) } },
+                _ => o
+            }).ToImmutableArray()
+        };
+        var panel = Panel(file);
+        if (latePrice)
+        {
+            Assert.Contains("ddd", panel.Months[24].UnpricedListingIds);
+            var error = Assert.Throws<ResearchException>(() => UniverseBacktest.Run(panel, new(), ZeroCosts));
+            Assert.Equal("universe-backtest-stock-successor-coverage", error.Code);
+            return;
+        }
+        Assert.Equal(UniverseReturnStatus.Entered, panel.Periods[23].Returns.Single(r => r.ListingId == "ddd").Status);
+        var report = UniverseBacktest.Run(panel, new(), ZeroCosts);
+        Assert.Equal("ddd", Assert.Single(Step(report, "equal_weight", 23 - 12).State.StockTransfers).SuccessorListingId);
+        Assert.DoesNotContain(Step(report, "equal_weight", 24 - 12).State.Trades, t => t.Symbol == "ccc");
     }
 
     [Fact]

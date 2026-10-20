@@ -21,7 +21,7 @@ public sealed record UniverseBacktestReport(string EngineVersion, string PanelSh
 /// a portfolio through a month in which a possible holding has no return.</summary>
 public static class UniverseBacktest
 {
-    public const string Version = "changing-universe-backtest-v2";
+    public const string Version = "changing-universe-backtest-v3";
     public const int MomentumPeriods = 11; // compounded returns, skipping the most recent period (12-1 style)
     public static readonly ImmutableArray<string> Strategies = ["equal_weight", "momentum", "cash"];
 
@@ -31,10 +31,16 @@ public static class UniverseBacktest
         ArgumentNullException.ThrowIfNull(panel);
         config.Validate(); costs.Validate();
         if (panel.HasGaps) throw new ResearchException("universe-backtest-gaps");
-        // The notional ledger can settle cash, but cannot carry successor shares. Treating
-        // a stock exchange as cash silently invents a free liquidation and changes exposure.
-        if (panel.ReturnStatusCounts.GetValueOrDefault(UniverseReturnStatus.TerminalStock) > 0)
-            throw new ResearchException("universe-backtest-stock-settlement");
+        // Settlement metadata is realized evidence, not an allocation input. Require
+        // the successor in the next priced universe so the next step can retain or sell it.
+        for (var p = 0; p < panel.Periods.Length; p++)
+            foreach (var entry in panel.Periods[p].Returns.Where(r => r.Status == UniverseReturnStatus.TerminalStock))
+            {
+                var successor = entry.StockSettlement?.SuccessorListingId;
+                if (successor is null || !panel.Months[p + 1].EligibleListingIds.Contains(successor) ||
+                    panel.Months[p + 1].UnpricedListingIds.Contains(successor))
+                    throw new ResearchException("universe-backtest-stock-successor-coverage");
+            }
         var first = MomentumPeriods + 1; // first period index with a complete skipped trailing window
         if (panel.Periods.Length <= first) throw new ResearchException("universe-backtest-history");
         var portfolios = Strategies.ToDictionary(s => s, _ => new NotionalPortfolio());
@@ -73,7 +79,9 @@ public static class UniverseBacktest
                 equity.Add(new(DateOnly.FromDateTime(period.From.UtcDateTime), DateOnly.FromDateTime(period.To.UtcDateTime),
                     strategy, portfolios[strategy].Step(config.MonthlyGbp, allocations[strategy], returns, costs, false, slots, cap,
                         period.Returns.Where(r => r.Status is UniverseReturnStatus.TerminalZero or UniverseReturnStatus.TerminalCash)
-                            .Select(r => r.ListingId).ToImmutableHashSet(StringComparer.Ordinal))));
+                            .Select(r => r.ListingId).ToImmutableHashSet(StringComparer.Ordinal),
+                        stockSuccessors: period.Returns.Where(r => r.Status == UniverseReturnStatus.TerminalStock)
+                            .ToDictionary(r => r.ListingId, r => r.StockSettlement!.SuccessorListingId, StringComparer.Ordinal))));
             }
         }
         var summaries = Strategies.Select(s =>
@@ -91,7 +99,7 @@ public static class UniverseBacktest
         return new(Version, panel.Sha256, panel.DatasetId, panel.UniverseId, panel.Synthetic, config, costs,
             panel.Periods[first].From, panel.Periods[^1].To, summaries, equity.ToImmutable(),
             ["Returns are local-currency ratios of adjusted closes with no FX conversion; GBP notionals are an accounting unit only, not achievable GBP wealth.",
-             "Backtests cover zero and simple cash proceeds. Stock-merger settlement, spinoffs, mixed consideration and suspensions are unmodelled; stock-terminal and gap panels are refused.",
+             "Backtests settle zero/cash proceeds and transfer simple stock-only consideration into priced, eligible successor exposure. Spinoffs, mixed consideration, successor corporate actions and suspensions remain unsupported; gaps and missing successor coverage are refused.",
              "Full-rebalance fractional notionals with flat per-side costs approximate execution; these are not broker quantities, fills or ISA eligibility evidence.",
              "Momentum ranks require a complete priced trailing window; entrants are excluded until one exists, which is a disclosed selection rule, not evidence of an edge.",
              "A listing with no observable price at the decision (for example a late-published first bar) is not buyable at that decision, even though its realized period return remains in the panel."]);

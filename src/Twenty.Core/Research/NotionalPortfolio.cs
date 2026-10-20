@@ -13,8 +13,12 @@ public sealed record ResearchCosts(decimal FxBps = 15m, decimal HalfSpreadBps = 
     }
 }
 public sealed record NotionalTrade(string Symbol, string Side, decimal NotionalGbp, decimal CostGbp);
+public sealed record NotionalStockTransfer(string ListingId, string SuccessorListingId, decimal NotionalGbp);
 public sealed record PortfolioStep(decimal EquityGbp, decimal CashGbp, decimal ContributionsGbp, decimal PeriodReturn,
-    decimal PeriodCostGbp, decimal TradedNotionalGbp, decimal UnitPrice, decimal MaxDrawdown, ImmutableArray<NotionalTrade> Trades);
+    decimal PeriodCostGbp, decimal TradedNotionalGbp, decimal UnitPrice, decimal MaxDrawdown, ImmutableArray<NotionalTrade> Trades)
+{
+    public ImmutableArray<NotionalStockTransfer> StockTransfers { get; init; } = [];
+}
 
 /// <summary>Fractional GBP exposure accounting against total-return indices, not share quantities/broker fills.</summary>
 public sealed class NotionalPortfolio
@@ -29,13 +33,21 @@ public sealed class NotionalPortfolio
     public decimal Equity => Cash + holdings.Values.Sum();
     public IReadOnlyDictionary<string, decimal> Holdings => holdings.ToImmutableDictionary(StringComparer.Ordinal);
     public PortfolioStep Step(decimal monthly, IReadOnlyDictionary<string, decimal> weights, IReadOnlyDictionary<string, decimal> returns, ResearchCosts costs,
-        bool contributionOnly = false, int maximumHoldings = 100, decimal maximumWeight = 1m, IReadOnlySet<string>? terminalExits = null)
+        bool contributionOnly = false, int maximumHoldings = 100, decimal maximumWeight = 1m, IReadOnlySet<string>? terminalExits = null,
+        IReadOnlyDictionary<string, string>? stockSuccessors = null)
     {
         costs.Validate();
         if (contributionOnly && (maximumHoldings is < 1 or > 100 || maximumWeight is <= 0 or > 1 || weights.Values.Any(w => w > maximumWeight)))
             throw new ResearchException("invalid-contribution-policy");
         if (monthly < 0 || monthly > 100000 || weights.Any(x => x.Value < 0) || weights.Values.Sum() > 1m || returns.Any(x => x.Value < -1m) ||
             weights.Keys.Concat(holdings.Keys).Any(s => !returns.ContainsKey(s))) throw new ResearchException("invalid-portfolio-step");
+        // Transfers are simultaneous endpoint events, never trades. Chained/overlapping
+        // settlements need intra-period ordering and are outside this bounded ledger.
+        if (stockSuccessors is not null && stockSuccessors.Any(x =>
+            string.IsNullOrWhiteSpace(x.Key) || string.IsNullOrWhiteSpace(x.Value) ||
+            !returns.ContainsKey(x.Key) || stockSuccessors.ContainsKey(x.Value) ||
+            terminalExits?.Contains(x.Key) == true || terminalExits?.Contains(x.Value) == true))
+            throw new ResearchException("invalid-stock-settlement");
         // Compute privately before committing: invalid data/arithmetic cannot half-mutate a portfolio.
         var next = new Dictionary<string, decimal>(holdings, StringComparer.Ordinal);
         var cash = Cash + monthly;
@@ -126,6 +138,19 @@ public sealed class NotionalPortfolio
                 }
             cash += cashFromTerminal;
         }
+        var transfers = ImmutableArray.CreateBuilder<NotionalStockTransfer>();
+        if (stockSuccessors is not null)
+        {
+            // Returns above already value the delivered shares at the successor endpoint.
+            // The successor's own period return must not be applied to this value again;
+            // several originals may deliver the same successor.
+            foreach (var (original, successor) in stockSuccessors.OrderBy(x => x.Key, StringComparer.Ordinal))
+                if (next.Remove(original, out var value))
+                {
+                    next[successor] = next.GetValueOrDefault(successor) + value;
+                    transfers.Add(new(original, successor, value));
+                }
+        }
         var equity = cash + next.Values.Sum();
         var periodReturn = before > 0 ? equity / before - 1 : 0;
         var unit = UnitPrice * (1 + periodReturn);
@@ -133,6 +158,7 @@ public sealed class NotionalPortfolio
         var drawdown = Math.Min(MaxDrawdown, unit / high - 1);
         holdings = next; Cash = cash; Contributions += monthly; CostsPaid += trades.Sum(x => x.CostGbp);
         UnitPrice = unit; HighWater = high; MaxDrawdown = drawdown;
-        return new(equity, cash, Contributions, periodReturn, trades.Sum(x => x.CostGbp), trades.Sum(x => x.NotionalGbp), unit, drawdown, trades.ToImmutable());
+        return new(equity, cash, Contributions, periodReturn, trades.Sum(x => x.CostGbp), trades.Sum(x => x.NotionalGbp), unit, drawdown, trades.ToImmutable())
+        { StockTransfers = transfers.ToImmutable() };
     }
 }
