@@ -12,7 +12,9 @@ public sealed record UniverseRunRequest(string RequestId, string DatasetSha256, 
     ImmutableArray<DateTimeOffset> Decisions, int MaximumPriceAgeDays, UniverseBacktestConfig Config, ResearchCosts Costs);
 public sealed record UniverseRunEntry(string Id, string DatasetSha256, string DatasetId, bool Synthetic, string UniverseId,
     string Status, DateTimeOffset CreatedAt, DateTimeOffset? FinishedAt, string? ErrorCode, string CodeCommit,
-    string RequestSha256, string? PanelSha256 = null, string? ReportSha256 = null);
+    string RequestSha256, string? PanelSha256 = null, string? ReportSha256 = null,
+    DateOnly? InformationStart = null, DateOnly? InformationEnd = null,
+    string? IdentityScheme = null, string? ResearchSha256 = null);
 
 /// <summary>Registered changing-universe trials. Every admitted attempt is inserted as
 /// "started" before any computation and reaches exactly one terminal state, so failures
@@ -62,6 +64,7 @@ public sealed partial class ResearchStore
     {
         if (request is null || !Guid.TryParseExact(request.RequestId, "D", out _) || !IsSha256(request.DatasetSha256) ||
             request.UniverseId is not { Length: >= 1 and <= 128 } || request.Decisions.IsDefault ||
+            request.Decisions.Length is < 2 or > 600 || request.Decisions.Any(d => d == default) ||
             request.MaximumPriceAgeDays is < 1 or > 92 || request.Config is null || request.Costs is null)
             throw new ResearchException("universe-run-request");
         request.Config.Validate(); request.Costs.Validate();
@@ -69,6 +72,11 @@ public sealed partial class ResearchStore
         var bytes = DatasetArchive.ReadBounded(UniverseDatasetPath(request.DatasetSha256));
         if (Convert.ToHexStringLower(SHA256.HashData(bytes)) != request.DatasetSha256) throw new ResearchException("dataset-integrity");
         var datasetFile = DatasetJson.Read(bytes);
+        // Include warm-up returns and the bounded stale-price lookback, not just the
+        // later evaluated periods. Persist this before any panel/return computation.
+        var first = DateOnly.FromDateTime(request.Decisions.Min().UtcDateTime);
+        var informationStart = DateOnly.FromDayNumber(Math.Max(0, first.DayNumber - request.MaximumPriceAgeDays));
+        var informationEnd = DateOnly.FromDateTime(request.Decisions.Max().UtcDateTime);
         var requestHash = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(
             new { request.DatasetSha256, request.UniverseId, request.Decisions, request.MaximumPriceAgeDays, request.Config, request.Costs }, Json)));
         UniverseRunEntry entry;
@@ -84,12 +92,15 @@ public sealed partial class ResearchStore
                 if (prior.RequestSha256 != requestHash) throw new ResearchException("request-id-conflict");
                 return prior;
             }
+            if (!datasetFile.Manifest.Synthetic)
+                GuardStudyReservations(informationStart, informationEnd);
             using var count = db.CreateCommand(); count.Transaction = transaction;
-            count.CommandText = "SELECT COUNT(*) FROM universe_runs";
-            if ((long)count.ExecuteScalar()! >= 1000) throw new ResearchException("trial-capacity");
+            count.CommandText = "SELECT (SELECT COUNT(*) FROM universe_runs) + (SELECT COUNT(*) FROM runs)";
+            if ((long)count.ExecuteScalar()! + ReservedStudySlots() >= 1000) throw new ResearchException("trial-capacity");
             entry = new(Guid.NewGuid().ToString("N"), request.DatasetSha256, datasetFile.Manifest.DatasetId,
                 datasetFile.Manifest.Synthetic, request.UniverseId, "started", clock.GetUtcNow(), null, null,
-                codeCommit, requestHash);
+                codeCommit, requestHash, InformationStart: informationStart, InformationEnd: informationEnd,
+                IdentityScheme: ResearchIdentity.Scheme, ResearchSha256: ResearchIdentity.Current.Sha256);
             using var insert = db.CreateCommand(); insert.Transaction = transaction;
             insert.CommandText = "INSERT INTO universe_runs(id,request_id,dataset_sha,json,status) VALUES($id,$request,$dataset,$json,'started')";
             insert.Parameters.AddWithValue("$id", entry.Id); insert.Parameters.AddWithValue("$request", request.RequestId);

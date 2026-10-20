@@ -17,7 +17,10 @@ public sealed record ResearchStudy(string Id, string RequestId, string RequestSh
     ImmutableArray<StudyCandidateScore> Scores, string? SelectedCandidateId = null, SearchDiagnosticReport? SelectionDiagnostics = null,
     string? ErrorCode = null, string? FinalRequestId = null, DateTimeOffset? FinalRequestedAt = null, string? FinalBaseRunId = null,
     string? FinalStressRunId = null, string? FinalBaseReportSha256 = null, string? FinalStressReportSha256 = null,
-    decimal? FinalWorstMarginGbp = null, bool? FinalPassed = null);
+    decimal? FinalWorstMarginGbp = null, bool? FinalPassed = null)
+{
+    public ImmutableArray<UniverseRunEntry> PriorUniverseTrials { get; init; } = [];
+}
 
 public sealed partial class ResearchStore
 {
@@ -143,9 +146,11 @@ public sealed partial class ResearchStore
                     Overlap(plan.ReservedStart, plan.ReservedEnd, s.Plan.ReservedStart, s.Plan.ReservedEnd))) throw new ResearchException("study-reserved-window-conflict");
             }
             var prior = ListRuns();
-            if (prior.Count + ReservedStudySlots() + plan.Candidates.Length * 2 + 2 > 1000) throw new ResearchException("trial-capacity");
+            var priorUniverse = ListUniverseRuns().ToImmutableArray();
+            if (prior.Count + priorUniverse.Length + ReservedStudySlots() + plan.Candidates.Length * 2 + 2 > 1000) throw new ResearchException("trial-capacity");
             var study = new ResearchStudy(Guid.NewGuid().ToString("N"), request.RequestId, requestHash, request.Name, "development", clock.GetUtcNow(), plan, JsonHash(plan), [],
-                prior.Select(r => new PriorStudyTrial(r.Id, r.DatasetId, r.ConfigSha256, r.Status, r.ReportSha256)).ToImmutableArray(), []);
+                prior.Select(r => new PriorStudyTrial(r.Id, r.DatasetId, r.ConfigSha256, r.Status, r.ReportSha256)).ToImmutableArray(), [])
+            { PriorUniverseTrials = priorUniverse };
             using var db = Open(); using var tx = db.BeginTransaction(); var pairs = ImmutableArray.CreateBuilder<StudyRuns>();
             foreach (var candidate in plan.Candidates)
             {
@@ -165,6 +170,15 @@ public sealed partial class ResearchStore
     }
     private void GuardPriorReservedExposure(DateOnly start, DateOnly end, string? ownStudy = null)
     {
+        foreach (var run in ListUniverseRuns().Where(r => !r.Synthetic))
+        {
+            // Legacy trials did not retain their decision windows. Do not guess a
+            // narrow window from their report or silently certify unseen outcomes.
+            if (run.InformationStart is null || run.InformationEnd is null)
+                throw new ResearchException("study-universe-exposure-unknown");
+            if (Overlap(start, end, run.InformationStart.Value, run.InformationEnd.Value))
+                throw new ResearchException("study-known-reserved-exposure");
+        }
         var panels = new Dictionary<string, MonthlyPanel>(StringComparer.Ordinal);
         foreach (var run in ListRuns().Where(r => !r.Synthetic && (ownStudy is null || r.StudyId != ownStudy) && (r.StartedAt is not null || r.Status is "queued" or "planned")))
         {
@@ -181,8 +195,12 @@ public sealed partial class ResearchStore
     {
         if (panel.Synthetic) return;
         var window = InformationWindow(panel, config);
+        GuardStudyReservations(window.Start, window.End, ownStudy);
+    }
+    private void GuardStudyReservations(DateOnly start, DateOnly end, string? ownStudy = null)
+    {
         if (Studies().Any(s => !s.Plan.Synthetic && (ownStudy is null || s.Id != ownStudy) && (s.Status is "development" or "candidate-frozen" or "final-evaluation") &&
-            Overlap(window.Start, window.End, s.Plan.ReservedStart, s.Plan.ReservedEnd))) throw new ResearchException("study-reserved-window-conflict");
+            Overlap(start, end, s.Plan.ReservedStart, s.Plan.ReservedEnd))) throw new ResearchException("study-reserved-window-conflict");
     }
     public ResearchStudy EvaluateStudy(string id, StudyEvaluationRequest request, string commit)
     {

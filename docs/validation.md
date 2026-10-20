@@ -1,5 +1,9 @@
 # Validation record
 
+## Cross-register universe/study controls (20 October 2026)
+
+Three authored regressions reproduced universe runs bypassing active study reservations and prior successful/failed universe exposure being omitted from new study admission. Guards now cover both directions under the shared admission lock, retain decision/warm-up/price-lookback windows and scientific identity before work, and fail closed for legacy genuine trials whose windows are unknown. New studies disclose prior universe trials. The 1,000-trial budget and reserved final slots now apply across both registers. [Semantics and limits](changing-universe-panel.md#cross-register-research-controls-20-october-2026). Validation passes 525 .NET tests, 37 Python tests, Ruff, frontend check/build, research-boundary probe and secret scanning. Added cases cover warm-up/lookback, failed attempts, legacy evidence, idempotency, shared capacity and final-slot protection. All financial inputs are authored; false synthetic flags exercise admission policy only. No genuine study or holdout was opened.
+
 ## Independent issuer-action audit (20 October 2026)
 
 Added the offline source-hashed issuer-reference audit. The declared genuine AAPL capture matches one 4:1 split on the issuer's exact first adjusted trading date and all 47 dividend amounts within issuer declaration-to-record windows. This resolves the earlier two SEC amount residuals without claiming independently verified dividend ex-dates. Repeat output is byte-identical; an intentionally substituted 28 August split date is refused. [Contract, primary sources and smoke metadata](corporate-action-references.md). Local validation: 514 .NET tests, 37 Python tests, Ruff, Svelte check/build, research-boundary probe and full-history/files secret scan pass. Unit financial inputs are authored fixtures; the smoke uses genuine captured history and reviewed issuer facts. No model trial, holdout, accelerator or broker request was used.
