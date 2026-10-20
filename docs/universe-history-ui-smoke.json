@@ -1,0 +1,19 @@
+{
+  "date": "2026-10-20",
+  "financialInputs": "Authored browser fixtures only; no historical performance or production trial creation.",
+  "browser": "Existing authenticated shared Playwright MCP; native T3 preview unavailable due to missing host libraries.",
+  "assetSha256": "eda13be207b1f1af075eace5e91e36a1b027ae5ff4b4d91d281c4012c1fbfdf3",
+  "checks": {
+    "successReport": true,
+    "successorTransfers": true,
+    "failedTrial": true,
+    "selectionRace": true,
+    "mobileWidth": 390,
+    "emptyState": true,
+    "errorState": true,
+    "productionWrites": 0,
+    "mockedProjectionRequests": 2,
+    "pageErrors": []
+  },
+  "method": "Serve built static assets and authored API responses through page-scoped route interception in the browser; no local application server or production research writes."
+}

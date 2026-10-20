@@ -38,7 +38,12 @@ public static class ResearchModule
         api.MapGet("/datasets", () => store.Datasets());
         api.MapPost("/datasets/import", (InboxImportRequest request) => Results.Ok(store.ImportInbox(request)));
         api.MapGet("/runs", () => store.ListRuns().Take(100));
-        api.MapGet("/trials", () => new { total = store.ListRuns().Count, displayedLimit = 100 });
+        api.MapGet("/trials", () =>
+        {
+            var modelTrials = store.ListRuns().Count;
+            var universeTrials = store.ListUniverseRuns().Count;
+            return new { total = modelTrials + universeTrials, modelTrials, universeTrials, displayedLimit = 100 };
+        });
         api.MapPost("/runs", (RunRequest request) => Results.Accepted("/api/research/runs", store.Enqueue(request, Commit())));
         api.MapGet("/runs/{id}", (string id) => store.Find(id) is { } run ? Results.Ok(run) : Results.NotFound());
         api.MapGet("/runs/{id}/report", (string id) => store.Report(id) is { } report ? Results.Ok(report) : Results.NotFound());
@@ -55,6 +60,7 @@ public static class ResearchModule
         api.MapGet("/universe-runs", () => store.ListUniverseRuns().Take(100));
         api.MapPost("/universe-runs", (UniverseRunRequest request) => Results.Ok(store.ExecuteUniverseRun(request, Commit())));
         api.MapGet("/universe-runs/{id}", (string id) => store.FindUniverseRun(id) is { } run ? Results.Ok(run) : Results.NotFound());
+        api.MapGet("/universe-runs/{id}/request", (string id) => store.UniverseRequestBytes(id) is { } bytes ? Results.Bytes(bytes, "application/json") : Results.NotFound());
         api.MapGet("/universe-runs/{id}/report", (string id) => store.UniverseReport(id) is { } report ? Results.Ok(report) : Results.NotFound());
         api.MapGet("/diagnostics", () => diagnostics.History());
         api.MapGet("/diagnostics/{id}", (string id) => diagnostics.Find(id) is { } result ? Results.Ok(result) : Results.NotFound());

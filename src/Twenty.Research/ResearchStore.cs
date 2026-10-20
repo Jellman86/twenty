@@ -196,9 +196,7 @@ public sealed partial class ResearchStore : IDisposable
             if (run.CancelRequested) throw new OperationCanceledException();
             ValidateStudyReport(run, report);
             var bytes = JsonSerializer.SerializeToUtf8Bytes(report, Json);
-            if (bytes.Length > 8 * 1024 * 1024 || Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories)
-                .Where(p => !p.EndsWith(".app.lock", StringComparison.Ordinal)).Sum(p => new FileInfo(p).Length) + bytes.Length > 256L * 1024 * 1024)
-                throw new ResearchException("artifact-capacity");
+            EnsureArtifactCapacity(bytes);
             var directory = Path.Combine(Root, "runs", run.Id); Directory.CreateDirectory(directory);
             ImmutableWrite(Path.Combine(directory, "report.json"), bytes);
             Save(run with { Status = "succeeded", Progress = 100, FinishedAt = this.clock.GetUtcNow(),
@@ -221,6 +219,12 @@ public sealed partial class ResearchStore : IDisposable
         var bytes = Twenty.Core.Data.DatasetArchive.ReadBounded(Path.Combine(Root, "runs", run.Id, "report.json"));
         if (Convert.ToHexStringLower(SHA256.HashData(bytes)) != run.ReportSha256) throw new ResearchException("report-integrity");
         return JsonSerializer.Deserialize<BacktestReport>(bytes, Json);
+    }
+    private void EnsureArtifactCapacity(byte[] bytes)
+    {
+        if (bytes.Length > 8 * 1024 * 1024 || Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories)
+            .Where(p => !p.EndsWith(".app.lock", StringComparison.Ordinal)).Sum(p => new FileInfo(p).Length) + bytes.Length > 256L * 1024 * 1024)
+            throw new ResearchException("artifact-capacity");
     }
     private static void ImmutableWrite(string path, byte[] bytes)
     {

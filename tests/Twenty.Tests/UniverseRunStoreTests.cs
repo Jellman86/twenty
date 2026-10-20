@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Text.Json;
+using System.Security.Cryptography;
 using Microsoft.Data.Sqlite;
 using Twenty.Core.Data;
 using Twenty.Core.Research;
@@ -40,6 +41,14 @@ public sealed class UniverseRunStoreTests
         var expected = UniverseBacktest.Run(panel, request.Config, request.Costs);
         Assert.Equal(expected.Summaries.ToArray(), report.Summaries.ToArray());
         Assert.Equal(entry.PanelSha256, report.PanelSha256);
+        var requestBytes = store.UniverseRequestBytes(entry.Id)!;
+        Assert.Equal(entry.RequestArtifactSha256, Convert.ToHexStringLower(SHA256.HashData(requestBytes)));
+        var retained = JsonSerializer.Deserialize<UniverseRunRequest>(requestBytes, ResearchStore.Json)!;
+        Assert.Equal(request.RequestId, retained.RequestId);
+        Assert.Equal(request.DatasetSha256, retained.DatasetSha256);
+        Assert.Equal(request.Decisions.ToArray(), retained.Decisions.ToArray());
+        Assert.Equal(request.Config, retained.Config);
+        Assert.Equal(request.Costs, retained.Costs);
         Assert.Single(store.ListUniverseRuns());
     }
 
@@ -70,6 +79,7 @@ public sealed class UniverseRunStoreTests
         Assert.NotNull(entry.PanelSha256);
         Assert.Null(entry.ReportSha256);
         Assert.Null(store.UniverseReport(entry.Id));
+        Assert.NotNull(store.UniverseRequestBytes(entry.Id));
         Assert.Equal(entry.Id, store.ExecuteUniverseRun(request, "test-code").Id);
         Assert.Single(store.ListUniverseRuns());
     }
@@ -128,5 +138,65 @@ public sealed class UniverseRunStoreTests
         var entry = store.ExecuteUniverseRun(Request(sha), "test");
         File.AppendAllText(Path.Combine(w.Root, "runs", entry.Id, "universe-report.json"), " ");
         Assert.Equal("report-integrity", Assert.Throws<ResearchException>(() => store.UniverseReport(entry.Id)).Code);
+    }
+
+    [Fact]
+    public void TamperedRequestFailsIntegrityWithoutChangingTheRecordedTrial()
+    {
+        using var w = new Workspace(); using var store = new ResearchStore(w.Root);
+        var sha = store.ImportUniverseDataset(DatasetBytes());
+        var request = Request(sha);
+        var entry = store.ExecuteUniverseRun(request, "test");
+        File.AppendAllText(Path.Combine(w.Root, "runs", entry.Id, "universe-request.json"), " ");
+        Assert.Equal("universe-request-integrity", Assert.Throws<ResearchException>(() => store.UniverseRequestBytes(entry.Id)).Code);
+        Assert.Equal(entry, store.ExecuteUniverseRun(request, "replay-does-not-repair-evidence"));
+        Assert.NotNull(store.UniverseReport(entry.Id));
+        Assert.Null(store.UniverseRequestBytes(new string('a', 32)));
+    }
+
+    [Fact]
+    public void ReplayDoesNotNeedTheOriginalDatasetAndDoesNotRecompute()
+    {
+        using var w = new Workspace(); using var store = new ResearchStore(w.Root);
+        var sha = store.ImportUniverseDataset(DatasetBytes());
+        var request = Request(sha);
+        var entry = store.ExecuteUniverseRun(request, "test");
+        File.Delete(Path.Combine(w.Root, "universe-datasets", sha + ".json"));
+        Assert.Equal(entry, store.ExecuteUniverseRun(request, "different-code"));
+        Assert.NotNull(store.UniverseRequestBytes(entry.Id));
+        Assert.NotNull(store.UniverseReport(entry.Id));
+        Assert.Single(store.ListUniverseRuns());
+    }
+
+    [Fact]
+    public void UniverseArtifactsRespectTheSameWorkspaceCapacityAsModelReports()
+    {
+        using var w = new Workspace(); using var store = new ResearchStore(w.Root);
+        var sha = store.ImportUniverseDataset(DatasetBytes());
+        using (var sparse = File.Create(Path.Combine(w.Root, "authored-capacity-fixture"))) sparse.SetLength(256L * 1024 * 1024);
+        Assert.Equal("artifact-capacity", Assert.Throws<ResearchException>(() => store.ExecuteUniverseRun(Request(sha), "test")).Code);
+        Assert.Empty(store.ListUniverseRuns());
+    }
+
+    [Fact]
+    public void LegacyTrialCannotInventARequestArtifactButItsReportAndReplayRemainReadable()
+    {
+        using var w = new Workspace(); using var store = new ResearchStore(w.Root);
+        var sha = store.ImportUniverseDataset(DatasetBytes());
+        var request = Request(sha);
+        var entry = store.ExecuteUniverseRun(request, "legacy-fixture");
+        File.Delete(Path.Combine(w.Root, "runs", entry.Id, "universe-request.json"));
+        using (var db = new SqliteConnection($"Data Source={Path.Combine(w.Root, "research.db")}"))
+        {
+            db.Open(); using var update = db.CreateCommand();
+            update.CommandText = "UPDATE universe_runs SET json=$json WHERE id=$id";
+            update.Parameters.AddWithValue("$id", entry.Id);
+            update.Parameters.AddWithValue("$json", JsonSerializer.Serialize(entry with { RequestArtifactSha256 = null }, ResearchStore.Json));
+            update.ExecuteNonQuery();
+        }
+        Assert.Equal("universe-request-unavailable", Assert.Throws<ResearchException>(() => store.UniverseRequestBytes(entry.Id)).Code);
+        Assert.Null(store.ExecuteUniverseRun(request, "newer-code").RequestArtifactSha256);
+        Assert.NotNull(store.UniverseReport(entry.Id));
+        Assert.False(File.Exists(Path.Combine(w.Root, "runs", entry.Id, "universe-request.json")));
     }
 }

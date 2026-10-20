@@ -20,3 +20,8 @@ Since 16 October 2026 every API route except `/health/*` and `/api/auth/*` needs
 - **Plain HTTP:** cookies are `Secure` by default, which Nginx Proxy Manager's HTTPS satisfies. For a local run over plain HTTP in a browser that rejects such cookies, set `TWENTY_INSECURE_COOKIES=true`; never set it on Quark.
 
 Rollback: revert the app on `dev`, wait for successful CI/publication and repeat Dockhand sync/deploy. If Compose changes caused the problem, revert that change in docker-configs first and wait for Compose CI. Secrets must stay in Dockhand's encrypted store or local private credential files; never put them in Compose or Git.
+
+
+## Quark checkpoint, 20 October 2026
+
+Dockhand deployed application `47d25c8` after passing CI and confirming the rolling image matched its commit image. Compose source remained byte-identical to the previously deployed Git-backed stack. Readiness is healthy in research mode; automatic purchases remain disabled. The 61 run records, three datasets, seven paper accounts, signals, universe register and completed engineering study summary were preserved. All 58 successful report artifacts remain readable under their original stored hashes, with financial values unchanged; HTTP reports now include an empty `stockTransfers` collection on ordinary steps from the successor-settlement schema addition. The existing study's exact original plan bytes were preserved. Private before/after evidence is retained outside Git. This deploy did not create a model trial or open a final holdout.

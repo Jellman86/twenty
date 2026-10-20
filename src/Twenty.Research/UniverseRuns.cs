@@ -14,7 +14,7 @@ public sealed record UniverseRunEntry(string Id, string DatasetSha256, string Da
     string Status, DateTimeOffset CreatedAt, DateTimeOffset? FinishedAt, string? ErrorCode, string CodeCommit,
     string RequestSha256, string? PanelSha256 = null, string? ReportSha256 = null,
     DateOnly? InformationStart = null, DateOnly? InformationEnd = null,
-    string? IdentityScheme = null, string? ResearchSha256 = null);
+    string? IdentityScheme = null, string? ResearchSha256 = null, string? RequestArtifactSha256 = null);
 
 /// <summary>Registered changing-universe trials. Every admitted attempt is inserted as
 /// "started" before any computation and reaches exactly one terminal state, so failures
@@ -64,22 +64,12 @@ public sealed partial class ResearchStore
     {
         if (request is null || !Guid.TryParseExact(request.RequestId, "D", out _) || !IsSha256(request.DatasetSha256) ||
             request.UniverseId is not { Length: >= 1 and <= 128 } || request.Decisions.IsDefault ||
-            request.Decisions.Length is < 2 or > 600 || request.Decisions.Any(d => d == default) ||
             request.MaximumPriceAgeDays is < 1 or > 92 || request.Config is null || request.Costs is null)
             throw new ResearchException("universe-run-request");
         request.Config.Validate(); request.Costs.Validate();
-        if (!File.Exists(UniverseDatasetPath(request.DatasetSha256))) throw new ResearchException("dataset-not-found");
-        var bytes = DatasetArchive.ReadBounded(UniverseDatasetPath(request.DatasetSha256));
-        if (Convert.ToHexStringLower(SHA256.HashData(bytes)) != request.DatasetSha256) throw new ResearchException("dataset-integrity");
-        var datasetFile = DatasetJson.Read(bytes);
-        // Include warm-up returns and the bounded stale-price lookback, not just the
-        // later evaluated periods. Persist this before any panel/return computation.
-        var first = DateOnly.FromDateTime(request.Decisions.Min().UtcDateTime);
-        var informationStart = DateOnly.FromDayNumber(Math.Max(0, first.DayNumber - request.MaximumPriceAgeDays));
-        var informationEnd = DateOnly.FromDateTime(request.Decisions.Max().UtcDateTime);
-        var requestHash = Convert.ToHexStringLower(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(
-            new { request.DatasetSha256, request.UniverseId, request.Decisions, request.MaximumPriceAgeDays, request.Config, request.Costs }, Json)));
+        var requestHash = UniverseRequestHash(request);
         UniverseRunEntry entry;
+        DatasetFile datasetFile;
         lock (gate)
         {
             using var db = Open(); using var transaction = db.BeginTransaction();
@@ -92,6 +82,17 @@ public sealed partial class ResearchStore
                 if (prior.RequestSha256 != requestHash) throw new ResearchException("request-id-conflict");
                 return prior;
             }
+            if (request.Decisions.Length is < 2 or > 600 || request.Decisions.Any(d => d == default))
+                throw new ResearchException("universe-run-request");
+            if (!File.Exists(UniverseDatasetPath(request.DatasetSha256))) throw new ResearchException("dataset-not-found");
+            var bytes = DatasetArchive.ReadBounded(UniverseDatasetPath(request.DatasetSha256));
+            if (Convert.ToHexStringLower(SHA256.HashData(bytes)) != request.DatasetSha256) throw new ResearchException("dataset-integrity");
+            datasetFile = DatasetJson.Read(bytes);
+            // Include warm-up returns and the bounded stale-price lookback, not just the
+            // later evaluated periods. Persist this before any panel/return computation.
+            var first = DateOnly.FromDateTime(request.Decisions.Min().UtcDateTime);
+            var informationStart = DateOnly.FromDayNumber(Math.Max(0, first.DayNumber - request.MaximumPriceAgeDays));
+            var informationEnd = DateOnly.FromDateTime(request.Decisions.Max().UtcDateTime);
             if (!datasetFile.Manifest.Synthetic)
                 GuardStudyReservations(informationStart, informationEnd);
             using var count = db.CreateCommand(); count.Transaction = transaction;
@@ -101,6 +102,11 @@ public sealed partial class ResearchStore
                 datasetFile.Manifest.Synthetic, request.UniverseId, "started", clock.GetUtcNow(), null, null,
                 codeCommit, requestHash, InformationStart: informationStart, InformationEnd: informationEnd,
                 IdentityScheme: ResearchIdentity.Scheme, ResearchSha256: ResearchIdentity.Current.Sha256);
+            var requestBytes = JsonSerializer.SerializeToUtf8Bytes(request, Json);
+            EnsureArtifactCapacity(requestBytes);
+            var directory = Path.Combine(Root, "runs", entry.Id); Directory.CreateDirectory(directory);
+            ImmutableWrite(Path.Combine(directory, "universe-request.json"), requestBytes);
+            entry = entry with { RequestArtifactSha256 = Convert.ToHexStringLower(SHA256.HashData(requestBytes)) };
             using var insert = db.CreateCommand(); insert.Transaction = transaction;
             insert.CommandText = "INSERT INTO universe_runs(id,request_id,dataset_sha,json,status) VALUES($id,$request,$dataset,$json,'started')";
             insert.Parameters.AddWithValue("$id", entry.Id); insert.Parameters.AddWithValue("$request", request.RequestId);
@@ -116,9 +122,11 @@ public sealed partial class ResearchStore
             panelSha = panel.Sha256;
             var report = UniverseBacktest.Run(panel, request.Config, request.Costs);
             var reportBytes = JsonSerializer.SerializeToUtf8Bytes(report, Json);
-            if (reportBytes.Length > 8 * 1024 * 1024) throw new ResearchException("artifact-capacity");
-            var directory = Path.Combine(Root, "runs", entry.Id); Directory.CreateDirectory(directory);
-            ImmutableWrite(Path.Combine(directory, "universe-report.json"), reportBytes);
+            lock (gate)
+            {
+                EnsureArtifactCapacity(reportBytes);
+                ImmutableWrite(Path.Combine(Root, "runs", entry.Id, "universe-report.json"), reportBytes);
+            }
             entry = entry with
             {
                 Status = "succeeded", FinishedAt = clock.GetUtcNow(), PanelSha256 = panelSha,
@@ -150,6 +158,24 @@ public sealed partial class ResearchStore
     }
 
     public UniverseRunEntry? FindUniverseRun(string id) => ListUniverseRuns().SingleOrDefault(x => x.Id == id);
+
+    private static string UniverseRequestHash(UniverseRunRequest request) => Convert.ToHexStringLower(SHA256.HashData(
+        JsonSerializer.SerializeToUtf8Bytes(new { request.DatasetSha256, request.UniverseId, request.Decisions,
+            request.MaximumPriceAgeDays, request.Config, request.Costs }, Json)));
+
+    public byte[]? UniverseRequestBytes(string id)
+    {
+        var entry = FindUniverseRun(id);
+        if (entry is null) return null;
+        if (entry.RequestArtifactSha256 is null) throw new ResearchException("universe-request-unavailable");
+        var bytes = DatasetArchive.ReadBounded(Path.Combine(Root, "runs", entry.Id, "universe-request.json"));
+        if (Convert.ToHexStringLower(SHA256.HashData(bytes)) != entry.RequestArtifactSha256)
+            throw new ResearchException("universe-request-integrity");
+        var request = JsonSerializer.Deserialize<UniverseRunRequest>(bytes, Json);
+        if (request is null || UniverseRequestHash(request) != entry.RequestSha256)
+            throw new ResearchException("universe-request-integrity");
+        return bytes;
+    }
 
     public UniverseBacktestReport? UniverseReport(string id)
     {
