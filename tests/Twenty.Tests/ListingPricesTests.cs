@@ -99,7 +99,7 @@ public sealed class ListingPricesTests
     {
         var bytes = Encoding.UTF8.GetBytes(json);
         store.Record(new(Guid.NewGuid().ToString("N"), "tiingo-history-" + symbol.ToLowerInvariant().Replace('.', '-'),
-            "https://api.tiingo.com/authored", CaptureStore.Hash(bytes), bytes.Length, "application/json",
+            $"https://api.tiingo.com/tiingo/daily/{symbol}/prices", CaptureStore.Hash(bytes), bytes.Length, "application/json",
             at, "authored-unit", false), bytes, false);
     }
 
@@ -112,6 +112,41 @@ public sealed class ListingPricesTests
     [
         ("2022-12-30", 20.0m, 0m, 1m), ("2023-01-03", 19.5m, 0m, 1m),
     ];
+
+    [Fact]
+    public void LegacyPunctuationBucketNeverMixesDistinctTickerVintages()
+    {
+        using var w = new Workspace();
+        string[] symbols = ["AAA.B", "AAA-B"];
+        var identity = Identity(NasdaqObserved, TiingoObserved, Created, symbols,
+            symbols.Select(s => (s, (DateOnly?)new DateOnly(2015, 1, 2), (DateOnly?)null, "present-at-final-snapshot")).ToArray(), symbols);
+        Record(w.Store, "AAA.B", HistoryJson([("2026-01-02", 10m, 0m, 1m)]), CaptureAt);
+        Record(w.Store, "AAA-B", HistoryJson([("2026-01-02", 90m, 0m, 1m)]), CaptureAt.AddMinutes(1));
+        var result = ListingPrices.Convert(w.Store, identity.Dataset, "distinct-tickers", Created);
+        foreach (var symbol in symbols)
+        {
+            var listing = result.Dataset.Observations.OfType<Listing>().First(l => l.Symbol == symbol);
+            var bar = Assert.Single(result.Dataset.Observations.OfType<PriceBar>(), b => b.ListingId == listing.ListingId && b.Basis == PriceBasis.Raw);
+            Assert.Equal(symbol == "AAA.B" ? 10m : 90m, bar.Close);
+            Assert.Equal(symbol == "AAA.B" ? CaptureAt : CaptureAt.AddMinutes(1), bar.Evidence.AvailableAt);
+        }
+    }
+
+    [Fact]
+    public void AnotherTickersLegacyCaptureCannotFillMissingHistory()
+    {
+        using var w = new Workspace();
+        string[] symbols = ["AAA", "AAA.B"];
+        var identity = Identity(NasdaqObserved, TiingoObserved, Created, symbols,
+            symbols.Select(s => (s, (DateOnly?)new DateOnly(2015, 1, 2), (DateOnly?)null, "present-at-final-snapshot")).ToArray(), symbols);
+        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
+        Record(w.Store, "AAA-B", HistoryJson(AaaBars), CaptureAt);
+        var result = ListingPrices.Convert(w.Store, identity.Dataset, "missing-distinct-history", Created);
+        var excluded = Assert.Single(result.Excluded);
+        Assert.Equal("AAA.B", excluded.Symbol);
+        Assert.Equal("history-not-captured", excluded.Reason);
+        Assert.DoesNotContain(result.Dataset.Observations.OfType<Listing>(), l => l.Symbol == "AAA.B");
+    }
 
     [Fact]
     public void ConvertProducesBothBasesAtListingTimezoneSessionCloses()

@@ -71,7 +71,7 @@ public sealed partial class TiingoClient(HttpClient http, CaptureStore store, st
                 "&endDate=" + request.To.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
             var bytes = await Get(uri, symbol, ct);
             var dates = ValidateHistory(bytes, request.From, request.To);
-            var observation = new CaptureObservation(Guid.NewGuid().ToString("N"), "tiingo-history-" + symbol.ToLowerInvariant().Replace('.', '-'),
+            var observation = new CaptureObservation(Guid.NewGuid().ToString("N"), TiingoHistoryIdentity.SourceId(symbol),
                 uri.AbsoluteUri, CaptureStore.Hash(bytes), bytes.Length, "application/json", time.GetUtcNow(), "tiingo-read-only", false);
             store.Record(observation, bytes, false); Success();
             return new(symbol, dates.Count, dates.FirstOrDefault() is var first && first != default ? first : null,

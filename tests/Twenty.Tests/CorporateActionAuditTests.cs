@@ -26,7 +26,7 @@ public sealed class CorporateActionAuditTests
             divCash = day == 5 ? dividend : extra && day == 7 ? 0.25m : 0m,
             splitFactor = day == 3 ? split : 1m
         }).OrderBy(b => b.date, StringComparer.Ordinal));
-    private static CaptureObservation Capture(byte[] history) => new("0123456789abcdef0123456789abcdef", "tiingo-history-aaa", "https://api.tiingo.com/authored",
+    private static CaptureObservation Capture(byte[] history) => new("0123456789abcdef0123456789abcdef", "tiingo-history-aaa", "https://api.tiingo.com/tiingo/daily/AAA/prices",
         CaptureStore.Hash(history), history.Length, "application/json", new(2024, 6, 11, 0, 0, 0, TimeSpan.Zero), "authored-fixture", false);
     private static CorporateActionAuditReport Run(byte[]? history = null, ActionReferences? refs = null) =>
         CorporateActionAudit.Run(Capture(history ?? History()), history ?? History(), JsonSerializer.SerializeToUtf8Bytes(refs ?? References(), DatasetJson.Options), _ => Source);
@@ -124,6 +124,7 @@ public sealed class CorporateActionAuditTests
     [InlineData("symbol")]
     [InlineData("hash")]
     [InlineData("size")]
+    [InlineData("url")]
     public void MislabelledOrTamperedCaptureMetadataIsRefused(string field)
     {
         var bytes = History();
@@ -132,10 +133,21 @@ public sealed class CorporateActionAuditTests
         {
             "symbol" => capture with { SourceId = "tiingo-history-bbb" },
             "hash" => capture with { Sha256 = new string('a', 64) },
+            "url" => capture with { Url = "https://api.tiingo.com/tiingo/daily/BBB/prices" },
             _ => capture with { Bytes = bytes.Length + 1 }
         };
         Assert.Equal("action-history-integrity", Assert.Throws<ResearchException>(() => CorporateActionAudit.Run(
             capture, bytes, JsonSerializer.SerializeToUtf8Bytes(References(), DatasetJson.Options), _ => Source)).Code);
+    }
+
+    [Fact]
+    public void CollidingLegacySourceIdCannotBindAnotherTickersActions()
+    {
+        var bytes = History();
+        var capture = Capture(bytes) with { SourceId = "tiingo-history-aaa-b", Url = "https://api.tiingo.com/tiingo/daily/AAA-B/prices" };
+        var refs = JsonSerializer.SerializeToUtf8Bytes(References() with { Symbol = "AAA.B" }, DatasetJson.Options);
+        Assert.Equal("action-history-integrity", Assert.Throws<ResearchException>(() =>
+            CorporateActionAudit.Run(capture, bytes, refs, _ => Source)).Code);
     }
 
     [Theory]

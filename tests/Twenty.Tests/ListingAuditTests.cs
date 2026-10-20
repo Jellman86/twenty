@@ -25,7 +25,7 @@ public sealed class ListingAuditTests
     {
         var id = Guid.NewGuid().ToString("N");
         store.Record(new(id, "tiingo-history-" + symbol.ToLowerInvariant().Replace('.', '-'),
-            "https://api.tiingo.com/authored", CaptureStore.Hash(Encoding.UTF8.GetBytes(json)), Encoding.UTF8.GetByteCount(json),
+            $"https://api.tiingo.com/tiingo/daily/{symbol}/prices", CaptureStore.Hash(Encoding.UTF8.GetBytes(json)), Encoding.UTF8.GetByteCount(json),
             "application/json", at, "authored-unit", false), Encoding.UTF8.GetBytes(json), false);
         return id;
     }

@@ -121,8 +121,7 @@ public static partial class ListingAudit
         if (rows.Any(r => r.Status == "absent-from-later-snapshot")) findings.Add("closed-absent-from-directory");
         if (!nasdaqSources) findings.Add("no-nasdaq-directory-evidence");
 
-        var sourceId = "tiingo-history-" + symbol.ToLowerInvariant().Replace('.', '-');
-        var observations = store.Observations(sourceId);
+        var observations = TiingoHistoryIdentity.Observations(store, symbol);
         CaptureObservation? latest = null;
         var bars = ImmutableArray<TiingoBar>.Empty;
         if (observations.Count == 0) findings.Add("no-history-capture");

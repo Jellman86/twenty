@@ -32,7 +32,7 @@ public static class CorporateActionAudit
     public static CorporateActionAuditReport Build(CaptureStore store, byte[] reference, Func<string, byte[]> sourceBytes)
     {
         var refs = ReadReferences(reference);
-        var captures = store.Observations(SourceId(refs.Symbol));
+        var captures = TiingoHistoryIdentity.Observations(store, refs.Symbol);
         if (captures.Count == 0) throw new ResearchException("action-history-not-captured");
         var latestAt = captures.Max(c => c.ObservedAt);
         var latest = captures.Where(c => c.ObservedAt == latestAt).OrderBy(c => c.Id, StringComparer.Ordinal).ToArray();
@@ -44,13 +44,11 @@ public static class CorporateActionAudit
     public static CorporateActionAuditReport Run(CaptureObservation capture, byte[] history, byte[] reference, Func<string, byte[]> sourceBytes)
     {
         var refs = ReadReferences(reference);
-        if (capture.SourceId != SourceId(refs.Symbol) || capture.Sha256 != Hash(history) || capture.Bytes != history.Length ||
+        if (!TiingoHistoryIdentity.Matches(capture, refs.Symbol) || capture.Sha256 != Hash(history) || capture.Bytes != history.Length ||
             string.IsNullOrWhiteSpace(capture.Id) || capture.ObservedAt == default)
             throw new ResearchException("action-history-integrity");
         return Audit(capture, history, reference, refs, sourceBytes);
     }
-
-    private static string SourceId(string symbol) => "tiingo-history-" + symbol.ToLowerInvariant().Replace('.', '-');
 
     private static ActionReferences ReadReferences(byte[] reference)
     {

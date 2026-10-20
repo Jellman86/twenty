@@ -43,8 +43,7 @@ public static class TerminalHistoryAudit
         var results = ImmutableArray.CreateBuilder<TerminalHistoryResult>();
         foreach (var subject in refs.Subjects)
         {
-            var sourceId = "tiingo-history-" + subject.Symbol.ToLowerInvariant().Replace('.', '-');
-            var captures = store.Observations(sourceId);
+            var captures = TiingoHistoryIdentity.Observations(store, subject.Symbol, "terminal-history-request");
             if (captures.Count == 0) throw new ResearchException("terminal-history-not-captured");
             var latestAt = captures.Max(c => c.ObservedAt);
             var latest = captures.Where(c => c.ObservedAt == latestAt).OrderBy(c => c.Id, StringComparer.Ordinal).ToArray();
@@ -52,7 +51,7 @@ public static class TerminalHistoryAudit
             if (latest.Select(c => (c.Sha256, c.Url, c.Bytes)).Distinct().Count() != 1)
                 throw new ResearchException("terminal-history-capture-conflict");
             var capture = latest[0];
-            if (capture.SourceId != sourceId || capture.Bytes is < 0 or > 8 * 1024 * 1024 ||
+            if (!TiingoHistoryIdentity.Matches(capture, subject.Symbol) || capture.Bytes is < 0 or > 8 * 1024 * 1024 ||
                 capture.Sha256 is not { Length: 64 } || capture.Sha256.Any(c => !char.IsAsciiHexDigitLower(c)) ||
                 !Guid.TryParseExact(capture.Id, "N", out _) || capture.ObservedAt == default)
                 throw new ResearchException("terminal-history-integrity");

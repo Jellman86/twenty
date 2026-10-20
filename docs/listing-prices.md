@@ -1,4 +1,4 @@
-# Price conversion evidence contract (`listing-prices-v3`)
+# Price conversion evidence contract (`listing-prices-v4`)
 
 Implemented 19 October 2026 on `dev`, advancing [#5](https://github.com/Jellman86/twenty/issues/5) and completing the step the [listing identity contract](listing-identity.md) explicitly left open: `Twenty.Ingestion.Listings.ListingPrices` converts captured Tiingo daily histories into [v1](data-contract-v1.md) `PriceBar` observations (raw and total-return-adjusted) plus split/dividend `CorporateAction` observations, over a validated two-source identity dataset. The result is a dataset shape that `ChangingUniversePanel` can price from forward-collected evidence. The converter has authored-fixture coverage and a bounded genuine AAPL conversion smoke, recorded below.
 
@@ -16,7 +16,15 @@ dotnet run --project src/Twenty.Data -c Release -- listing-prices \
 
 `--created-at` is explicit for reproducibility, must include an offset and cannot exceed the current clock. It must also cover all used captures under the dataset validator. Repeating the same inputs and cutoff produces the same immutable content address. Work from a private offline copy of the capture store, never open the running app's writer store with this command.
 
-Inputs are a `CaptureStore` holding `tiingo-history-<ticker>` response captures and the `DatasetFile` produced by `ListingIdentity.Convert`. Output is `ListingPricesResult(Dataset, BarsAdded, ActionsAdded, OutsideIntervalSkipped, Excluded)`; raw captures and datasets stay outside Git.
+Inputs are a `CaptureStore` holding Tiingo history response captures and the `DatasetFile` produced by `ListingIdentity.Convert`. Output is `ListingPricesResult(Dataset, BarsAdded, ActionsAdded, OutsideIntervalSkipped, Excluded)`; raw captures and datasets stay outside Git.
+
+## Request ticker identity (20 October 2026)
+
+Legacy source buckets replaced dots with hyphens, so `AAA.B` and `AAA-B` shared `tiingo-history-aaa-b`. The bucket alone cannot identify a history. All history readers now require its recorded HTTPS `api.tiingo.com/tiingo/daily/<ticker>/prices` URL to identify the requested ticker and agree with its source bucket. Valid captures of the other ticker in a shared legacy bucket are ignored for this listing; missing/invalid URL identity fails closed (`tiingo-history-provenance`, or the terminal audit's existing request refusal). Missing target history remains an explicit exclusion, never a substituted price series.
+
+New unpunctuated captures keep their original IDs, such as `tiingo-history-aapl`. Punctuated tickers use `tiingo-history-v2-` followed by lower-case ticker characters with every dot escaped as `-d` and every hyphen as `-h`. Thus `AAA.B` and `AAA-B` become `tiingo-history-v2-aaa-db` and `tiingo-history-v2-aaa-hb`. Encoding every hyphen prevents escape aliases and stays within the capture store's 64-character bound for the maximum 20-character ticker. Readers inspect both canonical and legacy buckets without duplicating an unpunctuated bucket. URL validation is still required because a new bucket can coincide with another ticker's legacy bucket.
+
+Original capture logs and datasets are not migrated or repaired. The converter advances from v3 to v4 to record the stronger provenance requirement; the Python wire auditor advances to `listing-prices-wire-v3` and independently keys histories by their original URL ticker. Existing valid AAPL observations and the source-bound action/terminal reports are preserved in the [replay evidence](ticker-identity-smoke.json). This binds recorded metadata, not source authenticity or historical symbol-reuse identity; the validated listing interval remains required.
 
 ## The contract
 

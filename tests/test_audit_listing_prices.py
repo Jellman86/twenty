@@ -36,6 +36,30 @@ def fixture():
 
 
 class ListingPriceWireAuditTests(unittest.TestCase):
+    def test_request_identity_disambiguates_old_and_new_capture_buckets(self):
+        for ticker, bucket in [("AAA.B", "tiingo-history-aaa-b"), ("AAA-B", "tiingo-history-aaa-b"),
+                               ("AAA.B", "tiingo-history-v2-aaa-db"), ("AAA-B", "tiingo-history-v2-aaa-hb")]:
+            with self.subTest(ticker=ticker, bucket=bucket):
+                record = {"sourceId": bucket, "url": f"https://api.tiingo.com/tiingo/daily/{ticker}/prices"}
+                self.assertEqual(ticker.lower(), audit.capture_symbol(record, bucket))
+                with self.assertRaises(ValueError):
+                    audit.capture_symbol(record, "tiingo-history-wrong")
+        for url in ["https://api.tiingo.com/authored", "https://evil.example/tiingo/daily/AAA/prices",
+                    "https://api.tiingo.com:" + "444/tiingo/daily/AAA/prices",
+                    "https://user@api.tiingo.com/tiingo/daily/AAA/prices",
+                    "https://api.tiingo.com/tiingo/daily/AAA/prices#other"]:
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                audit.capture_symbol({"sourceId": "tiingo-history-aaa", "url": url}, "tiingo-history-aaa")
+
+    def test_dotted_and_hyphenated_prices_cannot_substitute_for_each_other(self):
+        dataset, captures = fixture()
+        dataset["observations"][0]["providerIds"][0]["value"] = "AAA.B"
+        rows = next(iter(captures.values()))
+        captured = next(iter(captures))[1]
+        with self.assertRaises((ValueError, KeyError)):
+            audit.audit(dataset, {("aaa-b", captured): rows})
+        self.assertTrue(audit.audit(dataset, {("aaa.b", captured): rows})["valid"])
+
     def test_both_bases_and_action_match_the_wire(self):
         dataset, captures = fixture()
         result = audit.audit(dataset, captures)

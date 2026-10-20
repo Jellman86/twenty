@@ -1,0 +1,29 @@
+{
+  "oldDatasetSha256": "ff7c3eb0c5925291927ec7c7b7b09eb75159a50606395809775cf9feffb755f5",
+  "newDatasetSha256": "9f7e88b5addc9969d359706de5080bc93597d9deed0d34dd487501dbe3f91778",
+  "observationsUnchanged": 5980,
+  "calendarUnchanged": true,
+  "checkedBars": 5930,
+  "converter": "listing-prices-v4",
+  "auditVersion": "listing-prices-wire-v3",
+  "vendorRequests": 0,
+  "auditReplays": [
+    {
+      "audit": "actions",
+      "byteIdentical": true,
+      "sha256": "10c98e656e780a98bd2823e17324a0776ca29b4d26da2cc0abb6f6e1a8131e41",
+      "valid": true
+    },
+    {
+      "audit": "terminal",
+      "byteIdentical": true,
+      "sha256": "1d696373e2b313167d147289bc0ee15cfc8e62d7bcd0ee6a4cace54724c12ddc",
+      "valid": false
+    }
+  ],
+  "limitations": [
+    "One captured active-listing conversion; no whole-market acceptance.",
+    "Request URLs bind recorded ticker metadata, not source authenticity or historical availability.",
+    "The terminal report is unchanged and remains invalid; no flagged row is repaired or accepted."
+  ]
+}

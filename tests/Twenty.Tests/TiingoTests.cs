@@ -98,6 +98,18 @@ public sealed class TiingoTests
         Assert.Empty(TiingoClient.ValidateHistory(Encoding.UTF8.GetBytes("[]"), new(2020, 1, 1), new(2020, 1, 3)));
         Assert.DoesNotContain(FakeToken, string.Join("", Directory.EnumerateFiles(f.Root, "*", SearchOption.AllDirectories).Where(p => Path.GetFileName(p) != ".writer.lock").Select(File.ReadAllText)));
     }
+    [Fact]
+    public async Task CaptureKeepsDottedAndHyphenatedSymbolsInDistinctBuckets()
+    {
+        using var f = new Fixture(_ => new(HttpStatusCode.OK) { Content = new StringContent("[" + Row + "]") });
+        await f.Client.Capture(new("AAA.B", new(2020, 1, 1), new(2020, 1, 3)), default);
+        f.Clock.Now = f.Clock.Now.AddSeconds(90);
+        await f.Client.Capture(new("AAA-B", new(2020, 1, 1), new(2020, 1, 3)), default);
+        var buckets = Directory.GetDirectories(Path.Combine(f.Root, "capture-v1", "observations"));
+        Assert.Equal(2, buckets.Length);
+        Assert.All(buckets, bucket => Assert.Single(f.Store.Observations(Path.GetFileName(bucket))));
+    }
+
     [Theory]
     [InlineData("duplicate")]
     [InlineData("price")]

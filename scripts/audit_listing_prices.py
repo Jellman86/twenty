@@ -2,10 +2,12 @@
 import argparse
 import hashlib
 import json
+import re
 from collections import Counter, defaultdict
 from datetime import UTC, datetime, time
 from decimal import Decimal
 from pathlib import Path
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 
@@ -20,6 +22,22 @@ def instant(value):
 def check_equal(actual, expected, label):
     if actual != expected:
         raise ValueError(label)
+
+
+def capture_symbol(record, bucket):
+    """The recorded request disambiguates old dot-to-hyphen source buckets."""
+    uri = urlsplit(record["url"])
+    match = re.fullmatch(r"/tiingo/daily/([A-Za-z][A-Za-z0-9.-]{0,19})/prices", uri.path)
+    if (uri.scheme != "https" or uri.hostname != "api.tiingo.com" or uri.port not in (None, 443)
+            or uri.username is not None or uri.password is not None or uri.fragment or not match):
+        raise ValueError("capture request identity")
+    symbol = match[1].lower()
+    legacy = "tiingo-history-" + symbol.replace(".", "-")
+    canonical = ("tiingo-history-v2-" + symbol.replace("-", "-h").replace(".", "-d")
+                 if "." in symbol or "-" in symbol else "tiingo-history-" + symbol)
+    if record["sourceId"] != bucket or bucket not in (legacy, canonical):
+        raise ValueError("capture source identity")
+    return symbol
 
 
 def audit(dataset, captures, schedule=None, schedule_sha=None):
@@ -58,7 +76,7 @@ def audit(dataset, captures, schedule=None, schedule_sha=None):
         ticker = next(p["value"] for p in listing["providerIds"] if p["namespace"] == "tiingo.ticker")
         action_series = set()
         for (symbol, captured), rows in sorted(captures.items()):
-            if symbol != ticker.lower().replace(".", "-"):
+            if symbol != ticker.lower():
                 continue
             for date, row in rows.items():
                 close = session_close(listing, date)
@@ -84,7 +102,7 @@ def audit(dataset, captures, schedule=None, schedule_sha=None):
         check_equal(evidence["availabilityEvidence"], "observedPublication", "availability evidence")
         date = observation.get("sessionDate") or instant(observation["effectiveAt"]).astimezone(
             ZoneInfo(calendars[listing["calendarId"]]["timeZone"])).date().isoformat()
-        row = captures[(ticker.lower().replace(".", "-"), captured)][date]
+        row = captures[(ticker.lower(), captured)][date]
         close = session_close(listing, date).astimezone(UTC)
         if close > captured:
             raise ValueError("incomplete session emitted")
@@ -133,7 +151,7 @@ def main():
             record = json.loads(line)
             payload = (root / "objects" / (record["sha256"] + ".bin")).read_bytes()
             check_equal(hashlib.sha256(payload).hexdigest(), record["sha256"], "capture checksum")
-            key = (record["sourceId"].removeprefix("tiingo-history-"), instant(record["observedAt"]))
+            key = (capture_symbol(record, path.parent.name), instant(record["observedAt"]))
             rows = {row["date"][:10]: row for row in json.loads(payload, parse_float=Decimal)}
             if key in captures:
                 check_equal(captures[key], rows, "same-instant capture conflict")
@@ -142,7 +160,7 @@ def main():
     calendar_path = Path(__file__).resolve().parent.parent / "src/Twenty.Ingestion/Listings/nasdaq-equity-sessions.v1.json"
     result = audit(read_json(args.dataset), captures, read_json(calendar_path),
                    hashlib.sha256(calendar_path.read_bytes()).hexdigest())
-    result.update({"auditVersion": "listing-prices-wire-v2",
+    result.update({"auditVersion": "listing-prices-wire-v3",
                    "datasetSha256": hashlib.sha256(args.dataset.read_bytes()).hexdigest(),
                    "captures": provenance,
                    "limitations": "Same-producer wire comparison; timestamps checked independently against the shared reviewed session table; not independent economic or calendar-source validation."})

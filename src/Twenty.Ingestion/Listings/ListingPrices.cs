@@ -32,7 +32,7 @@ public sealed record ListingPricesResult(DatasetFile Dataset, int BarsAdded, int
 /// is refused rather than silently revised (a rebuild supersedes by dataset id instead).</summary>
 public static class ListingPrices
 {
-    public const string Version = "listing-prices-v3";
+    public const string Version = "listing-prices-v4";
     public const string SourceId = "tiingo-history";
     public const string SourceLocation = "urn:twenty:capture:tiingo-history";
     /// <summary>Relative tolerance between the adjustment factor implied by adjClose and the
@@ -74,8 +74,7 @@ public static class ListingPrices
             var rows = listings[listingId];
             var symbol = rows[0].Symbol;
             var ticker = rows[0].ProviderIds.FirstOrDefault(p => p.Namespace == "tiingo.ticker")?.Value ?? symbol;
-            var historySource = "tiingo-history-" + ticker.ToLowerInvariant().Replace('.', '-');
-            var captures = store.Observations(historySource).OrderBy(c => c.ObservedAt).ThenBy(c => c.Id, StringComparer.Ordinal).ToArray();
+            var captures = TiingoHistoryIdentity.Observations(store, ticker).OrderBy(c => c.ObservedAt).ThenBy(c => c.Id, StringComparer.Ordinal).ToArray();
             if (captures.Length == 0)
             { excluded.Add(new(symbol, "history-not-captured")); excludedIds.Add(listingId); continue; }
             // A timezone alone does not identify an exchange session calendar.
