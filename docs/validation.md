@@ -1,5 +1,9 @@
 # Validation record
 
+## Post-Muse correctness review (20 October 2026)
+
+Reviewed the complete 12-commit range `9144ede..6b2b8e2`, including capture conversion, strict adjusted-field parsing, monthly/availability gates, cash settlement and stock-merger support. The baseline passed 443 .NET tests, but eight new regression cases failed before fixes. See [findings, resolutions and operational checks](reviews/2026-10-20-post-muse.md). All added financial fixtures are authored synthetic inputs; no historical study, final holdout or accelerator run was performed.
+
 ## Total-return bars carry split-adjusted volume (`adjVolume`) (19 October 2026)
 
 The total-return basis was internally inconsistent: `PriceBar` on `TotalReturnAdjusted` carried `adjOpen/adjHigh/adjLow/adjClose` from the vendor's adjusted fields but raw share `volume`, so a bar that claims one adjustment basis mixed an adjusted price with an unadjusted count. `TiingoBar` now parses `adjVolume` with the same strict rule as the adjusted OHLC fields (present, non-negative; a missing or negative value fails `tiingo-history-number`), the raw bar keeps `volume`, and the total-return bar carries `adjVolume`. The conversion test asserts both volumes on the same session (1000 raw, 2000 adjusted), so the mapping cannot regress into a silent copy; the parse theory gains missing and negative `adjVolume` cases. This retires the v1 deferral noted in the converter comment. Two new test cases (443 .NET tests total) over authored synthetic fixtures shaped like genuine Tiingo rows, which always carry `adjVolume`; no genuine capture was converted.

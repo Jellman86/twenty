@@ -121,19 +121,13 @@ public sealed class UniverseBacktestTests
     }
 
     [Fact]
-    public void StockMergerTerminalIsRealizedWithoutCrashingTheBacktest()
+    public void StockMergerBacktestRefusesToLiquidateSuccessorSharesForFree()
     {
-        // ccc delists into successor shares of ddd mid-evaluation (period 23). Equal weight
-        // holds every priced name, so the period return is the average of the four returns:
-        // the stock leg replaces the -100% zero leg rather than throwing or lingering.
         var panel = Panel(Scenario(cccOutcome: TerminalOutcome.Stock, cccSuccessor: "ddd", cccRatio: 0.5m));
-        var merger = panel.Periods[23].Returns.Single(r => r.ListingId == "ccc");
-        Assert.Equal(UniverseReturnStatus.TerminalStock, merger.Status);
-        var report = UniverseBacktest.Run(panel, new(), ZeroCosts);
-        var terminal = Step(report, "equal_weight", 23 - 12).State;
-        Assert.Equal((0.01m + 0m + 0.05m + merger.Return!.Value) / 4m, terminal.PeriodReturn, 4);
-        // The run continues past the merger without the stale holding tripping the next step.
-        Assert.True(Step(report, "equal_weight", 24 - 12).State.EquityGbp > 0m);
+        Assert.Equal(UniverseReturnStatus.TerminalStock,
+            panel.Periods[23].Returns.Single(r => r.ListingId == "ccc").Status);
+        var error = Assert.Throws<ResearchException>(() => UniverseBacktest.Run(panel, new(), ZeroCosts));
+        Assert.Equal("universe-backtest-stock-settlement", error.Code);
     }
 
     [Fact]

@@ -32,7 +32,7 @@ public sealed record ListingPricesResult(DatasetFile Dataset, int BarsAdded, int
 /// is refused rather than silently revised (a rebuild supersedes by dataset id instead).</summary>
 public static class ListingPrices
 {
-    public const string Version = "listing-prices-v1";
+    public const string Version = "listing-prices-v2";
     public const string SourceId = "tiingo-history";
     public const string SourceLocation = "urn:twenty:capture:tiingo-history";
     /// <summary>Relative tolerance between the adjustment factor implied by adjClose and the
@@ -80,23 +80,29 @@ public static class ListingPrices
             // v1 only converts NYSE-timezone listings; any other calendar is outside its scope.
             if (calendars[rows[0].CalendarId] != "America/New_York")
                 throw new ResearchException("price-conversion-calendar");
-            // Same-instant captures must agree on content.
-            var latestAt = captures.Max(c => c.ObservedAt);
-            var latest = captures.Where(c => c.ObservedAt == latestAt).ToArray();
-            if (latest.Select(c => c.Sha256).Distinct(StringComparer.Ordinal).Count() != 1)
+            // This converter is restricted to the USD-major identity contract; assigning a
+            // different denomination would relabel vendor numbers without an FX conversion.
+            if (rows[0].Denomination != new Denomination("USD", QuoteUnit.Major))
+                throw new ResearchException("price-conversion-denomination");
+            var vintages = captures.GroupBy(c => c.ObservedAt).ToArray();
+            if (vintages.Any(g => g.Select(c => c.Sha256).Distinct(StringComparer.Ordinal).Count() != 1))
                 throw new ResearchException("price-conversion-capture-conflict");
+            // Retransmission at the same instant is one vintage, not a revision with a tie.
+            captures = vintages.Select(g => g.First()).ToArray();
             // A later capture must not be narrower than an earlier one: that would silently
             // drop history rather than accumulate it.
             var parsed = captures.ToDictionary(c => c, c => TiingoClient.ParseHistory(store.Bytes(c.Sha256)));
             if (parsed.Values.Any(h => h.Any(b => !AdjustmentConsistent(b))))
             { excluded.Add(new(symbol, "adjustment-inconsistent")); excludedIds.Add(listingId); continue; }
-            var earliestFirst = parsed.Values.Where(h => h.Length > 0).Select(h => h[0].Date)
-                .DefaultIfEmpty(DateOnly.MaxValue).Min();
-            var latestHistory = parsed[latest.OrderBy(c => c.Id, StringComparer.Ordinal).First()];
-            if (latestHistory.Length == 0 || latestHistory[0].Date > earliestFirst)
-                throw new ResearchException("price-conversion-vintage-narrower");
+            var previousDates = new HashSet<DateOnly>();
+            foreach (var capture in captures)
+            {
+                var dates = parsed[capture].Select(b => b.Date).ToHashSet();
+                if (dates.Count == 0 || !previousDates.IsSubsetOf(dates))
+                    throw new ResearchException("price-conversion-vintage-narrower");
+                previousDates = dates;
+            }
 
-            var evidenceBase = rows[0];
             var active = rows.Where(l => l.Status == ListingStatus.Active)
                 .Select(l => (From: DateOnly.FromDateTime(l.EffectiveFrom.UtcDateTime),
                     Until: l.EffectiveUntil is null ? (DateOnly?)null : DateOnly.FromDateTime(l.EffectiveUntil.Value.UtcDateTime)))
@@ -146,19 +152,19 @@ public static class ListingPrices
                     listingBars += 2;
                     priorRawId = rawId;
                     priorTraId = traId;
-                    if (bar.DivCash > 0)
+                    if (bar.DivCash > 0 || priorDivId is not null)
                     {
                         var divId = priorDivId is null ? $"{listingId}-div-{day}" : $"{listingId}-div-{day}-r{revisionIndex}";
-                        actions.Add(new(divId, evidence, listingId, $"{listingId}-div-{day}",
+                        actions.Add(new(divId, evidence with { RevisionOf = priorDivId }, listingId, $"{listingId}-div-{day}",
                             CorporateActionKind.Dividend, closeAt, null, bar.DivCash, rows[0].Denomination.Currency,
                             null, null, TerminalOutcome.NotApplicable));
                         actionCount++;
                         priorDivId = divId;
                     }
-                    if (bar.SplitFactor != 1m)
+                    if (bar.SplitFactor != 1m || priorSplitId is not null)
                     {
                         var splitId = priorSplitId is null ? $"{listingId}-split-{day}" : $"{listingId}-split-{day}-r{revisionIndex}";
-                        actions.Add(new(splitId, evidence, listingId, $"{listingId}-split-{day}",
+                        actions.Add(new(splitId, evidence with { RevisionOf = priorSplitId }, listingId, $"{listingId}-split-{day}",
                             CorporateActionKind.Split, closeAt, bar.SplitFactor, null, null, null, null,
                             TerminalOutcome.NotApplicable));
                         actionCount++;
@@ -178,7 +184,8 @@ public static class ListingPrices
         if (createdAt < maxCapture) throw new ResearchException("price-conversion-created-at");
         var bundle = new StringBuilder();
         foreach (var source in usedCaptures.OrderBy(c => c.SourceId, StringComparer.Ordinal).ThenBy(c => c.ObservedAt))
-            bundle.Append(source.SourceId).Append(':').Append(source.Sha256).Append('\n');
+            bundle.Append(source.SourceId).Append(':').Append(source.ObservedAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture))
+                .Append(':').Append(source.Sha256).Append('\n');
         var historySha = System.Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(bundle.ToString())));
         var kept = identity.Observations.Where(o => o switch
         {

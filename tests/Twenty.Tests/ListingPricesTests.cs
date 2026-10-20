@@ -380,4 +380,73 @@ public sealed class ListingPricesTests
         Assert.Equal(0m, ret.Return);
         Assert.NotEmpty(pit.AsOf(decisions[0]).Prices("listing-aaa-20150102", PriceBasis.TotalReturnAdjusted));
     }
+    [Fact]
+    public void ActionVintagesKeepTheirOwnRevisionChainsAndCanBeCancelled()
+    {
+        using var w = new Workspace();
+        Record(w.Store, "AAA", HistoryJson([("2026-01-02", 10m, 0.25m, 2m)]), CaptureAt.AddDays(-1));
+        Record(w.Store, "AAA", HistoryJson([("2026-01-02", 10m, 0.5m, 3m)]), CaptureAt);
+        Record(w.Store, "AAA", HistoryJson([("2026-01-02", 10m, 0m, 1m)]), CaptureAt.AddHours(1));
+        var result = ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "action-revisions", Created);
+        var pit = new PointInTimeDataset(result.Dataset);
+        foreach (var kind in new[] { CorporateActionKind.Dividend, CorporateActionKind.Split })
+        {
+            var chain = result.Dataset.Observations.OfType<CorporateAction>().Where(a => a.Action == kind)
+                .OrderBy(a => a.Evidence.AvailableAt).ToArray();
+            Assert.Equal(3, chain.Length);
+            Assert.Null(chain[0].Evidence.RevisionOf);
+            Assert.Equal(chain[0].Id, chain[1].Evidence.RevisionOf);
+            Assert.Equal(chain[1].Id, chain[2].Evidence.RevisionOf);
+        }
+        Assert.Equal(0.25m, Assert.Single(pit.AsOf(CaptureAt.AddDays(-1)).EffectiveActions("listing-aaa-20150102"),
+            a => a.Action == CorporateActionKind.Dividend).CashPerShare);
+        var corrected = pit.AsOf(CaptureAt.AddHours(1)).EffectiveActions("listing-aaa-20150102");
+        Assert.Equal(0m, Assert.Single(corrected, a => a.Action == CorporateActionKind.Dividend).CashPerShare);
+        Assert.Equal(1m, Assert.Single(corrected, a => a.Action == CorporateActionKind.Split).SplitRatio);
+    }
+
+    [Fact]
+    public void IdenticalSameInstantCapturesAreIdempotent()
+    {
+        using var w = new Workspace();
+        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
+        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
+        var result = ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "duplicate-capture", Created);
+        Assert.Equal(AaaBars.Length * 2, result.BarsAdded);
+    }
+
+    [Fact]
+    public void EarlierSameInstantConflictsAreRefusedEvenWithALaterCleanCapture()
+    {
+        using var w = new Workspace();
+        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt.AddDays(-1));
+        Record(w.Store, "AAA", HistoryJson([("2026-01-02", 12m, 0m, 1m)]), CaptureAt.AddDays(-1));
+        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
+        var error = Assert.Throws<ResearchException>(() => ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "conflict", Created));
+        Assert.Equal("price-conversion-capture-conflict", error.Code);
+    }
+
+    [Fact]
+    public void IntermediateVintageCannotDropAnInteriorSession()
+    {
+        using var w = new Workspace();
+        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt.AddDays(-2));
+        Record(w.Store, "AAA", HistoryJson(AaaBars.Where((_, i) => i != 2).ToArray()), CaptureAt.AddDays(-1));
+        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
+        var error = Assert.Throws<ResearchException>(() => ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "narrow", Created));
+        Assert.Equal("price-conversion-vintage-narrower", error.Code);
+    }
+
+    [Fact]
+    public void UsdHistoryCannotBeRelabelledAsAnotherCurrency()
+    {
+        using var w = new Workspace();
+        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
+        var identity = BaseIdentity().Dataset;
+        identity = identity with { Observations = identity.Observations.Select(o => o is Listing l
+            ? l with { Denomination = new("GBP", QuoteUnit.Major) } : o).ToImmutableArray() };
+        var error = Assert.Throws<ResearchException>(() => ListingPrices.Convert(w.Store, identity, "wrong-currency", Created));
+        Assert.Equal("price-conversion-denomination", error.Code);
+    }
+
 }

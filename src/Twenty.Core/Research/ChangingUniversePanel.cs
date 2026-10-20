@@ -6,7 +6,8 @@ using Twenty.Core.Data;
 
 namespace Twenty.Core.Research;
 
-public enum UniverseReturnStatus { Priced, Entered, TerminalZero, TerminalCash, TerminalStock, ExitedUnexplained, MissingPrice }
+// Preserve the numeric values in previously serialized reports when adding new statuses.
+public enum UniverseReturnStatus { Priced = 0, Entered = 1, TerminalZero = 2, TerminalCash = 3, ExitedUnexplained = 4, MissingPrice = 5, TerminalStock = 6 }
 public sealed record UniverseMonth(DateTimeOffset DecisionAt, ImmutableArray<string> EligibleListingIds, ImmutableArray<string> UnpricedListingIds);
 public sealed record UniverseReturn(string ListingId, UniverseReturnStatus Status, decimal? Return);
 public sealed record UniversePeriod(DateTimeOffset From, DateTimeOffset To, ImmutableArray<UniverseReturn> Returns);
@@ -22,7 +23,7 @@ public sealed record UniversePeriod(DateTimeOffset From, DateTimeOffset To, Immu
 /// and a delisting with missing proceeds fails the whole build.</summary>
 public sealed class ChangingUniversePanel
 {
-    public const string BuilderVersion = "changing-universe-v1";
+    public const string BuilderVersion = "changing-universe-v2";
     public string DatasetId { get; }
     public string UniverseId { get; }
     public bool Synthetic { get; }
@@ -211,6 +212,13 @@ public sealed class ChangingUniversePanel
             a.Action is CorporateActionKind.Split or CorporateActionKind.Dividend or CorporateActionKind.Merger or CorporateActionKind.SpinOff);
         if (complex)
             throw Fail("universe-panel-terminal-complex", "A corporate action between the raw close and delisting prevents a simple stock terminal return.");
+        // The ratio describes shares delivered at the exchange. A subsequent successor
+        // split/dividend/delisting cannot be valued with that unchanged ratio and raw close.
+        var successorFrom = successorRaw.SessionCloseAt < action.EffectiveAt ? successorRaw.SessionCloseAt : action.EffectiveAt;
+        if (laterSlice.EffectiveActions(action.SuccessorListingId).Any(a => a.EffectiveAt > successorFrom &&
+            a.Action is CorporateActionKind.Split or CorporateActionKind.Dividend or CorporateActionKind.Merger or
+                CorporateActionKind.SpinOff or CorporateActionKind.Delisting))
+            throw Fail("universe-panel-terminal-complex", "Successor corporate actions require explicit share settlement handling.");
         return action.SplitRatio.Value * successorRaw.Major / originalRaw.Major - 1m;
     }
 }

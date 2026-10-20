@@ -280,4 +280,39 @@ public sealed class ChangingUniversePanelTests
         Assert.Throws<ResearchException>(() => ChangingUniversePanel.FromDataset(
             dataset, "research-universe", [At(1, 1, 23), At(2, 28, 23)], TimeSpan.FromDays(45)));
     }
+    [Fact]
+    public void StockOutcomeCannotSilentlyDiscardCashConsideration()
+    {
+        var file = Scenario(TerminalOutcome.Stock, cash: 5m, successor: "ddd", exchangeRatio: 0.5m);
+        Assert.Contains(DatasetValidator.Validate(file).Issues, i => i.Code == "terminal-stock");
+    }
+
+    [Fact]
+    public void SuccessorSplitAfterExchangeRequiresExplicitSettlementHandling()
+    {
+        var file = Scenario(TerminalOutcome.Stock, successor: "ddd", exchangeRatio: 0.5m);
+        file = file with { Observations = file.Observations.Add(new CorporateAction("ddd-split", Ev(At(4, 10)),
+            "ddd", "ddd-split", CorporateActionKind.Split, At(4, 15), 2m, null, null, null, null,
+            TerminalOutcome.NotApplicable)) };
+        var error = Assert.Throws<InvalidDatasetException>(() => Build(file));
+        Assert.Contains(error.Validation.Issues, i => i.Code == "universe-panel-terminal-complex");
+    }
+
+    [Fact]
+    public void OriginalSerializedReturnStatusesKeepTheirNumericValues()
+    {
+        Assert.Equal(4, (int)UniverseReturnStatus.ExitedUnexplained);
+        Assert.Equal(5, (int)UniverseReturnStatus.MissingPrice);
+        Assert.Equal(6, (int)UniverseReturnStatus.TerminalStock);
+    }
+
+    [Fact]
+    public void StockOutcomeCannotNameItselfAsSuccessor()
+    {
+        var file = Scenario(TerminalOutcome.Stock, successor: "ddd", exchangeRatio: 0.5m);
+        file = file with { Observations = file.Observations.Select(o => o is CorporateAction a && a.TerminalOutcome == TerminalOutcome.Stock
+            ? a with { SuccessorListingId = a.ListingId } : o).ToImmutableArray() };
+        Assert.Contains(DatasetValidator.Validate(file).Issues, i => i.Code == "terminal-stock");
+    }
+
 }

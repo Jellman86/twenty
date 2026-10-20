@@ -144,8 +144,9 @@ public static partial class DatasetValidator
                         "terminal-outcome", p, "Delistings must distinguish known cash, zero, stock and missing outcomes.");
                     Check(x.TerminalOutcome != TerminalOutcome.Cash || x.CashPerShare is not null, "terminal-cash", p, "A known cash outcome needs its distribution.");
                     Check(x.TerminalOutcome != TerminalOutcome.Zero || x.CashPerShare is null or 0, "terminal-zero", p, "A zero outcome cannot carry positive cash.");
-                    Check(x.TerminalOutcome != TerminalOutcome.Stock || (x.SuccessorListingId is not null && x.SplitRatio > 0),
-                        "terminal-stock", p, "A stock outcome needs a successor listing and a positive exchange ratio."); break;
+                    Check(x.TerminalOutcome != TerminalOutcome.Stock || (x.Action == CorporateActionKind.Delisting && x.SuccessorListingId is not null &&
+                        x.SuccessorListingId != x.ListingId && x.SplitRatio > 0 && x.CashPerShare is null or 0),
+                        "terminal-stock", p, "A stock delisting needs a distinct successor, positive exchange ratio and no cash consideration."); break;
             }
         }
         foreach (var listing in file.Observations.OfType<Listing>().GroupBy(x => x.ListingId))
