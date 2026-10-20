@@ -90,7 +90,7 @@ public sealed class ListingPricesTests
             var adj = rows[t].Close * factor;
             if (t > 0) json.Append(',');
             json.Append(CultureInfo.InvariantCulture,
-                $"{{\"date\":\"{rows[t].Date}T00:00:00.000Z\",\"open\":{rows[t].Close},\"high\":{rows[t].Close},\"low\":{rows[t].Close},\"close\":{rows[t].Close},\"adjClose\":{adj:0.##########},\"adjOpen\":{(t == 0 && adjOpenOverride.HasValue ? adjOpenOverride.Value : adj):0.##########},\"adjHigh\":{adj:0.##########},\"adjLow\":{adj:0.##########},\"volume\":1000,\"divCash\":{rows[t].Div},\"splitFactor\":{rows[t].Split}}}");
+                $"{{\"date\":\"{rows[t].Date}T00:00:00.000Z\",\"open\":{rows[t].Close},\"high\":{rows[t].Close},\"low\":{rows[t].Close},\"close\":{rows[t].Close},\"adjClose\":{adj:0.##########},\"adjOpen\":{(t == 0 && adjOpenOverride.HasValue ? adjOpenOverride.Value : adj):0.##########},\"adjHigh\":{adj:0.##########},\"adjLow\":{adj:0.##########},\"volume\":1000,\"adjVolume\":2000,\"divCash\":{rows[t].Div},\"splitFactor\":{rows[t].Split}}}");
         }
         return json.Append(']').ToString();
     }
@@ -139,6 +139,10 @@ public sealed class ListingPricesTests
         var julAdj = dataset.Observations.OfType<PriceBar>().Single(b => b.Id == "listing-aaa-20150102-tra-20260702");
         Assert.Equal(10.0m, janRaw.Close);
         Assert.Equal(PriceBasis.Raw, janRaw.Basis);
+        // Volume follows its own basis: the raw bar carries raw share volume and the
+        // total-return bar carries the split-adjusted volume for the very same session.
+        Assert.Equal(1000m, janRaw.Volume);
+        Assert.Equal(2000m, julAdj.Volume);
         // A January close is 21:00Z and a July close is 20:00Z for a US listing: the session
         // close is anchored to the listing's exchange timezone, not to UTC hours.
         Assert.Equal(DateTimeOffset.Parse("2026-01-02T21:00:00Z"), janRaw.SessionCloseAt);

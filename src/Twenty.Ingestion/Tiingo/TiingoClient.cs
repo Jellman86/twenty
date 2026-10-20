@@ -12,7 +12,8 @@ namespace Twenty.Ingestion.Tiingo;
 public sealed record TiingoHistoryRequest(string Symbol, DateOnly From, DateOnly To);
 public sealed record TiingoHistoryResult(string Symbol, int Rows, DateOnly? First, DateOnly? Last, string CaptureId, string Sha256);
 public sealed record TiingoBar(DateOnly Date, decimal Open, decimal High, decimal Low, decimal Close,
-    decimal AdjClose, decimal Volume, decimal DivCash, decimal SplitFactor, decimal AdjOpen, decimal AdjHigh, decimal AdjLow);
+    decimal AdjClose, decimal Volume, decimal DivCash, decimal SplitFactor, decimal AdjOpen, decimal AdjHigh, decimal AdjLow,
+    decimal AdjVolume);
 public sealed record TiingoQuota(DateTimeOffset LastAttemptAt, string Month, string Day, int DayRequests, long MonthBytes, ImmutableArray<string> Symbols);
 
 /// <summary>Explicit, bounded read-only requests. Captured response bodies exclude request/authentication headers.</summary>
@@ -104,13 +105,15 @@ public sealed partial class TiingoClient(HttpClient http, CaptureStore store, st
                 var open = Number("open"); var high = Number("high"); var low = Number("low"); var close = Number("close");
                 var adjClose = Number("adjClose"); var adjOpen = Number("adjOpen"); var adjHigh = Number("adjHigh"); var adjLow = Number("adjLow");
                 var volume = Number("volume"); var divCash = Number("divCash"); var splitFactor = Number("splitFactor");
+                var adjVolume = Number("adjVolume");
                 if (open <= 0 || low <= 0 || high < low || open < low || open > high || close < low || close > high ||
-                    adjClose <= 0 || adjOpen <= 0 || adjHigh <= 0 || adjLow <= 0 || volume < 0 || divCash < 0 || splitFactor <= 0)
+                    adjClose <= 0 || adjOpen <= 0 || adjHigh <= 0 || adjLow <= 0 || volume < 0 || adjVolume < 0 || divCash < 0 || splitFactor <= 0)
                     throw new ResearchException("tiingo-history-number");
-                // Raw fields are range-checked here; the adjusted fields are only required to be
-                // present and positive. Whether adjOpen/adjHigh/adjLow/adjClose agree on one
-                // adjustment factor is a conversion-time exclusion, not a parse failure.
-                bars.Add(new(date, open, high, low, close, adjClose, volume, divCash, splitFactor, adjOpen, adjHigh, adjLow));
+                // Raw fields are range-checked here; the adjusted fields are required to be
+                // present with adjusted OHLC positive and adjVolume non-negative. Whether
+                // adjOpen/adjHigh/adjLow/adjClose agree on one adjustment factor is a
+                // conversion-time exclusion, not a parse failure.
+                bars.Add(new(date, open, high, low, close, adjClose, volume, divCash, splitFactor, adjOpen, adjHigh, adjLow, adjVolume));
             }
             return bars.ToImmutable();
         }
