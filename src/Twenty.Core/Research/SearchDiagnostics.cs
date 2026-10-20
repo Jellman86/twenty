@@ -22,13 +22,26 @@ public static class SearchDiagnostics
     public static readonly ImmutableArray<int> Blocks = [3, 6, 12];
 
     public static SearchDiagnosticReport Build(IReadOnlyList<DiagnosticReturns> candidates, CancellationToken ct = default, int registeredTrials = 0)
+        => BuildCore(candidates, Comparators, Version, ct, registeredTrials);
+
+    public const string UniverseVersion = "stationary-universe-active-mean-v1";
+    public static readonly ImmutableArray<string> UniverseComparators = ["equal_weight", "cash"];
+    public static SearchDiagnosticReport BuildUniverse(IReadOnlyList<DiagnosticReturns> candidates, CancellationToken ct = default, int registeredTrials = 0)
+    {
+        var result = BuildCore(candidates, UniverseComparators, UniverseVersion, ct, registeredTrials);
+        return result with { Limitations = result.Limitations.Add(
+            "Changing-universe candidates are recorded momentum baselines versus their own equal-weight and zero-interest cash paths. No external benchmark is supplied. Local-currency returns have no FX conversion; GBP notionals do not establish achievable GBP wealth.") };
+    }
+
+    private static SearchDiagnosticReport BuildCore(IReadOnlyList<DiagnosticReturns> candidates, ImmutableArray<string> comparators,
+        string version, CancellationToken ct, int registeredTrials)
     {
         if (candidates.Count is < 1 or > MaximumCandidates || candidates.Select(c => c.RunId).Distinct(StringComparer.Ordinal).Count() != candidates.Count)
             throw new ResearchException("diagnostic-candidate-count");
         foreach (var c in candidates)
         {
             if (c.PeriodEnds.Length is < 24 or > 600 || c.Candidate.Length != c.PeriodEnds.Length ||
-                c.Comparators.Count != Comparators.Length || Comparators.Any(s => !c.Comparators.ContainsKey(s)) ||
+                c.Comparators.Count != comparators.Length || comparators.Any(s => !c.Comparators.ContainsKey(s)) ||
                 c.Comparators.Values.Any(v => v.Length != c.PeriodEnds.Length) ||
                 c.Candidate.Concat(c.Comparators.Values.SelectMany(v => v)).Any(v => !double.IsFinite(v) || v < -1 || v > 1e12))
                 throw new ResearchException("diagnostic-return-stream");
@@ -46,7 +59,7 @@ public static class SearchDiagnostics
             var offset = c.PeriodEnds.IndexOf(dates[0]);
             if (offset < 0 || !c.PeriodEnds.Skip(offset).Take(dates.Length).SequenceEqual(dates)) throw new ResearchException("diagnostic-month-grid");
             aligned.Add((c.RunId, Enumerable.Range(offset, dates.Length).Select(i => c.Candidate[i]).ToArray()));
-            foreach (var name in Comparators)
+            foreach (var name in comparators)
                 columns.Add((c.RunId, name, Enumerable.Range(offset, dates.Length).Select(i => c.Candidate[i] - c.Comparators[name][i]).ToArray()));
         }
         var means = columns.Select(c => c.Values.Average()).ToArray();
@@ -81,7 +94,7 @@ public static class SearchDiagnostics
             sensitivities.Add(new(block, 1 + (dates.Length - 1d) / block, radius, rows));
         }
         var selection = SelectionDiagnostics.Build(aligned, registeredTrials > 0 ? registeredTrials : candidates.Count, ct);
-        return new(Version, "12 × arithmetic mean of paired net monthly return differences; percentage points, not compound returns or Sharpe",
+        return new(version, "12 × arithmetic mean of paired net monthly return differences; percentage points, not compound returns or Sharpe",
             Replicates, Seed, dates[0], dates[^1], dates.Length, candidates.Count, columns.Count, sensitivities.ToImmutable(),
             ["Stationary-bootstrap approximation for a fixed recorded candidate family under weak dependence/stationarity; regime changes and limited history can invalidate coverage.",
              "Pointwise percentile ranges do not correct selection. Simultaneous ranges use the 95th percentile of the maximum absolute centred mean deviation over every included candidate/comparator.",

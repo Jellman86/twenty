@@ -79,6 +79,8 @@ Regression cases hand-check value conservation, existing-successor merging, no r
 
 ## Cross-register research controls (20 October 2026)
 
+Follow-up: [retrospective universe diagnostics](search-diagnostics.md#changing-universe-families-and-complete-disclosure-20-october-2026) now consume registered momentum/equal-weight/cash paths and disclose both trial registers. Registered changing-universe candidate selection/final evaluation remains separate work. Earlier sections stating that no diagnostic or UI exists describe the earlier checkpoint.
+
 Universe trials now share the workspace's 1,000-trial budget with ordinary model runs and registered study jobs, including the two slots reserved for each pending study final pair. Study declarations retain a `PriorUniverseTrials` snapshot alongside ordinary prior-trial metadata. This improves local disclosure; it does not compute a whole-programme multiple-testing correction.
 
 Before a genuine universe trial is admitted, the store checks active genuine study reservations under the same admission lock used to register studies. Its information window covers **all** decision periods, including momentum warm-up, plus the conservative maximum-price-age lookback before the earliest decision. The start is projected to a UTC date and padded by the declared age bound; the end is the last UTC decision date. Date-only outcome overlap follows the existing half-open study convention. The padding may reject an overlap even when a particular payload happened to use a newer price. Policy conflicts are refused before trial creation or computation; admitted failed/interrupted attempts remain counted.

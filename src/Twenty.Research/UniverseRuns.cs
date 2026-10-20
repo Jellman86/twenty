@@ -167,6 +167,11 @@ public sealed partial class ResearchStore
     {
         var entry = FindUniverseRun(id);
         if (entry is null) return null;
+        return UniverseRequestBytes(entry);
+    }
+
+    internal byte[] UniverseRequestBytes(UniverseRunEntry entry)
+    {
         if (entry.RequestArtifactSha256 is null) throw new ResearchException("universe-request-unavailable");
         var bytes = DatasetArchive.ReadBounded(Path.Combine(Root, "runs", entry.Id, "universe-request.json"));
         if (Convert.ToHexStringLower(SHA256.HashData(bytes)) != entry.RequestArtifactSha256)
@@ -181,6 +186,11 @@ public sealed partial class ResearchStore
     {
         var run = FindUniverseRun(id);
         if (run?.Status != "succeeded") return null;
+        return UniverseReport(run);
+    }
+
+    internal UniverseBacktestReport? UniverseReport(UniverseRunEntry run)
+    {
         var bytes = DatasetArchive.ReadBounded(Path.Combine(Root, "runs", run.Id, "universe-report.json"));
         if (Convert.ToHexStringLower(SHA256.HashData(bytes)) != run.ReportSha256) throw new ResearchException("report-integrity");
         return JsonSerializer.Deserialize<UniverseBacktestReport>(bytes, Json);

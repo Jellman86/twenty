@@ -1,41 +1,43 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  let { anchorRunId } = $props<{anchorRunId:string}>();
+  let { anchorRunId, family = 'model' } = $props<{anchorRunId:string;family?:'model'|'universe'}>();
   type Interval={runId:string;comparator:string;annualisedMeanActiveReturn:number;pointwiseLower:number;pointwiseUpper:number;simultaneousLower:number;simultaneousUpper:number};
   type Sensitivity={expectedBlockMonths:number;expectedBlocksPerPath:number;simultaneousRadius:number;intervals:Interval[]};
   type Pbo={blocks:number;combinations:number;probabilityOfBacktestOverfitting:number;medianLogit:number;medianInSampleWinnerMonthlySharpe:number;medianOutOfSampleWinnerMonthlySharpe:number;fractionWinnersNegativeOutOfSample:number};
   type Deflated={winnerRunId:string;monthlySharpe:number;annualisedSharpe:number;skewness:number;kurtosis:number;trialSharpeStandardDeviation:number;averageCorrelation:number|null;probabilisticSharpeVsZero:number;sensitivities:{basis:string;trials:number;expectedMaximumMonthlySharpe:number;deflatedSharpeRatio:number}[]};
   type Selection={statistic:string;pbo:Pbo|null;deflatedSharpe:Deflated|null;limitations:string[]};
-  type Attempt={id:string;anchorRunId:string;status:string;createdAt:string;finishedAt:string|null;errorCode:string|null;synthetic:boolean|null;registrySnapshotAt:string|null;trials:{runId:string;included:boolean;reason:string}[];report:{months:number;candidates:number;comparisons:number;replicates:number;firstPeriodEnd:string;lastPeriodEnd:string;sensitivities:Sensitivity[];limitations:string[];selection?:Selection|null}|null};
+  type Attempt={id:string;anchorRunId:string;status:string;createdAt:string;finishedAt:string|null;errorCode:string|null;synthetic:boolean|null;registrySnapshotAt:string|null;familyEngine?:string;trials:{runId:string;included:boolean;reason:string}[];report:{months:number;candidates:number;comparisons:number;replicates:number;firstPeriodEnd:string;lastPeriodEnd:string;sensitivities:Sensitivity[];limitations:string[];selection?:Selection|null}|null};
   type History={total:number;attempts:{id:string;anchorRunId:string;status:string;createdAt:string;registered:number;included:number;errorCode:string|null}[]};
   let attempt=$state<Attempt|null>(null),history=$state<History>({total:0,attempts:[]}),busy=$state(false),error=$state('');
   let requestId='';
+  let viewRevision=0,historyRevision=0;
   const labels:Record<string,string>={benchmark:'Dataset benchmark',momentum:'Momentum',equal_weight:'All-asset equal targets',cash:'Zero-interest cash'};
-  const messages:Record<string,string>={'diagnostic-busy':'Another diagnostic is running. Try again when it finishes.','diagnostic-common-window-too-short':'These candidates share fewer than 24 development months. More common history is needed.','diagnostic-candidate-count':'The compatible family exceeds the bounded 64-candidate analysis. It has not been silently trimmed.','diagnostic-report-contract':'A stored report does not match its recorded contract. Inspect its integrity before analysing it.'};
+  const messages:Record<string,string>={'diagnostic-busy':'Another diagnostic is running. Try again when it finishes.','diagnostic-common-window-too-short':'These candidates share fewer than 24 development months. More common history is needed.','diagnostic-return-stream':'The stored returns are incomplete or provide fewer than 24 monthly observations.','diagnostic-candidate-count':'The compatible family exceeds the bounded 64-candidate analysis. It has not been silently trimmed.','diagnostic-report-contract':'A stored report does not match its recorded contract. Inspect its integrity before analysing it.','universe-request-unavailable':'This older trial does not retain the exact request needed for analysis.','universe-request-integrity':'The retained trial request failed its integrity check.','diagnostic-development-run-required':'Choose a completed trial with the required retained research evidence.'};
   const percent=(n:number)=>`${(n*100).toFixed(2)} pp`;
   const prob=(n:number)=>`${(n*100).toFixed(1)}%`;
   const ann=(n:number)=>(n*Math.sqrt(12)).toFixed(2);
   const basisLabels:Record<string,string>={'family-as-independent':'Family trials, as independent','family-correlation-adjusted':'Correlation-adjusted trials','registered-snapshot-as-independent':'All registered trials, as independent'};
   const selection=$derived(attempt?.report?.selection??null);
+  const universeFamily=$derived(attempt ? attempt.familyEngine==='changing-universe' : family==='universe');
   const range=(x:Interval)=>`${percent(x.simultaneousLower)} to ${percent(x.simultaneousUpper)}`;
   const rows=$derived(attempt?.report?.sensitivities[0]?.intervals??[]);
   const exclusions=$derived(Object.entries((attempt?.trials??[]).filter(t=>!t.included).reduce<Record<string,number>>((all,t)=>{all[t.reason]=(all[t.reason]??0)+1;return all;},{})));
   async function api(path:string,body?:unknown){const response=await fetch(path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json','X-Twenty-Request':'1'},body:JSON.stringify(body)});if(!response.ok){const result=await response.json();throw new Error(messages[result.error]??result.error??'diagnostic-unavailable');}return response.json();}
-  async function refresh(){history=await api('/api/research/diagnostics');}
-  async function inspect(id:string){error='';try{attempt=await api(`/api/research/diagnostics/${id}`);}catch(e){error=e instanceof Error?e.message:'diagnostic-unavailable';}}
-  async function analyse(){busy=true;error='';const anchor=anchorRunId;requestId||=crypto.randomUUID();try{const result:Attempt=await api('/api/research/diagnostics',{requestId,anchorRunId:anchor});requestId='';if(anchor===anchorRunId)attempt=result;await refresh();}catch(e){error=e instanceof Error?e.message:'diagnostic-unavailable';}finally{busy=false;}}
-  $effect(()=>{anchorRunId;attempt=null;error='';requestId='';});
+  async function refresh(){const revision=++historyRevision;const result=await api('/api/research/diagnostics');if(revision===historyRevision)history=result;}
+  async function inspect(id:string){const revision=++viewRevision;error='';try{const result:Attempt=await api(`/api/research/diagnostics/${id}`);if(revision===viewRevision)attempt=result;}catch(e){if(revision===viewRevision)error=e instanceof Error?e.message:'diagnostic-unavailable';}}
+  async function analyse(){busy=true;error='';const anchor=anchorRunId,revision=++viewRevision;requestId||=crypto.randomUUID();try{const result:Attempt=await api('/api/research/diagnostics',{requestId,anchorRunId:anchor});if(revision===viewRevision&&anchor===anchorRunId){requestId='';attempt=result;}await refresh();}catch(e){if(revision===viewRevision)error=e instanceof Error?e.message:'diagnostic-unavailable';}finally{busy=false;}}
+  $effect(()=>{anchorRunId;viewRevision++;attempt=null;error='';requestId='';});
   onMount(()=>{
     void refresh().catch(e=>error=e.message);
-    const timer=setInterval(()=>{const id=attempt?.id;if(id&&attempt?.status==='running')void api(`/api/research/diagnostics/${id}`).then((result:Attempt)=>{if(attempt?.id===id)attempt=result;if(result.status!=='running')void refresh();}).catch(e=>error=e.message);},1500);
+    const timer=setInterval(()=>{const id=attempt?.id,revision=viewRevision;if(id&&attempt?.status==='running')void api(`/api/research/diagnostics/${id}`).then((result:Attempt)=>{if(attempt?.id===id&&revision===viewRevision)attempt=result;if(result.status!=='running')void refresh();}).catch(e=>{if(attempt?.id===id&&revision===viewRevision)error=e.message;});},1500);
     return()=>clearInterval(timer);
   });
 </script>
 <section class="panel lab-results" aria-labelledby="diagnostic-title">
   <div class="panel-heading"><div><p class="eyebrow">UNCERTAINTY ACROSS RECORDED CANDIDATES</p><h2 id="diagnostic-title">How much of the lead could be noise?</h2></div><span class="badge">RETROSPECTIVE DIAGNOSTIC</span></div>
-  <p>Compare net monthly returns with the benchmark, momentum, equal targets and cash. Whole months are resampled together across the compatible candidate family. This preserves shared market movements and short runs of returns; it cannot repair biased data or establish a durable edge.</p>
+  <p>{universeFamily ? 'Compare recorded momentum variants with their equal-weight and cash paths. These local-currency returns have no FX conversion or external market benchmark.' : 'Compare net monthly returns with the benchmark, momentum, equal targets and cash.'} Whole months are resampled together across the compatible candidate family. This preserves shared market movements and short runs of returns; it cannot repair biased data or establish a durable edge.</p>
   <button class="secondary" disabled={busy||attempt?.status==='running'} onclick={()=>void analyse()}>{busy||attempt?.status==='running'?'Analysing recorded returns…':'Analyse the recorded candidate family'}</button>
-  <p class="dataset-note">The family includes every completed local trial matching this run's dataset, engine, allocation policy, contribution, costs and reserved-window length. It uses their common calendar window. Other attempts remain disclosed; these bands do not correct the entire research programme or approve a stock purchase.</p>
+  <p class="dataset-note">{universeFamily ? 'The family includes every completed universe trial with matching dataset, universe, scientific code, panel, decision grid, price-age policy, contribution and costs. Concentration choices can differ.' : 'The family includes every completed model trial matching this run’s dataset, engine, allocation policy, contribution, costs and reserved-window length.'} Both local trial registers are disclosed in new analyses. The analysis uses the common calendar window; these bands do not correct the entire research programme or approve a stock purchase.</p>
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   {#if attempt?.errorCode}<p class="error" role="alert">Analysis {attempt.status}: {messages[attempt.errorCode]??attempt.errorCode}. This attempt remains recorded.</p>{/if}
   {#if attempt?.report}

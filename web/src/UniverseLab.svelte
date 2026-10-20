@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import SearchDiagnostics from './SearchDiagnostics.svelte';
 
   type Trial = {
     id: string; datasetId: string; synthetic: boolean; universeId: string; status: string;
@@ -115,3 +116,6 @@
     <details><summary>Report limitations</summary><ul class="limitations">{#each report.limitations as limitation}<li>{limitation}</li>{/each}</ul></details>
   {/if}
 </section>
+{#if report && selected?.status === 'succeeded'}
+  <SearchDiagnostics anchorRunId={selected.id} family="universe" />
+{/if}

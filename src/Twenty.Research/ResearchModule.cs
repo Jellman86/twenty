@@ -70,7 +70,9 @@ public static class ResearchModule
             registeredStudyFinalEvaluation = true,
             registeredStudy = new { protocol = StudyProtocol.Version, codeSha256 = ResearchStore.StudyCodeSha256, identityScheme = ResearchIdentity.Scheme, finalWindowRequestRequired = true },
             researchIdentity = ResearchIdentity.Current,
-            searchDiagnostics = new { method = SearchDiagnostics.Version, pairedCalendarResampling = true, preregisteredPromotion = false },
-            changingUniverse = new { panel = ChangingUniversePanel.BuilderVersion, backtest = UniverseBacktest.Version, registeredTrials = true }, broker = brokerCapabilities() });
+            searchDiagnostics = new { method = SearchDiagnostics.Version, universeMethod = SearchDiagnostics.UniverseVersion,
+                pairedCalendarResampling = true, completeTrialRegistrySnapshot = true, preregisteredPromotion = false },
+            changingUniverse = new { panel = ChangingUniversePanel.BuilderVersion, backtest = UniverseBacktest.Version,
+                registeredTrials = true, retrospectiveDiagnostics = true, registeredCandidateSelection = false }, broker = brokerCapabilities() });
     }
 }

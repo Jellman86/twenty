@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Data.Sqlite;
 using Twenty.Core.Research;
 
@@ -8,14 +9,24 @@ namespace Twenty.Research;
 
 public sealed record DiagnosticRequest(string RequestId, string AnchorRunId);
 public sealed record DiagnosticTrial(string RunId, string DatasetId, string Status, string ConfigSha256,
-    string? ReportSha256, string? EngineSha256, bool Included, string Reason);
+    string? ReportSha256, string? EngineSha256, bool Included, string Reason)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ResearchEngine { get; init; }
+}
 public sealed record DiagnosticAttempt(string Id, string RequestId, string AnchorRunId, string Status,
     DateTimeOffset CreatedAt, DateTimeOffset? FinishedAt, string? ErrorCode, string WorkerCommit,
     string DiagnosticEngineSha256, string? DatasetId, bool? Synthetic,
-    ImmutableArray<DiagnosticTrial> Trials, SearchDiagnosticReport? Report, DateTimeOffset? RegistrySnapshotAt = null);
+    ImmutableArray<DiagnosticTrial> Trials, SearchDiagnosticReport? Report, DateTimeOffset? RegistrySnapshotAt = null)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? FamilyEngine { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? ResearchSha256 { get; init; }
+}
 
 /// <summary>A bounded journal of analysis attempts. Its family is derived from the complete local register, never a caller-supplied winner shortlist.</summary>
-public sealed class DiagnosticStore
+public sealed partial class DiagnosticStore
 {
     private readonly ResearchStore research;
     private readonly string connectionString;
@@ -104,7 +115,8 @@ public sealed class DiagnosticStore
             {
                 attempt = new(Guid.NewGuid().ToString("N"), request.RequestId, request.AnchorRunId, "running", clock.GetUtcNow(), null, null,
                     Environment.GetEnvironmentVariable("TWENTY_COMMIT") ?? "local",
-                    Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(typeof(SearchDiagnostics).Assembly.Location))), null, null, [], null);
+                    Convert.ToHexStringLower(SHA256.HashData(File.ReadAllBytes(typeof(SearchDiagnostics).Assembly.Location))), null, null, [], null)
+                    { ResearchSha256 = ResearchIdentity.Current.Sha256 };
                 Save(attempt, true);
             }
             catch { worker.Release(); throw; }
@@ -112,13 +124,27 @@ public sealed class DiagnosticStore
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct); deadline.CancelAfter(TimeSpan.FromMinutes(2));
         try
         {
-            var snapshot = research.ListRuns();
-            attempt = attempt with { RegistrySnapshotAt = clock.GetUtcNow() };
-            var anchor = snapshot.SingleOrDefault(r => r.Id == request.AnchorRunId) ?? throw new ResearchException("run-not-found");
+            var registry = research.DiagnosticSnapshot();
+            var snapshot = registry.Models;
+            attempt = attempt with { RegistrySnapshotAt = registry.At,
+                Trials = snapshot.Select(run => new DiagnosticTrial(run.Id, run.DatasetId, run.Status, run.ConfigSha256,
+                    run.ReportSha256, run.EngineSha256, false, "not-analysed"))
+                    .Concat(registry.Universes.Select(run => UniverseTrial(run, "not-analysed"))).ToImmutableArray() };
+            Save(attempt);
+            var anchor = snapshot.SingleOrDefault(r => r.Id == request.AnchorRunId);
+            var universeAnchor = registry.Universes.SingleOrDefault(r => r.Id == request.AnchorRunId);
+            if (anchor is not null && universeAnchor is not null) throw new ResearchException("diagnostic-anchor-ambiguous");
+            if (universeAnchor is not null)
+            {
+                attempt = await AnalyseUniverse(attempt, universeAnchor, snapshot, registry.Universes, deadline.Token);
+                attempt = attempt with { Status = "succeeded", FinishedAt = clock.GetUtcNow() }; Save(attempt); return attempt;
+            }
+            if (anchor is null) throw new ResearchException("run-not-found");
             if (anchor.Status != "succeeded" || anchor.Config.EvaluateHoldout || anchor.EngineSha256 is null || anchor.ReportSha256 is null)
                 throw new ResearchException("diagnostic-development-run-required");
             var trials = snapshot.Select(run => new DiagnosticTrial(run.Id, run.DatasetId, run.Status, run.ConfigSha256, run.ReportSha256, run.EngineSha256,
-                Reason(run, anchor) == "included", Reason(run, anchor))).ToImmutableArray();
+                Reason(run, anchor) == "included", Reason(run, anchor)))
+                .Concat(registry.Universes.Select(run => UniverseTrial(run, "different-research-engine"))).ToImmutableArray();
             attempt = attempt with { Trials = trials, DatasetId = anchor.DatasetId, Synthetic = anchor.Synthetic }; Save(attempt);
             if (trials.Count(t => t.Included) > SearchDiagnostics.MaximumCandidates) throw new ResearchException("diagnostic-candidate-count");
             var streams = new List<DiagnosticReturns>();
@@ -145,6 +171,9 @@ public sealed class DiagnosticStore
         }
         catch (Exception error)
         {
+            // The universe adapter journals its retained snapshot before reading artifacts.
+            // Preserve that evidence if a later input or computation fails.
+            attempt = Find(attempt.Id) ?? attempt;
             attempt = attempt with { Status = error is OperationCanceledException ? "cancelled" : "failed", FinishedAt = clock.GetUtcNow(),
                 ErrorCode = error is ResearchException re ? re.Code : error is OperationCanceledException ? "deadline-or-request-cancelled" : "diagnostic-failed", Report = null };
             Save(attempt); return attempt;
