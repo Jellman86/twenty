@@ -37,6 +37,8 @@ Declared sample over the 18 October captures: AAPL, COST, MSFT, BBBYQ, DDC, AAIC
 | AAIC | Excluded `venue-conflict`: NYSE (out of v1 scope) |
 | NOSUCH | Excluded `not-observed` |
 
+The ABMD date above is the original **coverage-derived** identity output, not an independently established exchange delisting date. The [20 October terminal review](terminal-outcomes.md) records Nasdaq's last trading on 2022-12-21 and suspension on 2022-12-23, with two later vendor rows. The earlier immutable identity artifact is retained; it does not establish accepted terminal-period identity or proceeds.
+
 ## Second-order consequences
 
 - The [changing-universe panel](changing-universe-panel.md) and its trial register can now load a *genuine* (non-synthetic) identity dataset end-to-end — verified in the smoke — but with no prices every return is missing, so backtests refuse honestly. Price conversion from captured Tiingo histories (with the audit's adjustment checks and the dividend sample's independent confirmation) is the next conversion step, and it inherits the same availability honesty: captured history bars are known at capture, not at their session dates, until a vintaged source says otherwise.

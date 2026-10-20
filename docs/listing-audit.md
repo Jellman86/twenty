@@ -30,6 +30,8 @@ No adjustment mismatches or unexplained steps were found in either genuine histo
 
 ## Widened delisted sample (19 October 2026)
 
+The original interpretation below is corrected by the [20 October independent terminal review](terminal-outcomes.md): ABST's request stopped in 2020, and producer endpoints do not establish last trading dates. The captured sample and adjustment-consistency totals are retained.
+
 Declared before captures: from the same 122,262-interval artifact, Tiingo Stock/USD segments on NASDAQ/NYSE/AMEX with producer start on or before 2012 and producer end during 2020–2024 (569 eligible), sorted by symbol, first six — AAIC, AAWW, ABMD, ABST, ACB, ACC — captured through the deployed app's own Tiingo endpoint (server-paced, quota-counted) for 2010-01-01 to the sampled segment's producer end +31 days, then audited with AAPL and BBBYQ against a read-only copy of the capture store. No symbol substitution.
 
 Across all eight genuine histories: 18,960 bars, 138 dividend events and 2 splits, **zero adjustment mismatches and zero unexplained steps** at the 1% tolerance (worst step error 0.42%, BBBYQ sub-cent rounding). Five of the six new symbols classified as delisting candidates with last bars on their producer end dates. Two anomalies are the informative part:
@@ -52,3 +54,7 @@ Result: **45 of 47 vendor dividends match an SEC declaration exactly to the cent
 ## Issuer-reference follow-up (20 October 2026)
 
 The [source-bound issuer audit](corporate-action-references.md) now corroborates all 47 captured AAPL dividend amounts within declared issuer declaration-to-record windows and its one 4:1 split on the exact first split-adjusted trading date. This closes the prior sample's independent split check and the two SEC amount residuals, while exact dividend ex-dates, other symbols, price-adjustment formulas and terminal outcomes remain separate gates.
+
+## Terminal-history follow-up (20 October 2026)
+
+The [six-symbol terminal review](terminal-outcomes.md) now independently compares original request windows and source-bound issuer/exchange facts. AAIC, AAWW and ABMD contain four rows after stated last trading dates. ABST's 22 rows end in November 2020 because the request stopped there; ACB's 2021 window is also bounded by the original request. Nasdaq establishes ABST's final session as 2023-07-26; ACC's exact last trading date remains unverified in the reviewed sources. AAIC's cash/stock and ABMD's cash/CVR consideration remain unsupported. The new offline audit deliberately returns `valid: false`; neither producer-end agreement nor the existing adjustment check establishes accepted terminal-return coverage.

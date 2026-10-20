@@ -1,0 +1,129 @@
+{
+  "auditVersion": "terminal-history-audit-v1",
+  "referenceSha256": "806b2f67a7f32486a16d303617bf421eff805893218077f247dd3fc035668eb5",
+  "reportSha256": "5769e010ee74cb982ac9a0ce13a77f8121431fecf18e8fa7c37db2b1fa67a8e5",
+  "expectedExitCode": 1,
+  "repeatedOutputIdentical": true,
+  "valid": false,
+  "subjects": [
+    {
+      "historySha256": "992a20dfe4abd75d6fac785bd0453a19cb3ad4098a9b7c8eab23f5152d33f0c4",
+      "historyCaptureId": "aa8296df55e2413cbcb43569373fd701",
+      "historyCapturedAt": "2026-10-19T04:43:07.4743227+00:00",
+      "requestedFrom": "2010-01-01",
+      "requestedTo": "2024-01-14",
+      "bars": 3512,
+      "firstBar": "2010-01-04",
+      "lastBar": "2023-12-14",
+      "postLastTradingBars": 1,
+      "postLastTradingDates": [
+        "2023-12-14"
+      ],
+      "terminalDateChecked": false,
+      "issues": [
+        "post-last-trading-bars",
+        "consideration-not-supported"
+      ],
+      "symbol": "AAIC"
+    },
+    {
+      "historySha256": "ff709be2d2afdb5b735671a1b07c8df68b6c3e35f69cd163a6eeefb5ab0b729d",
+      "historyCaptureId": "7493a4a7d364463fb2161bedcf62a095",
+      "historyCapturedAt": "2026-10-19T04:44:43.2613826+00:00",
+      "requestedFrom": "2010-01-01",
+      "requestedTo": "2023-05-04",
+      "bars": 3325,
+      "firstBar": "2010-01-04",
+      "lastBar": "2023-04-03",
+      "postLastTradingBars": 1,
+      "postLastTradingDates": [
+        "2023-04-03"
+      ],
+      "terminalDateChecked": false,
+      "issues": [
+        "post-last-trading-bars"
+      ],
+      "symbol": "AAWW"
+    },
+    {
+      "historySha256": "3b95745a03a03dc089e6494ad3b9c08dc14cf797c48cf7e5e7241b8f80e8994a",
+      "historyCaptureId": "d453cfe0ee084cca986ea667a4da0c80",
+      "historyCapturedAt": "2026-10-19T04:46:19.0832683+00:00",
+      "requestedFrom": "2010-01-01",
+      "requestedTo": "2023-02-03",
+      "bars": 3268,
+      "firstBar": "2010-01-04",
+      "lastBar": "2023-01-03",
+      "postLastTradingBars": 2,
+      "postLastTradingDates": [
+        "2022-12-22",
+        "2023-01-03"
+      ],
+      "terminalDateChecked": false,
+      "issues": [
+        "post-last-trading-bars",
+        "consideration-not-supported"
+      ],
+      "symbol": "ABMD"
+    },
+    {
+      "historySha256": "87793cfaba35a005ac7e2edb656359f6093e799eb67ddec82a5102eeb0aa086e",
+      "historyCaptureId": "64a29cac03bf47e8a86c5baa7b2b2db4",
+      "historyCapturedAt": "2026-10-19T04:47:54.426451+00:00",
+      "requestedFrom": "2010-01-01",
+      "requestedTo": "2020-11-28",
+      "bars": 22,
+      "firstBar": "2020-10-28",
+      "lastBar": "2020-11-27",
+      "postLastTradingBars": 0,
+      "postLastTradingDates": [],
+      "terminalDateChecked": false,
+      "issues": [
+        "request-does-not-reach-event",
+        "request-does-not-cover-last-trading-date"
+      ],
+      "symbol": "ABST"
+    },
+    {
+      "historySha256": "20020543d34ce390e8b55025f85a3263c9942be848d5b4901f6c6625694886e9",
+      "historyCaptureId": "01e28cd26d194c459844cf951da2cdbe",
+      "historyCapturedAt": "2026-10-19T04:49:30.150373+00:00",
+      "requestedFrom": "2010-01-01",
+      "requestedTo": "2021-06-26",
+      "bars": 1753,
+      "firstBar": "2014-07-11",
+      "lastBar": "2021-06-25",
+      "postLastTradingBars": 0,
+      "postLastTradingDates": [],
+      "terminalDateChecked": false,
+      "issues": [
+        "not-a-terminal-event",
+        "request-does-not-reach-event"
+      ],
+      "symbol": "ACB"
+    },
+    {
+      "historySha256": "073afbf656f758834364c0bda1f4bf262c93598b742deeb3bb099e50dbef9f89",
+      "historyCaptureId": "e2a55be094b14bd7aaff41565f994767",
+      "historyCapturedAt": "2026-10-19T04:51:05.9583038+00:00",
+      "requestedFrom": "2010-01-01",
+      "requestedTo": "2022-09-09",
+      "bars": 3172,
+      "firstBar": "2010-01-04",
+      "lastBar": "2022-08-09",
+      "postLastTradingBars": 0,
+      "postLastTradingDates": [],
+      "terminalDateChecked": false,
+      "issues": [
+        "last-trading-date-unverified"
+      ],
+      "symbol": "ACC"
+    }
+  ],
+  "limitations": [
+    "Declared symbols and captured request windows only. Producer coverage ends, merger completion, last trading and suspension dates are distinct.",
+    "Source hashes bind manually reviewed assertions and the declared original-response or web-tool-extraction representation; they do not authenticate sources or establish historical availability. Updated notice headlines are not availability timestamps.",
+    "Post-last-trading rows require investigation, not automatic deletion. A clean date comparison does not certify session completeness, raw/adjusted prices, terminal proceeds, payment timing, taxes, FX or investment returns.",
+    "Cash amounts describe stated common-share entitlements, not actual account receipts. Mixed stock/cash and contingent rights are unsupported. No dataset, action, model trial, holdout or broker state is changed."
+  ]
+}

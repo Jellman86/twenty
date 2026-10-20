@@ -8,6 +8,7 @@ Start with these documents:
 
 - [Critical review of 39 academic studies](literature-review.md): findings, conflicting evidence, relevance to a small ISA, source links and the extent actually reviewed.
 - [First real-data integration](real-data-milestone.md): Tiingo Starter secrets/quotas, authenticated active/delisted samples and a non-executable GBP industry-portfolio panel.
+- [Terminal-outcome review](terminal-outcomes.md): source-bound six-symbol history checks, request-window limits, post-trading rows and unsupported consideration.
 - [Data collectors](collectors.md): local and remote collection of free sources into private raw captures.
 - [Growth and catalyst research plan](growth-research.md): proposed, unimplemented experiments for multibagger/wipeout scoring, clinical-trial catalysts and stop/trend exposure rules.
 - [ECB reference FX audit](ecb-fx.md): real wire-format samples, explicit cross-rate units and an offline XML parser; historical availability import remains unimplemented.

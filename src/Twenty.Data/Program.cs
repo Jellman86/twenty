@@ -11,6 +11,15 @@ using Twenty.Ingestion.Tiingo;
 
 try
 {
+    if (args.Length == 7 && args[0] == "terminal-history-audit" && args[1] == "--archive" &&
+        args[3] == "--reference" && args[5] == "--sources")
+    {
+        using var captures = new CaptureStore(args[2]);
+        var report = TerminalHistoryAudit.Build(captures, DatasetArchive.ReadBounded(args[4]),
+            sha => DatasetArchive.ReadBounded(Path.Combine(Path.GetFullPath(args[6]), sha + ".bin")));
+        Console.WriteLine(JsonSerializer.Serialize(report, DatasetJson.Options));
+        return report.Valid ? 0 : 1;
+    }
     if (args.Length == 7 && args[0] == "corporate-action-audit" && args[1] == "--archive" &&
         args[3] == "--reference" && args[5] == "--sources")
     {
@@ -285,7 +294,8 @@ try
     }
     if (args.Length is not (2 or 4) || args[0] != "validate" || (args.Length == 4 && args[2] != "--archive"))
     {
-        Console.Error.WriteLine("Usage: Twenty.Data corporate-action-audit --archive <private-captures> --reference <assertions.json> --sources <private-source-documents>\n" +
+        Console.Error.WriteLine("Usage: Twenty.Data terminal-history-audit --archive <private-captures> --reference <assertions.json> --sources <private-source-documents>\n" +
+            "       Twenty.Data corporate-action-audit --archive <private-captures> --reference <assertions.json> --sources <private-source-documents>\n" +
             "       Twenty.Data french-panel --archive <captures> --from yyyy-mm-dd --to yyyy-mm-dd --output <private-inbox> [--portfolios industry|size-value25]\n" +
             "       Twenty.Data tiingo-check --archive <private-directory>\n" +
             "       Twenty.Data tiingo-history <SYMBOL> --from yyyy-mm-dd --to yyyy-mm-dd --archive <private-directory> --capture\n" +
