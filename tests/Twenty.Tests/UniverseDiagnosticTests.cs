@@ -18,7 +18,7 @@ public sealed class UniverseDiagnosticTests : IDisposable
         .AddMonths(i).AddDays(-1);
     private static Evidence Evidence(DateTimeOffset at) => new("fixture-source", at, at, AvailabilityEvidence.ArchivedPublication, TimePrecision.Second, null, null);
 
-    private static byte[] DatasetBytes()
+    internal static byte[] DatasetBytes()
     {
         var original = UniverseBacktestTests.Scenario(); var start = new DateTimeOffset(2010, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var observations = new List<Observation>();

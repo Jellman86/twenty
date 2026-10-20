@@ -1,5 +1,13 @@
 # Validation record
 
+## Ticker identity correction and universe declaration foundation (20 October 2026)
+
+The delayed historical-range review exposed a remaining dot/hyphen alias in history capture IDs. Request-URL/source binding now disambiguates legacy captures, new punctuation IDs are distinct, and the independent Python audit retains original ticker punctuation. [TDD, compatibility and downstream review](reviews/2026-10-20-ticker-capture-identity.md). AAPL conversion preserves all 5,980 observations; genuine action/terminal reports replay byte-identically, with terminal evidence still refused. CI/image publication and the Git-backed Dockhand deployment of `c522dda` passed, preserving 58 reports, four diagnostics, six collections and study plans.
+
+The next [universe-study declaration foundation](universe-studies.md) computes development/gap/reserved grids before return calculation. Authored final-price perturbations leave development unchanged; a separate final rehearsal starts empty and contributes exactly 24 monthly deposits. Registered selection remains unavailable pending its persistent lifecycle, shared controls and final-spend integration. No genuine holdout or market-data request is used by these tests.
+
+Local validation now passes 588 .NET tests and 39 Python tests, Ruff, Svelte check/build (zero warnings/errors), the scientific-boundary probe, full-history/files secret scanning and the deliberate synthetic leak refusal. No accelerator changes were made; the new declaration tests use authored inputs.
+
 ## Reproducible universe requests and history view (20 October 2026)
 
 Universe trial requests are retained before computation under byte and semantic hashes, available through an exact-byte read endpoint for both successful and failed trials. Replays return original evidence before reopening a removed input dataset; tampered/missing evidence is not repaired, and legacy artifacts are not invented. Request/report writes share the existing artifact/workspace limits. The workbench now exposes read-only changing-universe history, report summaries, refusal reasons and successor transfers, with distinct model/workspace trial counts. [Contract](changing-universe-panel.md#immutable-universe-request-evidence-20-october-2026). Validation passes 529 .NET tests, 37 Python tests, Ruff, Svelte check/build, boundary and secret checks. Authored browser fixtures exercise success/failure, transfers, request links, stale-response selection, mobile layout and empty/error states without production trial creation. No genuine study or holdout was opened.

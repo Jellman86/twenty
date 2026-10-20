@@ -90,15 +90,21 @@ public sealed class ChangingUniversePanel
         return true;
     }
 
-    public static ChangingUniversePanel FromDataset(PointInTimeDataset dataset, string universeId,
-        IReadOnlyList<DateTimeOffset> decisions, TimeSpan maximumPriceAge)
+    internal static void ValidateDecisions(IReadOnlyList<DateTimeOffset>? decisions, TimeSpan maximumPriceAge)
     {
-        ArgumentNullException.ThrowIfNull(dataset);
-        if (string.IsNullOrWhiteSpace(universeId) || decisions is null || decisions.Count is < 2 or > 600 ||
+        if (decisions is null || decisions.Count is < 2 or > 600 ||
             decisions.Any(d => d == default) || decisions.Zip(decisions.Skip(1)).Any(p => p.Second <= p.First) ||
             !MonthlyGrid(decisions) ||
             maximumPriceAge <= TimeSpan.Zero || maximumPriceAge > TimeSpan.FromDays(92))
             throw new ResearchException("universe-panel-decisions");
+    }
+
+    public static ChangingUniversePanel FromDataset(PointInTimeDataset dataset, string universeId,
+        IReadOnlyList<DateTimeOffset> decisions, TimeSpan maximumPriceAge)
+    {
+        ArgumentNullException.ThrowIfNull(dataset);
+        if (string.IsNullOrWhiteSpace(universeId)) throw new ResearchException("universe-panel-decisions");
+        ValidateDecisions(decisions, maximumPriceAge);
         var slices = decisions.Select(dataset.AsOf).ToArray();
         var priceCache = new Dictionary<(int Slice, string Listing, PriceBasis Basis), ImmutableArray<PriceBar>>();
         ImmutableArray<PriceBar> Prices(int slice, string listing, PriceBasis basis)
