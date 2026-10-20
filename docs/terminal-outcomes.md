@@ -40,4 +40,4 @@ Local validation: 550 .NET tests and 37 Python tests passed; Ruff, the research-
 
 Next evidence work is to resolve the post-trading row semantics with the data provider, obtain independently verified last-session facts for ACC and deliberately budget complete terminal-period history requests where needed. Usable terminal action observations also need source-bound first availability, actual consideration/settlement semantics, revisions, currency and a supported accounting path. These findings block treating the sample as accepted terminal-return coverage.
 
-A [separately declared ABST follow-up](terminal-outcome-follow-up.md) corrects that one original request window. Its future result does not replace this fixed six-capture record.
+A [separately declared ABST follow-up](terminal-outcome-follow-up.md) corrected that one original request window and found another post-last-trading row. It preserves all 22 earlier rows unchanged and does not replace this fixed six-capture record.

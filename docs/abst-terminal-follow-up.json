@@ -1,0 +1,38 @@
+{
+  "auditVersion": "terminal-history-audit-v1",
+  "referenceSha256": "806b2f67a7f32486a16d303617bf421eff805893218077f247dd3fc035668eb5",
+  "reportSha256": "1d696373e2b313167d147289bc0ee15cfc8e62d7bcd0ee6a4cace54724c12ddc",
+  "expectedExitCode": 1,
+  "repeatedOutputIdentical": true,
+  "valid": false,
+  "subject": {
+    "historySha256": "1645df025740033b5d83fd5a405769a1f26aa9010557d2f5c5dc8f5c0d827e86",
+    "historyCaptureId": "a3b198d8be354ae18b4cf886805ff68e",
+    "historyCapturedAt": "2026-10-20T17:47:04.9175469+00:00",
+    "requestedFrom": "2010-01-01",
+    "requestedTo": "2023-08-27",
+    "bars": 690,
+    "firstBar": "2020-10-28",
+    "lastBar": "2023-07-27",
+    "postLastTradingBars": 1,
+    "postLastTradingDates": [
+      "2023-07-27"
+    ],
+    "terminalDateChecked": false,
+    "issues": [
+      "post-last-trading-bars"
+    ]
+  },
+  "overlapComparison": {
+    "priorHistorySha256": "87793cfaba35a005ac7e2edb656359f6093e799eb67ddec82a5102eeb0aa086e",
+    "priorRows": 22,
+    "missingPriorDates": [],
+    "changedPriorDates": []
+  },
+  "vendorRequests": 1,
+  "uniqueSymbolsBefore": 7,
+  "uniqueSymbolsAfter": 7,
+  "additionalMonthlyBytes": 167962,
+  "appTransportRejectionBeforeVendorAttempt": true,
+  "totalPostLastTradingBarsWithOnlyAbstRefreshed": 5
+}
