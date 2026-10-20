@@ -22,14 +22,33 @@ def check_equal(actual, expected, label):
         raise ValueError(label)
 
 
-def audit(dataset, captures):
+def audit(dataset, captures, schedule=None, schedule_sha=None):
     """captures maps (ticker, capture instant) to its parsed producer rows."""
     intervals = defaultdict(list)
     for observation in dataset["observations"]:
         if observation["kind"] == "listing":
             intervals[observation["listingId"]].append(observation)
     listings = {key: rows[0] for key, rows in intervals.items()}
-    calendars = {c["id"]: c["timeZone"] for c in dataset["manifest"]["calendars"]}
+    calendars = {c["id"]: c for c in dataset["manifest"]["calendars"]}
+
+    def session_close(listing, date):
+        calendar = calendars[listing["calendarId"]]
+        day = datetime.fromisoformat(date).date()
+        hour = 16
+        version = calendar.get("version", "unverified-v1")
+        if version != "unverified-v1":
+            if schedule is None or version != schedule["version"]:
+                raise ValueError("unsupported calendar version")
+            check_equal(calendar["contentSha256"], schedule_sha, "calendar checksum")
+            check_equal(calendar["timeZone"], schedule["timeZone"], "calendar timezone")
+            check_equal(listing["venue"], schedule["venue"], "calendar venue")
+            year = next((y for y in schedule["years"] if y["year"] == day.year), None)
+            if year is None:
+                raise ValueError("unsupported calendar year")
+            if day.weekday() >= 5 or date in year["closed"]:
+                raise ValueError("non-session producer row")
+            hour = 13 if date in year["earlyCloses"] else 16
+        return datetime.combine(day, time(hour), ZoneInfo(calendar["timeZone"]))
     counts = Counter()
     checked = set()
     expected = set()
@@ -42,8 +61,7 @@ def audit(dataset, captures):
             if symbol != ticker.lower().replace(".", "-"):
                 continue
             for date, row in rows.items():
-                close = datetime.combine(datetime.fromisoformat(date).date(), time(16),
-                                         ZoneInfo(calendars[listing["calendarId"]]))
+                close = session_close(listing, date)
                 active = any(row["status"] == "active" and instant(row["effectiveFrom"]) <= close and (
                     row["effectiveUntil"] is None or close < instant(row["effectiveUntil"])
                 ) for row in intervals[listing_id])
@@ -65,10 +83,9 @@ def audit(dataset, captures):
         check_equal(instant(evidence["publishedAt"]), captured, "publication/capture mismatch")
         check_equal(evidence["availabilityEvidence"], "observedPublication", "availability evidence")
         date = observation.get("sessionDate") or instant(observation["effectiveAt"]).astimezone(
-            ZoneInfo(calendars[listing["calendarId"]])).date().isoformat()
+            ZoneInfo(calendars[listing["calendarId"]]["timeZone"])).date().isoformat()
         row = captures[(ticker.lower().replace(".", "-"), captured)][date]
-        close = datetime.combine(datetime.fromisoformat(date).date(), time(16),
-                                 ZoneInfo(calendars[listing["calendarId"]])).astimezone(UTC)
+        close = session_close(listing, date).astimezone(UTC)
         if close > captured:
             raise ValueError("incomplete session emitted")
         if kind == "priceBar":
@@ -122,11 +139,13 @@ def main():
                 check_equal(captures[key], rows, "same-instant capture conflict")
             captures[key] = rows
             provenance.append({k: record[k] for k in ("sourceId", "observedAt", "sha256")})
-    result = audit(read_json(args.dataset), captures)
-    result.update({"auditVersion": "listing-prices-wire-v1",
+    calendar_path = Path(__file__).resolve().parent.parent / "src/Twenty.Ingestion/Listings/nasdaq-equity-sessions.v1.json"
+    result = audit(read_json(args.dataset), captures, read_json(calendar_path),
+                   hashlib.sha256(calendar_path.read_bytes()).hexdigest())
+    result.update({"auditVersion": "listing-prices-wire-v2",
                    "datasetSha256": hashlib.sha256(args.dataset.read_bytes()).hexdigest(),
                    "captures": provenance,
-                   "limitations": "Same-producer wire comparison; 16:00 close assumption; not calendar or economic validation."})
+                   "limitations": "Same-producer wire comparison; timestamps checked independently against the shared reviewed session table; not independent economic or calendar-source validation."})
     print(json.dumps(result, indent=2))
 
 

@@ -1,0 +1,101 @@
+{
+  "reviewedAt": "2026-10-20T12:03:50.711411+00:00",
+  "calendarVersion": "xnas-equities-2015-2026-v1",
+  "range": [
+    "2015-01-01",
+    "2026-12-31"
+  ],
+  "method": "Author-transcribed weekday closures and 13:00 early closes from visually inspected official calendar PDFs, updated by superseding Nasdaq notices. Weekends closed; remaining weekdays regular 16:00. Not a universal exchange calendar or intraday halt log.",
+  "sources": [
+    {
+      "year": "2015",
+      "url": "https://www.nasdaq.net/PublicPages/assets/MyMID/0200-Q15_NasdaqTradingCalendarV3.pdf",
+      "sha256": "7ca345d0d3c4c6c28bd79a3e5cdb2568b7381a069d3831e6cfae2d7c8fbdca66"
+    },
+    {
+      "year": "2016",
+      "url": "https://www.nasdaq.net/PublicPages/assets/MyMID/2016_Trade_Calendar.pdf",
+      "sha256": "2cc761a18fe4c13714a732926077b5588d0f854f323a4a5b958b873224ac376f"
+    },
+    {
+      "year": "2017",
+      "url": "https://www.nasdaq.net/PublicPages/assets/MyMID/2017_Trade_Calendar.pdf",
+      "sha256": "3b7da8f61e136436ff6f15720b25b8f16aa956752a988b4272488c932313f53f"
+    },
+    {
+      "year": "2018",
+      "url": "https://www.nasdaq.net/PublicPages/assets/MyMID/2018_Trade_Calendar.pdf",
+      "sha256": "62d7156b1c394774f582845b85f04b74db5290f6d2eccbea82e191bb6f6e4763"
+    },
+    {
+      "year": "2019",
+      "url": "https://www.nasdaq.net/PublicPages/assets/MyMID/Trade_Calendar_2019.pdf",
+      "sha256": "071a4442748c8a43003e8ec7a948c8f444fafd06cacd763d23c55216334c58b9"
+    },
+    {
+      "year": "2020",
+      "url": "https://www.nasdaq.net/PublicPages/assets/MyMID/Trade_Calendar_2020.pdf",
+      "sha256": "04ff4810367114b03d158d56bd4f8b70998c7c9dd9c8d0c2c4549aa92dd6d68c"
+    },
+    {
+      "year": "2021",
+      "url": "https://www.nasdaqtrader.com/content/technicalsupport/2021tradingcalendar.pdf",
+      "sha256": "cb79aa6a25698c658027cc6decdfcfd05ad35a8f39b5bc2a28d612918cd060a8"
+    },
+    {
+      "year": "2022",
+      "url": "https://www.nasdaqtrader.com/content/technicalsupport/2022tradingcalendar.pdf",
+      "sha256": "c886ec149e38d2cc84f33355c600d59d946a270fce6054323df147b4dd50b6ce"
+    },
+    {
+      "year": "2023",
+      "url": "https://www.nasdaqtrader.com/content/technicalsupport/2023tradingcalendar.pdf",
+      "sha256": "3781aa7ec98e429b39c9b1cbdb3677043b8ba622084b8c9d5e10fd7836d9a13b"
+    },
+    {
+      "year": "2024",
+      "url": "https://www.nasdaqtrader.com/content/technicalsupport/2024tradingcalendar.pdf",
+      "sha256": "5a417265c706abe1e2eaa24e0c1fde1787e79fdd472eca105466a019f8ff1101"
+    },
+    {
+      "year": "2025",
+      "url": "https://www.nasdaqtrader.com/content/technicalsupport/2025tradingcalendar.pdf",
+      "sha256": "fb761082d449ef76461d2ca8448ccebb79862a0acd124fad2e914469c9086037"
+    },
+    {
+      "topic": "2026",
+      "url": "https://www.nasdaqtrader.com/Trader.aspx?id=Calendar",
+      "sha256": "edbd6bcd94c7a5780bdeba36656d4b422fb996a6d108f7a3a54f81c030fac39f",
+      "access": "downloaded"
+    },
+    {
+      "topic": "regular-hours",
+      "url": "https://nasdaqtrader.com/content/TechnicalSupport/nasdaq_sys_hours.pdf",
+      "sha256": "7f2bbf723729c2465711b26a26937a35b78dbf9b8f638b3843c47fd12cc361f8",
+      "access": "downloaded"
+    },
+    {
+      "topic": "bush-closure",
+      "url": "https://www.nasdaqtrader.com/TraderNews.aspx?id=ETA2018-98",
+      "sha256": "dfbce8492d6e1c699768e8cbd74c56bc6d4adecddf5afc43e88c9e6b10781aa6",
+      "access": "downloaded"
+    },
+    {
+      "topic": "juneteenth",
+      "url": "https://www.nasdaq.com/articles/nasdaq-honors-juneteenth-through-our-continued-commitment-to-equality",
+      "access": "Read via web source; raw download unavailable"
+    },
+    {
+      "topic": "carter-closure",
+      "url": "https://ir.nasdaq.com/news-releases/news-release-details/nasdaq-announces-closure-its-us-markets-honor-national-day-0",
+      "access": "Read via web source; raw download unavailable"
+    }
+  ],
+  "overrides": [
+    "2018-12-05 Bush mourning closure absent from annual PDF",
+    "2022-06-20 Juneteenth closure absent from annual PDF; Nasdaq says first observance is 2022",
+    "2025-01-09 Carter mourning closure absent from annual PDF"
+  ],
+  "retrospectiveMetadataOnly": true,
+  "calendarSha256": "31bd0b54a3ae5ff343ebe7fb217f9f8779e5aabc1dffa48485e11ba027ca87f4"
+}

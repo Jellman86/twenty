@@ -354,7 +354,8 @@ public sealed class ListingPricesTests
             ["AAA", "NOH"], [.. Segments.Select(s => (s.Symbol, s.Start, s.End, s.Status))], ["AAA", "NOH"]);
         var rows = new List<(string Date, decimal Close, decimal Div, decimal Split)>();
         for (var day = new DateOnly(2024, 8, 1); day <= new DateOnly(2024, 10, 10); day = day.AddDays(1))
-            if (day.DayOfWeek is DayOfWeek.Monday or DayOfWeek.Tuesday or DayOfWeek.Wednesday or DayOfWeek.Thursday or DayOfWeek.Friday)
+            // Weekdays except the explicitly known Labor Day closure in this authored window.
+            if (day.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday) && day != new DateOnly(2024, 9, 2))
                 rows.Add((day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), 10m + ((day.DayNumber - new DateOnly(2024, 8, 1).DayNumber) % 7) * 0.25m, 0m, 1m));
         Record(w.Store, "AAA", HistoryJson([.. rows]), DateTimeOffset.Parse("2024-10-11T12:00:00Z"));
 
@@ -447,6 +448,47 @@ public sealed class ListingPricesTests
             ? l with { Denomination = new("GBP", QuoteUnit.Major) } : o).ToImmutableArray() };
         var error = Assert.Throws<ResearchException>(() => ListingPrices.Convert(w.Store, identity, "wrong-currency", Created));
         Assert.Equal("price-conversion-denomination", error.Code);
+    }
+
+    [Fact]
+    public void EarlyCloseBarsBecomeCompleteAtThirteenLocalAndCarryTheReviewedCalendar()
+    {
+        using var w = new Workspace();
+        var history = HistoryJson([("2025-07-02", 10m, 0m, 1m), ("2025-07-03", 11m, 0m, 1m)]);
+        Record(w.Store, "AAA", history, DateTimeOffset.Parse("2025-07-03T16:59:00Z"));
+        Record(w.Store, "AAA", history, DateTimeOffset.Parse("2025-07-03T17:01:00Z"));
+        var result = ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "early-close", Created);
+        Assert.Equal(1, result.InProgressSkipped);
+        var bar = Assert.Single(result.Dataset.Observations.OfType<PriceBar>(),
+            b => b.SessionDate == new DateOnly(2025, 7, 3) && b.Basis == PriceBasis.Raw);
+        Assert.Equal(DateTimeOffset.Parse("2025-07-03T17:00:00Z"), bar.SessionCloseAt);
+        Assert.Equal(DateTimeOffset.Parse("2025-07-03T17:01:00Z"), bar.Evidence.AvailableAt);
+        var calendar = Assert.Single(result.Dataset.Manifest.Calendars);
+        Assert.Equal(NasdaqSessions.Version, calendar.Version);
+        Assert.Equal(NasdaqSessions.ContentSha256, calendar.ContentSha256);
+    }
+
+    [Theory]
+    [InlineData("2026-01-03")]
+    [InlineData("2025-01-09")]
+    public void CapturedWeekendAndHolidayRowsAreRefused(string date)
+    {
+        using var w = new Workspace();
+        Record(w.Store, "AAA", HistoryJson([(date, 10m, 0m, 1m)]), CaptureAt);
+        var error = Assert.Throws<ResearchException>(() => ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "closed", Created));
+        Assert.Equal("price-conversion-non-session", error.Code);
+    }
+
+    [Fact]
+    public void ATimezoneMatchDoesNotAuthorizeAnotherExchangeCalendar()
+    {
+        using var w = new Workspace();
+        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
+        var identity = BaseIdentity().Dataset;
+        identity = identity with { Observations = identity.Observations.Select(o => o is Listing l
+            ? l with { Venue = "XNYS" } : o).ToImmutableArray() };
+        var error = Assert.Throws<ResearchException>(() => ListingPrices.Convert(w.Store, identity, "wrong-venue", Created));
+        Assert.Equal("price-conversion-calendar", error.Code);
     }
 
 }

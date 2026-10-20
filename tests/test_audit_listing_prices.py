@@ -63,6 +63,24 @@ class ListingPriceWireAuditTests(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     audit.audit(dataset, captures)
 
+    def test_reviewed_early_close_rejects_the_old_regular_timestamp(self):
+        dataset, captures = fixture()
+        schedule = {"version": "authored-calendar", "venue": "XNAS", "timeZone": "America/New_York",
+                    "years": [{"year": 2026, "closed": [], "earlyCloses": ["2026-01-02"]}]}
+        dataset["manifest"]["calendars"][0].update(version="authored-calendar", contentSha256="authored-hash")
+        dataset["observations"][0]["venue"] = "XNAS"
+        with self.assertRaises(ValueError):
+            audit.audit(dataset, captures, schedule, "authored-hash")
+        for bar in dataset["observations"][1:3]:
+            bar["sessionCloseAt"] = "2026-01-02T18:00:00Z"
+        dataset["observations"][-1]["effectiveAt"] = "2026-01-02T18:00:00Z"
+        self.assertTrue(audit.audit(dataset, captures, schedule, "authored-hash")["valid"])
+        with self.assertRaisesRegex(ValueError, "calendar checksum"):
+            audit.audit(dataset, captures, schedule, "different-hash")
+        schedule["years"][0].update(closed=["2026-01-02"], earlyCloses=[])
+        with self.assertRaisesRegex(ValueError, "non-session"):
+            audit.audit(dataset, captures, schedule, "authored-hash")
+
     def test_delisted_identity_interval_does_not_hide_earlier_prices(self):
         dataset, captures = fixture()
         closed = copy.deepcopy(dataset["observations"][0])

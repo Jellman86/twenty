@@ -1,5 +1,9 @@
 # Validation record
 
+## Nasdaq session calendar (20 October 2026)
+
+`listing-prices-v3` uses a source-reviewed, versioned/hashed XNAS cash-equity calendar for 2015–2026. Genuine AAPL reconversion matches 2,965 expected session dates and changes 46 bar timestamps across 23 early-close sessions, with prices, volumes and capture availability unchanged. Holiday/weekend bars, unsupported years and venue mismatches are refused. [Sources, limits, tests and exact smoke hashes](nasdaq-sessions.md). Local gates pass: 489 .NET tests, 37 Python tests, Ruff, Svelte check/build and the research-boundary probe. No historical study or holdout was opened.
+
 ## Genuine captured-price conversion (20 October 2026)
 
 Added the reproducible `listing-prices` offline CLI and an independent Python wire audit. The existing genuine identity sample and captured AAPL history produce 5,930 raw/adjusted bars and 48 actions (5,980 observations including identity), validator-clean and byte-identical on repeat. Every bar/action matches the source payload; missing histories are excluded. A September→October panel has only an entrant, and backtesting refuses insufficient history. Metadata and limits: [genuine smoke](listing-prices.md#genuine-captured-history-smoke-20-october-2026). Validation passed: 452 .NET tests, 36 Python tests (including four wire-audit tests with tamper/omission controls), Ruff, Svelte check/build, the research-boundary probe and full-history/files secret scanning. Financial inputs for this smoke are historical producer captures; unit fixtures are synthetic. No accelerator, model training, final holdout or broker operation was used.

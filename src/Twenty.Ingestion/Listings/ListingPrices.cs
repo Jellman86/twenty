@@ -26,13 +26,13 @@ public sealed record ListingPricesResult(DatasetFile Dataset, int BarsAdded, int
 /// key. A listing whose capture is absent, whose adjusted fields disagree on one factor,
 /// or whose rows all fall outside its active listing interval is excluded with a recorded
 /// reason and dropped together with its identity rows. Rows outside the identity interval are
-/// counted, not converted; session closes are 16:00 in the listing's exchange timezone so
+/// counted, not converted; session closes follow the reviewed Nasdaq regular/early-close table so
 /// the session date survives DST. Conversion is a pure, deterministic function of the
 /// identity dataset and the store's captures, and re-converting an already-priced dataset
 /// is refused rather than silently revised (a rebuild supersedes by dataset id instead).</summary>
 public static class ListingPrices
 {
-    public const string Version = "listing-prices-v2";
+    public const string Version = "listing-prices-v3";
     public const string SourceId = "tiingo-history";
     public const string SourceLocation = "urn:twenty:capture:tiingo-history";
     /// <summary>Relative tolerance between the adjustment factor implied by adjClose and the
@@ -63,6 +63,7 @@ public static class ListingPrices
 
         var excluded = ImmutableArray.CreateBuilder<ListingPricesExclusion>();
         var excludedIds = new HashSet<string>(StringComparer.Ordinal);
+        var usedCalendars = new HashSet<string>(StringComparer.Ordinal);
         var bars = ImmutableArray.CreateBuilder<PriceBar>();
         var actions = ImmutableArray.CreateBuilder<CorporateAction>();
         var usedCaptureTimes = new List<DateTimeOffset>();
@@ -77,8 +78,8 @@ public static class ListingPrices
             var captures = store.Observations(historySource).OrderBy(c => c.ObservedAt).ThenBy(c => c.Id, StringComparer.Ordinal).ToArray();
             if (captures.Length == 0)
             { excluded.Add(new(symbol, "history-not-captured")); excludedIds.Add(listingId); continue; }
-            // v1 only converts NYSE-timezone listings; any other calendar is outside its scope.
-            if (calendars[rows[0].CalendarId] != "America/New_York")
+            // A timezone alone does not identify an exchange session calendar.
+            if (rows[0].Venue != NasdaqSessions.Venue || calendars[rows[0].CalendarId] != NasdaqSessions.TimeZone)
                 throw new ResearchException("price-conversion-calendar");
             // This converter is restricted to the USD-major identity contract; assigning a
             // different denomination would relabel vendor numbers without an FX conversion.
@@ -107,7 +108,6 @@ public static class ListingPrices
                 .Select(l => (From: DateOnly.FromDateTime(l.EffectiveFrom.UtcDateTime),
                     Until: l.EffectiveUntil is null ? (DateOnly?)null : DateOnly.FromDateTime(l.EffectiveUntil.Value.UtcDateTime)))
                 .ToArray();
-            var calendar = TimeZoneInfo.FindSystemTimeZoneById(calendars[rows[0].CalendarId]);
             var listingBars = 0;
             // Union of session dates across all captures: each capture that carried a session
             // emits a bar (and any action) for it, available from that capture.
@@ -117,7 +117,8 @@ public static class ListingPrices
                 if (!active.Any(iv => iv.From <= date && (iv.Until is null || date < iv.Until)))
                 { outside++; continue; }
                 // Count this row once for "outside" already handled above; emit per capture.
-                var closeAt = SessionClose(date, calendar);
+                var closeAt = NasdaqSessions.CloseAt(date)
+                    ?? throw new ResearchException("price-conversion-non-session");
                 var day = date.ToString("yyyyMMdd", CultureInfo.InvariantCulture);
                 string? priorRawId = null, priorTraId = null;
                 string? priorDivId = null, priorSplitId = null;
@@ -175,6 +176,7 @@ public static class ListingPrices
             if (listingBars == 0)
             { excluded.Add(new(symbol, "no-prices-in-interval")); excludedIds.Add(listingId); continue; }
             barCount += listingBars;
+            usedCalendars.Add(rows[0].CalendarId);
         }
         if (barCount == 0) throw new ResearchException("price-conversion-empty");
 
@@ -199,6 +201,7 @@ public static class ListingPrices
         {
             DatasetId = datasetId,
             CreatedAt = createdAt,
+            Calendars = manifest.Calendars.Select(c => usedCalendars.Contains(c.Id) ? NasdaqSessions.Reference(c.Id) : c).ToImmutableArray(),
             Features = [new FeatureDefinition("daily-prices", "v1",
                 "Captured Tiingo daily OHLC on raw and total-return bases", "Available at capture time only")],
             Sources = manifest.Sources.Add(new SourceSnapshot(SourceId, SourceLocation,
@@ -209,14 +212,6 @@ public static class ListingPrices
         if (!validation.IsValid) throw new InvalidDatasetException(validation);
         return new(dataset, barCount, actionCount, outside, inProgress,
             excluded.ToImmutable().OrderBy(x => x.Symbol, StringComparer.Ordinal).ToImmutableArray());
-    }
-
-    // Regular daily close at 16:00 local. Supported exchange calendars shift hours at
-    // 01:00-03:00 local, so 16:00 is never ambiguous or skipped and the offset is unambiguous.
-    private static DateTimeOffset SessionClose(DateOnly date, TimeZoneInfo calendar)
-    {
-        var local = new DateTime(date.Year, date.Month, date.Day, 16, 0, 0, DateTimeKind.Unspecified);
-        return new DateTimeOffset(local, calendar.GetUtcOffset(local));
     }
 
     // Every adjusted field must imply the same factor as adjClose on a row; the audit checks
