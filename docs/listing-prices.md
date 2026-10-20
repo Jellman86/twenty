@@ -1,10 +1,20 @@
 # Price conversion evidence contract (`listing-prices-v2`)
 
-Implemented 19 October 2026 on `dev`, advancing [#5](https://github.com/Jellman86/twenty/issues/5) and completing the step the [listing identity contract](listing-identity.md) explicitly left open: `Twenty.Ingestion.Listings.ListingPrices` converts captured Tiingo daily histories into [v1](data-contract-v1.md) `PriceBar` observations (raw and total-return-adjusted) plus split/dividend `CorporateAction` observations, over a validated two-source identity dataset. The result is a dataset shape that `ChangingUniversePanel` can price from forward-collected evidence. This converter has been exercised with authored fixtures; a genuine conversion smoke remains outstanding.
+Implemented 19 October 2026 on `dev`, advancing [#5](https://github.com/Jellman86/twenty/issues/5) and completing the step the [listing identity contract](listing-identity.md) explicitly left open: `Twenty.Ingestion.Listings.ListingPrices` converts captured Tiingo daily histories into [v1](data-contract-v1.md) `PriceBar` observations (raw and total-return-adjusted) plus split/dividend `CorporateAction` observations, over a validated two-source identity dataset. The result is a dataset shape that `ChangingUniversePanel` can price from forward-collected evidence. The converter has authored-fixture coverage and a bounded genuine AAPL conversion smoke, recorded below.
 
 ```csharp
 var result = ListingPrices.Convert(store, identity.Dataset, dataset-id);
 ```
+
+
+```sh
+dotnet run --project src/Twenty.Data -c Release -- listing-prices \
+  --dataset <identity.json> --archive <private-capture-copy> \
+  --dataset-archive <private-output> --created-at <ISO8601-with-offset> \
+  --dataset-id <id>
+```
+
+`--created-at` is explicit for reproducibility, must include an offset and cannot exceed the current clock. It must also cover all used captures under the dataset validator. Repeating the same inputs and cutoff produces the same immutable content address. Work from a private offline copy of the capture store, never open the running app's writer store with this command.
 
 Inputs are a `CaptureStore` holding `tiingo-history-<ticker>` response captures and the `DatasetFile` produced by `ListingIdentity.Convert`. Output is `ListingPricesResult(Dataset, BarsAdded, ActionsAdded, OutsideIntervalSkipped, Excluded)`; raw captures and datasets stay outside Git.
 
@@ -35,3 +45,13 @@ The registered pipeline test stops where honesty stops: captures → identity �
 Tests in `tests/Twenty.Tests/ListingPricesTests.cs` cover: both bases at DST-correct session closes with point-in-time availability and manifest features, including raw `volume` on the raw bar and split-adjusted `adjVolume` on the total-return bar; dividend/split action emission and outside-interval counting; adjustment-inconsistent exclusion that keeps the rest of the dataset; the duplicate/source-conflict/capture-conflict/empty refusals; vintage merging with each bar available from its first capture and `RevisionOf` chains across restatements; a later capture that drops an earlier one's first session refused as `price-conversion-vintage-narrower` (as is a capture that carried no rows at all, which previously crashed); determinism; `ParseHistory` rejecting legacy rows without adjusted OHLC or `adjVolume`; and the captures → identity → prices → point-in-time panel pipeline over an authored varying-price fixture. All inputs are **authored synthetic fixtures** shaped like genuine Tiingo responses (including the adjusted fields the strict parser now requires); no genuine capture was converted in the test suite, and the genuine Tiingo payload schema (`adjOpen/adjHigh/adjLow/adjVolume` present on every row) is what makes the strict contract safe.
 
 The 20 October review added regressions for action restatements and withdrawal, duplicate/contradictory same-instant captures, intermediate-vintage holes and currency relabelling. See [the review](reviews/2026-10-20-post-muse.md). Version 2 distinguishes these changes from previously generated artifacts.
+
+## Genuine captured-history smoke (20 October 2026)
+
+The existing reviewed identity snapshot `aab59f90…` and private copies of the already captured Tiingo responses produced dataset `39657542…`: 5,980 observations, comprising 2,965 raw and 2,965 adjusted AAPL bars plus 47 dividend and one split observation, with the listing and membership preserved. Sessions span 2015-01-02 through 2026-10-16. The full v1 validator passes, and identical repeated conversion produces identical bytes. No network collection or production-data import was required.
+
+ABMD, COST and MSFT were excluded as `history-not-captured`. BBBYQ's existing history was not attached to AAPL or invented as a NASDAQ listing: its successor OTC identity was already excluded by the identity review. This smoke therefore establishes one active listing conversion, not genuine delisting accounting or whole-market coverage.
+
+`scripts/audit_listing_prices.py` independently reads the archived producer JSON using Python decimal arithmetic, verifies payload hashes and compares every converted OHLC/volume field, action amount, session close and capture availability. It also checks that no expected bar/action was omitted. All 5,930 bars and 48 actions match. This is a same-producer wire check; the script deliberately mirrors the declared 16:00 close assumption and cannot certify holidays, early closes or economic correctness. Negative controls reject changed price/volume/time/action values and omitted observations.
+
+The AAPL capture predates the directory evidence on 18 October. A price cannot be resolved through `DataSlice.Prices` until the corresponding identity is also knowable, even when the price observation itself was captured earlier. A September→October panel contains only an October entry and no historical return; `UniverseBacktest` refuses it with `universe-backtest-history`. No final evaluation or forecasting result was generated. Source hashes, exclusions, exact output hash and limitations are retained in [the smoke metadata](genuine-price-conversion-smoke.json); payloads and output datasets stay outside Git.

@@ -69,6 +69,28 @@ try
         }, DatasetJson.Options));
         return 0;
     }
+    if ((args.Length == 9 || args.Length == 11 && args[9] == "--dataset-id") && args[0] == "listing-prices" &&
+        args[1] == "--dataset" && args[3] == "--archive" && args[5] == "--dataset-archive" && args[7] == "--created-at")
+    {
+        if (!System.Text.RegularExpressions.Regex.IsMatch(args[8], @"T.*(?:Z|[+-]\d{2}:\d{2})$", System.Text.RegularExpressions.RegexOptions.CultureInvariant) ||
+            !DateTimeOffset.TryParse(args[8], CultureInfo.InvariantCulture, DateTimeStyles.None, out var createdAt) || createdAt > DateTimeOffset.UtcNow)
+            throw new ResearchException("price-conversion-created-at");
+        var identityBytes = DatasetArchive.ReadBounded(args[2]);
+        var identity = DatasetJson.Read(identityBytes);
+        using var captures = new CaptureStore(args[4]);
+        var datasetId = args.Length == 11 ? args[10] : "listing-prices-sample";
+        var result = ListingPrices.Convert(captures, identity, datasetId, createdAt);
+        var outputBytes = JsonSerializer.SerializeToUtf8Bytes(result.Dataset, DatasetJson.Options);
+        var storedPath = DatasetArchive.Store(Path.GetFullPath(args[6]), outputBytes);
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            valid = true, datasetId, converter = ListingPrices.Version,
+            identitySha256 = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(identityBytes)),
+            datasetSha256 = Path.GetFileNameWithoutExtension(storedPath), synthetic = result.Dataset.Manifest.Synthetic,
+            result.BarsAdded, result.ActionsAdded, result.OutsideIntervalSkipped, result.InProgressSkipped, result.Excluded
+        }, DatasetJson.Options));
+        return 0;
+    }
     if (args.Length == 9 && args[0] == "listing-audit" && args[1] == "--intervals" && args[3] == "--archive" && args[5] == "--symbols" && args[7] == "--output")
     {
         var intervalsPath = Path.GetFullPath(args[2]);
@@ -259,6 +281,7 @@ try
             "       Twenty.Data tiingo-history <SYMBOL> --from yyyy-mm-dd --to yyyy-mm-dd --archive <private-directory> --capture\n" +
             "       Twenty.Data listing-intervals --archive <captures> --output <private-directory> [--sources nasdaq-listed,nasdaq-other,tiingo-tickers]\n" +
             "       Twenty.Data listing-identity --archive <captures> --symbols AAA,BBB --dataset-archive <dataset-archive> [--dataset-id <id>]\n" +
+            "       Twenty.Data listing-prices --dataset <identity.json> --archive <captures> --dataset-archive <output> --created-at <iso8601-offset> [--dataset-id <id>]\n" +
             "       Twenty.Data listing-audit --intervals <interval-id.csv> --archive <tiingo-captures> --symbols AAA,BBB --output <private-directory>\n" +
             "       Twenty.Data sec-facts --dataset <input.json> --bulk <companyfacts.zip> --retrieved-at <iso8601> --concepts Revenues,Assets --archive <dataset-archive> [--dataset-id <id>]\n" +
             "       Twenty.Data universe-backtest --dataset <input.json> --universe <id> --decisions <iso8601,iso8601,...> [--max-price-age-days 45 [--top-k 3]]\n" +

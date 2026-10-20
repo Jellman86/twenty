@@ -1,0 +1,80 @@
+{
+  "version": "genuine-price-conversion-smoke-v1",
+  "date": "2026-10-20",
+  "createdAt": "2026-10-20T09:55:00Z",
+  "converter": "listing-prices-v2",
+  "synthetic": false,
+  "purpose": "Bounded wire-format and provenance smoke; not a strategy trial or historical universe certification",
+  "identitySha256": "aab59f907e078da5b49c513980df77df9842bb2f3dc201b432c870c56b9064e9",
+  "datasetSha256": "396575429a03fc2b3a1634bca71a4a275e223ebcd4ec6a9962f570320b474ed3",
+  "sample": [
+    "AAPL",
+    "ABMD",
+    "COST",
+    "MSFT"
+  ],
+  "convertedSymbols": [
+    "AAPL"
+  ],
+  "excluded": [
+    {
+      "symbol": "ABMD",
+      "reason": "history-not-captured"
+    },
+    {
+      "symbol": "COST",
+      "reason": "history-not-captured"
+    },
+    {
+      "symbol": "MSFT",
+      "reason": "history-not-captured"
+    }
+  ],
+  "priceHistorySpan": {
+    "firstSession": "2015-01-02",
+    "lastSession": "2026-10-16"
+  },
+  "counts": {
+    "dividend": 47,
+    "raw": 2965,
+    "split": 1,
+    "totalReturnAdjusted": 2965
+  },
+  "observations": 5980,
+  "outsideIntervalSkipped": 0,
+  "inProgressSkipped": 0,
+  "usedCapture": {
+    "sourceId": "tiingo-history-aapl",
+    "observedAt": "2026-10-18T09:23:31.24043+00:00",
+    "sha256": "049e9cacd31d67d73b2fe13e9762997b47dab32efeb4d9828656149d9f3ad5fc"
+  },
+  "checks": {
+    "datasetValid": true,
+    "wireComparison": "all OHLC/volume fields on both bases; each dividend/split amount and timestamp; complete output coverage; source SHA-256",
+    "deterministicRepeat": true,
+    "unzonedAndFutureCutoffsRefused": true,
+    "panel": {
+      "sha256": "7aadbb2a85fe32ff127f910b83544580d3cfee4e5f652067825deff83e943642",
+      "datasetId": "genuine-prices-smoke-20261020",
+      "universeId": "declared-sample",
+      "synthetic": false,
+      "months": 2,
+      "periods": 1,
+      "hasGaps": false,
+      "statusCounts": {
+        "Entered": 1
+      },
+      "builder": "changing-universe-v2"
+    },
+    "backtestRefusal": "universe-backtest-history"
+  },
+  "limitations": [
+    "One converted active listing; no genuine inactive listing was priced.",
+    "Same-producer payload comparison, not independent price validation.",
+    "Regular 16:00 New York session-close assumption; holidays and early closes remain unaudited.",
+    "Bars become available on 18 October at 09:23 UTC; identity evidence is later that day, so usable prices require both.",
+    "Capture-time knowledge does not certify past membership or execution prices; no holdout, training, forward return or broker action.",
+    "BBBYQ history exists but is outside the reviewed identity sample because its successor OTC identity was excluded."
+  ],
+  "attemptAccounting": "An initial smoke used a 10:00 UTC creation cutoff before that wall-clock time. Its private output was retained and superseded by this 09:55 UTC snapshot. The CLI now refuses future cutoffs. No strategy result was inspected."
+}
