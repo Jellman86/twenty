@@ -1,0 +1,406 @@
+{
+  "schemaVersion": "action-reference.v1",
+  "symbol": "AAPL",
+  "from": "2015-01-02",
+  "to": "2026-10-16",
+  "sources": [
+    {
+      "id": "apple-dividend-history",
+      "url": "https://investor.apple.com/dividend-history/default.aspx",
+      "retrievedAt": "2026-10-20T12:37:48.970728+00:00",
+      "contentSha256": "30132b4a247707ac415d2b08baea36ccf08289ccc3dbe8548cb9001515f9fd0c"
+    },
+    {
+      "id": "apple-2020-q3",
+      "url": "https://www.apple.com/newsroom/2020/07/apple-reports-third-quarter-results/",
+      "retrievedAt": "2026-10-20T12:37:49.664067+00:00",
+      "contentSha256": "8e2ec99b45a48ba43109e412c32b0438bb41516fe1288f79bd02b2600ae23d3c"
+    }
+  ],
+  "actions": [
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2015-01-27",
+      "to": "2015-02-09",
+      "value": 0.47,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2015-04-27",
+      "to": "2015-05-11",
+      "value": 0.52,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2015-07-21",
+      "to": "2015-08-10",
+      "value": 0.52,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2015-10-27",
+      "to": "2015-11-09",
+      "value": 0.52,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2016-01-26",
+      "to": "2016-02-08",
+      "value": 0.52,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2016-04-26",
+      "to": "2016-05-09",
+      "value": 0.57,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2016-07-26",
+      "to": "2016-08-08",
+      "value": 0.57,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2016-10-25",
+      "to": "2016-11-07",
+      "value": 0.57,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2017-01-31",
+      "to": "2017-02-13",
+      "value": 0.57,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2017-05-02",
+      "to": "2017-05-15",
+      "value": 0.63,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2017-08-01",
+      "to": "2017-08-14",
+      "value": 0.63,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2017-11-02",
+      "to": "2017-11-13",
+      "value": 0.63,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2018-02-01",
+      "to": "2018-02-12",
+      "value": 0.63,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2018-05-01",
+      "to": "2018-05-14",
+      "value": 0.73,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2018-07-31",
+      "to": "2018-08-13",
+      "value": 0.73,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2018-11-01",
+      "to": "2018-11-12",
+      "value": 0.73,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2019-01-29",
+      "to": "2019-02-11",
+      "value": 0.73,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2019-04-30",
+      "to": "2019-05-13",
+      "value": 0.77,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2019-07-30",
+      "to": "2019-08-12",
+      "value": 0.77,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2019-10-30",
+      "to": "2019-11-11",
+      "value": 0.77,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2020-01-28",
+      "to": "2020-02-10",
+      "value": 0.77,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2020-04-30",
+      "to": "2020-05-11",
+      "value": 0.82,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2020-07-30",
+      "to": "2020-08-10",
+      "value": 0.82,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "split",
+      "dateBasis": "exact-ex-date",
+      "from": "2020-08-31",
+      "to": "2020-08-31",
+      "value": 4,
+      "sourceId": "apple-2020-q3"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2020-10-29",
+      "to": "2020-11-09",
+      "value": 0.205,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2021-01-27",
+      "to": "2021-02-08",
+      "value": 0.205,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2021-04-28",
+      "to": "2021-05-10",
+      "value": 0.22,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2021-07-27",
+      "to": "2021-08-09",
+      "value": 0.22,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2021-10-28",
+      "to": "2021-11-08",
+      "value": 0.22,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2022-01-27",
+      "to": "2022-02-07",
+      "value": 0.22,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2022-04-27",
+      "to": "2022-05-09",
+      "value": 0.23,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2022-07-28",
+      "to": "2022-08-08",
+      "value": 0.23,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2022-10-27",
+      "to": "2022-11-07",
+      "value": 0.23,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2023-02-02",
+      "to": "2023-02-13",
+      "value": 0.23,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2023-05-04",
+      "to": "2023-05-15",
+      "value": 0.24,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2023-08-03",
+      "to": "2023-08-14",
+      "value": 0.24,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2023-11-02",
+      "to": "2023-11-13",
+      "value": 0.24,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2024-02-01",
+      "to": "2024-02-12",
+      "value": 0.24,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2024-05-02",
+      "to": "2024-05-13",
+      "value": 0.25,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2024-08-01",
+      "to": "2024-08-12",
+      "value": 0.25,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2024-10-31",
+      "to": "2024-11-11",
+      "value": 0.25,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2025-01-30",
+      "to": "2025-02-10",
+      "value": 0.25,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2025-05-01",
+      "to": "2025-05-12",
+      "value": 0.26,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2025-07-31",
+      "to": "2025-08-11",
+      "value": 0.26,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2025-10-30",
+      "to": "2025-11-10",
+      "value": 0.26,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2026-01-29",
+      "to": "2026-02-09",
+      "value": 0.26,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2026-04-30",
+      "to": "2026-05-11",
+      "value": 0.27,
+      "sourceId": "apple-dividend-history"
+    },
+    {
+      "kind": "dividend",
+      "dateBasis": "declaration-record-window",
+      "from": "2026-07-30",
+      "to": "2026-08-10",
+      "value": 0.27,
+      "sourceId": "apple-dividend-history"
+    }
+  ]
+}

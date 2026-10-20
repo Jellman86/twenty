@@ -1,5 +1,9 @@
 # Validation record
 
+## Independent issuer-action audit (20 October 2026)
+
+Added the offline source-hashed issuer-reference audit. The declared genuine AAPL capture matches one 4:1 split on the issuer's exact first adjusted trading date and all 47 dividend amounts within issuer declaration-to-record windows. This resolves the earlier two SEC amount residuals without claiming independently verified dividend ex-dates. Repeat output is byte-identical; an intentionally substituted 28 August split date is refused. [Contract, primary sources and smoke metadata](corporate-action-references.md). Local validation: 514 .NET tests, 37 Python tests, Ruff, Svelte check/build, research-boundary probe and full-history/files secret scan pass. Unit financial inputs are authored fixtures; the smoke uses genuine captured history and reviewed issuer facts. No model trial, holdout, accelerator or broker request was used.
+
 ## Simple stock-only successor settlement (20 October 2026)
 
 The v3 changing-universe panel binds successor id, exchange ratio and raw endpoint prices in its hash. The v3 backtest transfers realized original exposure into the successor after period returns, merges existing exposure and charges ordinary costs on subsequent rebalance sales. A successor must be eligible and observably priced at the exit decision; unsupported coverage, chained/overlapping settlements and complex corporate actions remain refused. [Contract and limitations](changing-universe-panel.md#successor-exposure-settlement-20-october-2026). Hand-calculated authored fixtures cover 100 → 125 exposure on exchange, 125 → 150 on a later successor return and 150 → 148.5 cash on a 1% sale, plus merging, entrant/coverage gates and atomic refusal. Local validation: 499 .NET tests, 37 Python tests, Ruff, Svelte check/build (zero errors/warnings), research-boundary probe and secret scan pass. No genuine merger event, model trial, final holdout, accelerator or broker action was used.

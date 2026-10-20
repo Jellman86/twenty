@@ -48,3 +48,7 @@ Result: **45 of 47 vendor dividends match an SEC declaration exactly to the cent
 - Sample size is bounded by captured histories and the free-tier quotas that produced them; widening the delisted sample needs declared captures over time, not a bulk backfill. Daily interval captures on Quark also need time to accumulate before `closed-absent` and `name-changed` evidence exists in volume.
 - Producer segment ends, directory absence and adjustment factors are all single-vendor claims until sampled against independent authoritative records (exchange notices, SEC filings). That sampling, plus terminal-outcome evidence (cash merger terms, liquidation distributions, OTC continuation), remains open in [#5](https://github.com/Jellman86/twenty/issues/5).
 - Converting captured prices into v1 `PriceBar`/`CorporateAction` observations is now specified separately in the [price-conversion evidence contract](listing-prices.md); this audit still deliberately does not mint identity or prices.
+
+## Issuer-reference follow-up (20 October 2026)
+
+The [source-bound issuer audit](corporate-action-references.md) now corroborates all 47 captured AAPL dividend amounts within declared issuer declaration-to-record windows and its one 4:1 split on the exact first split-adjusted trading date. This closes the prior sample's independent split check and the two SEC amount residuals, while exact dividend ex-dates, other symbols, price-adjustment formulas and terminal outcomes remain separate gates.

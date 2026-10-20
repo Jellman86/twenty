@@ -1,0 +1,47 @@
+{
+  "auditVersion": "corporate-action-audit-v1",
+  "symbol": "AAPL",
+  "from": "2015-01-02",
+  "to": "2026-10-16",
+  "historySha256": "049e9cacd31d67d73b2fe13e9762997b47dab32efeb4d9828656149d9f3ad5fc",
+  "historyCaptureId": "4411d111434047e89552f361a66d771b",
+  "historyCapturedAt": "2026-10-18T09:23:31.24043+00:00",
+  "referenceSha256": "7911cfd51733141673f9d29617849897e5d667cff667e235ca46ed62b62b07fe",
+  "sources": [
+    {
+      "id": "apple-dividend-history",
+      "url": "https://investor.apple.com/dividend-history/default.aspx",
+      "retrievedAt": "2026-10-20T12:37:48.970728+00:00",
+      "contentSha256": "30132b4a247707ac415d2b08baea36ccf08289ccc3dbe8548cb9001515f9fd0c"
+    },
+    {
+      "id": "apple-2020-q3",
+      "url": "https://www.apple.com/newsroom/2020/07/apple-reports-third-quarter-results/",
+      "retrievedAt": "2026-10-20T12:37:49.664067+00:00",
+      "contentSha256": "8e2ec99b45a48ba43109e412c32b0438bb41516fe1288f79bd02b2600ae23d3c"
+    }
+  ],
+  "referenceActions": 48,
+  "vendorActions": 48,
+  "valid": true,
+  "limitations": [
+    "Declared sample only. Symbol association and first-observation time follow the recorded capture metadata, not a retroactive availability claim.",
+    "Exact-ex-date assertions compare dates and amounts; declaration-record windows compare one action amount within issuer declaration/record bounds, not an independently verified ex-date.",
+    "Hashed documents bind manually reviewed assertions, not source authenticity or historical data availability. The audit does not certify price adjustments, other symbols, terminal outcomes or investment returns."
+  ],
+  "matches": {
+    "splitExactDate": 1,
+    "dividendAmountWindow": 47
+  },
+  "issues": [],
+  "repeatByteIdentical": true,
+  "negativeControl": {
+    "wrongSplitDate": "2020-08-28",
+    "exitCode": 1,
+    "issueCodes": [
+      "reference-action-missing",
+      "vendor-action-unreferenced"
+    ]
+  },
+  "financialInputs": "Historical captured Tiingo data and independently reviewed issuer assertions; no study or holdout access."
+}
