@@ -2,7 +2,7 @@
 
 ## Explicit dividend receivable valuation (21 October 2026)
 
-The [separate accrual estimate](raw-dividend-valuation.md) requires one available source/assumption per pending claim, preserves spendable cash and makes current FX purpose explicit. Matching payment replaces the estimate with cash without double counting; later execution FX can differ. Thirty new authored cases pass (708 .NET total), covering raw ex-dividend conservation, all-claim coverage, future-observation perturbation, pence units and negative fee balances. Ordinary valuation keeps its settled-only contract. Source verification, terminal settlement, persistence and registered backtest integration remain open.
+The [separate accrual estimate](raw-dividend-valuation.md) requires one available source/assumption per pending claim, preserves spendable cash and makes current FX purpose explicit. Matching payment replaces the estimate with cash without double counting; later execution FX can differ. Thirty new authored cases pass (708 .NET total), covering raw ex-dividend conservation, all-claim coverage, future-observation perturbation, pence units and negative fee balances. Ordinary valuation keeps its settled-only contract. Five exported scenarios independently match Python Decimal. [CI/image/Dockhand acceptance](raw-dividend-valuation.md#publication-and-deployment-acceptance) passed for `7d80938`, preserving eight collections, 58 reports, four diagnostics and study plans; completed-study compatibility and live desktop/mobile checks also passed. Source verification, terminal settlement, persistence and registered backtest integration remain open.
 
 ## Explicit dividend accounting (21 October 2026)
 
