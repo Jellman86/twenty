@@ -6,7 +6,7 @@ namespace Twenty.Core.Research;
 public sealed record RawQuantityPosition(decimal Quantity, Denomination Denomination, DateTimeOffset OpenedAt);
 public sealed record RawLedgerEntry(string Id, DateTimeOffset At, string Kind, string? ListingId, decimal Quantity,
     decimal? RawPrice, Denomination? Denomination, decimal FeeGbp, decimal CashChangeGbp, string? FxId,
-    decimal GbpPerLocalUnit, decimal CashAfterGbp)
+    decimal? GbpPerLocalUnit, decimal CashAfterGbp)
 {
     public string? ActionId { get; init; }
     public string? ActionObservationId { get; init; }
@@ -146,7 +146,7 @@ public sealed class RawGbpLedger
         var next = holdings.SetItem(listingId, position with { Quantity = quantity });
         var actions = bookedActions.Add(key, action);
         Record(new(id, market.DecisionAt.ToUniversalTime(), "split", listingId, quantity - position.Quantity,
-            null, position.Denomination, 0, 0, null, 1, CashGbp)
+            null, position.Denomination, 0, 0, null, null, CashGbp)
         { ActionId = action.ActionId, ActionObservationId = action.Id, ActionEffectiveAt = action.EffectiveAt.ToUniversalTime(), SplitRatio = action.SplitRatio });
         holdings = next; bookedActions = actions;
     }

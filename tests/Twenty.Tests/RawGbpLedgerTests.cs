@@ -145,6 +145,7 @@ public sealed class RawGbpLedgerTests
         Assert.Equal(2, ledger.Holdings["listing-a"].Quantity); Assert.Equal(120, ledger.CashGbp);
         Assert.Equal(200, ledger.Value(next, Age, Age, FxPurpose.Executable).EquityGbp);
         Assert.Equal(0, ledger.FeesGbp); Assert.Equal(200, ledger.ContributionsGbp);
+        Assert.Null(ledger.Entries[^1].GbpPerLocalUnit); Assert.Null(ledger.Entries[^1].FxId);
         Assert.Equal("raw-ledger-action-already-booked", Assert.Throws<ResearchException>(() => ledger.ApplySplit("another", next, "listing-a", action.ActionId)).Code);
         Assert.Equal(3, ledger.Entries.Length);
     }
