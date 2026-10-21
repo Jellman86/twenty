@@ -8,7 +8,7 @@ The offline `RawGbpLedger` now separates a declared dividend entitlement from an
 
 The current position must predate the cutoff. Intervening fills or later effective splits prevent retroactive inference of the earlier quantity. Earlier unresolved actions must be handled first; ambiguous simultaneous actions remain refused. Capturing entitlement freezes quantity, currency and `quantity × cash-per-share` in major currency units without changing GBP cash, contributions, fees or shares. Pence price units never scale a cash distribution. Selling shares or a subsequent split cannot sell or multiply the already frozen claim.
 
-Unpaid income cannot fund purchases. `Value` refuses `raw-ledger-dividend-unpaid` while any claim is pending, including after selling all shares. It does not omit a receivable from purported total equity or invent its after-tax/FX value. Explicit gross/net receivable valuation remains a required next step before a complete monthly backtest can cross payment lags.
+Unpaid income cannot fund purchases. `Value` refuses `raw-ledger-dividend-unpaid` while any claim is pending, including after selling all shares. It does not omit a receivable from purported total equity or invent its after-tax/FX value. The subsequent [explicit receivable valuation method](raw-dividend-valuation.md) can include pending income under separately declared assumptions; ordinary `Value` retains this settled-only refusal.
 
 ## Payment and conversion
 

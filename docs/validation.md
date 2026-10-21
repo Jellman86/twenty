@@ -1,5 +1,9 @@
 # Validation record
 
+## Explicit dividend receivable valuation (21 October 2026)
+
+The [separate accrual estimate](raw-dividend-valuation.md) requires one available source/assumption per pending claim, preserves spendable cash and makes current FX purpose explicit. Matching payment replaces the estimate with cash without double counting; later execution FX can differ. Thirty new authored cases pass (708 .NET total), covering raw ex-dividend conservation, all-claim coverage, future-observation perturbation, pence units and negative fee balances. Ordinary valuation keeps its settled-only contract. Source verification, terminal settlement, persistence and registered backtest integration remain open.
+
 ## Explicit dividend accounting (21 October 2026)
 
 The offline [dividend contract](raw-dividend-accounting.md) freezes declared entitlement quantity without crediting cash, then records one explicit net payment with separate paid/available/booking dates, withholding, GBP fees and a pinned executable FX observation. It refuses valuation while income is unpaid, preserving a visible receivable gap until a valuation policy exists. Thirty-seven authored cases pass (678 .NET total), including a deliberate gross-for-net negative control, payment-time FX, pence units, later sales/splits, revised evidence and duplicate-payment refusal. [CI/image/deployment and completed-study compatibility](raw-dividend-accounting.md#publication-and-deployment-acceptance) subsequently pass for `a504451`, preserving eight collections, 58 reports, four diagnostics and study plans. No original report or dataset schema changes; terminal handling, receivable valuation, persistence and backtest integration remain open.
