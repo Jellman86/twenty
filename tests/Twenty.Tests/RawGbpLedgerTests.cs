@@ -4,14 +4,14 @@ using Twenty.Core.Research;
 
 namespace Twenty.Tests;
 
-public sealed class RawGbpLedgerTests
+public sealed partial class RawGbpLedgerTests
 {
     private static readonly DateTimeOffset BuyAt = new(2024, 1, 2, 17, 0, 0, TimeSpan.Zero);
     private static readonly TimeSpan Age = TimeSpan.FromDays(2);
     private static Evidence Known(DateTimeOffset at) => new("fixture-source", at, at, AvailabilityEvidence.ArchivedPublication, TimePrecision.Second, null, null);
     private static DataSlice Market(DateTimeOffset at, Denomination? denomination = null, decimal price = 100m,
         decimal fx = .8m, FxPurpose purpose = FxPurpose.Executable, bool adjustedOnly = false,
-        bool reverseFx = false, int fxAgeDays = 0, int priceAgeDays = 0, bool futureFx = false, bool split = false, ImmutableArray<CorporateAction> actions = default)
+        bool reverseFx = false, int fxAgeDays = 0, int priceAgeDays = 0, bool futureFx = false, bool split = false, ImmutableArray<CorporateAction> actions = default, ImmutableArray<FxRate> fxRates = default)
     {
         var fixture = DatasetJson.Read(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "point-in-time.v1.json")));
         var units = denomination ?? new("USD", QuoteUnit.Major);
@@ -23,7 +23,8 @@ public sealed class RawGbpLedgerTests
         var rows = ImmutableArray.CreateBuilder<Observation>(); rows.Add(listing);
         rows.Add(new PriceBar("raw", Known(close.AddMinutes(2)), listing.ListingId, DateOnly.FromDateTime(close.UtcDateTime), close,
             units, adjustedOnly ? PriceBasis.TotalReturnAdjusted : PriceBasis.Raw, price, price, price, price, 100));
-        if (units.Currency != "GBP") rows.Add(new FxRate("fx", Known(observed), reverseFx ? "GBP" : units.Currency,
+        if (!fxRates.IsDefault) rows.AddRange(fxRates);
+        else if (units.Currency != "GBP") rows.Add(new FxRate("fx", Known(observed), reverseFx ? "GBP" : units.Currency,
             reverseFx ? units.Currency : "GBP", fx, observed, purpose));
         if (split) rows.Add(new CorporateAction("split", Known(at.AddMinutes(-1)), listing.ListingId, "split-event", CorporateActionKind.Split,
             at.AddHours(-1), 2, null, null, null, null, TerminalOutcome.NotApplicable));

@@ -12,6 +12,8 @@ public sealed record RawLedgerEntry(string Id, DateTimeOffset At, string Kind, s
     public string? ActionObservationId { get; init; }
     public DateTimeOffset? ActionEffectiveAt { get; init; }
     public decimal? SplitRatio { get; init; }
+    public RawDividendEntitlement? DividendEntitlement { get; init; }
+    public RawDividendPayment? DividendPayment { get; init; }
 }
 public sealed record RawPositionValue(string ListingId, decimal Quantity, string PriceId, string? FxId,
     decimal RawPrice, Denomination Denomination, decimal GbpPerLocalUnit, decimal ValueGbp);
@@ -21,8 +23,8 @@ public sealed record RawGbpValuation(DateTimeOffset At, FxPurpose FxPurpose, dec
 /// <summary>Offline, single-owner decimal reference for explicit raw fills and GBP cash.
 /// Supplied fill prices are execution assumptions, never inferred from an adjusted bar.
 /// This is not an order adapter, a historical execution simulator or a return-index portfolio.
-/// Exact split quantities can be settled explicitly; cash/stock distributions remain refused.</summary>
-public sealed class RawGbpLedger
+/// Exact splits and explicit dividend payments are supported; terminal distributions remain refused.</summary>
+public sealed partial class RawGbpLedger
 {
     private ImmutableDictionary<string, RawQuantityPosition> holdings = ImmutableDictionary.Create<string, RawQuantityPosition>(StringComparer.Ordinal);
     private ImmutableHashSet<string> ids = ImmutableHashSet.Create<string>(StringComparer.Ordinal);
@@ -156,6 +158,7 @@ public sealed class RawGbpLedger
         CheckTime(market.DecisionAt); CheckAge(maximumPriceAge); CheckAge(maximumFxAge);
         if (!Enum.IsDefined(purpose)) throw new ResearchException("raw-ledger-fx-purpose");
         CheckHoldings(market);
+        if (dividends.Values.Any(d => d.PaidAt is null)) throw new ResearchException("raw-ledger-dividend-unpaid");
         var values = ImmutableArray.CreateBuilder<RawPositionValue>();
         foreach (var (id, position) in holdings.OrderBy(x => x.Key, StringComparer.Ordinal))
         {

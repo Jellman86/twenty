@@ -1,5 +1,9 @@
 # Validation record
 
+## Explicit dividend accounting (21 October 2026)
+
+The offline [dividend contract](raw-dividend-accounting.md) freezes declared entitlement quantity without crediting cash, then records one explicit net payment with separate paid/available/booking dates, withholding, GBP fees and a pinned executable FX observation. It refuses valuation while income is unpaid, preserving a visible receivable gap until a valuation policy exists. Thirty-seven authored cases pass (678 .NET total), including a deliberate gross-for-net negative control, payment-time FX, pence units, later sales/splits, revised evidence and duplicate-payment refusal. No original report or dataset schema changes; terminal handling, receivable valuation, persistence and backtest integration remain open.
+
 ## Explicit raw split settlement (21 October 2026)
 
 The [offline reference](raw-gbp-ledger.md#explicit-split-settlement-21-october-2026) now books exact pure split quantities with immutable action receipts. Late-fill conflicts, effective ordering, revised/missing evidence, post-event ownership and mixed consideration fail closed. Identical later vintages preserve the old receipt and remain usable. Twenty additional authored cases pass (641 .NET total); four exported scenarios match independent Python Decimal quantity/cash/fee/GBP valuations. Boundary and full-history/files secret checks pass, including the fake-secret refusal. [CI, image, deployment and compatibility acceptance](raw-gbp-ledger.md#explicit-split-settlement-21-october-2026) subsequently passed under `9a9877a`, preserving eight collections, 58 reports, four diagnostics and study plans. No accelerator, vendor/broker request, production trial or genuine holdout was used; cash/terminal and backtest integration remain open.
