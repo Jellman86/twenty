@@ -1,0 +1,302 @@
+{
+ "dispositionVersion": "terminal-disposition-v1",
+ "auditVersion": "terminal-history-audit-v1",
+ "referenceSha256": "b7a399e052eca9859d71875299ae4696091d2b297da3963d942930fdd7ea4e05",
+ "dispositionsSha256": "5e4190b5f76e98d059d77622a8171f1379c7ae9abc85fbc9cfe4409ba762bfff",
+ "auditReportSha256": "39d868ed685df3c54ca4f64dde5d60900796e708144acfb136ff1b6466bc4901",
+ "outputSha256": "cc2aa6165c308a27c34595f83b95f0a633c741a8ca86235a649c81bfe072e466",
+ "repeatedOutputIdentical": true,
+ "expectedExitCode": 0,
+ "auditValid": false,
+ "historyArchive": "terminal-evidence-20261020/abst-followup (unchanged six captures, ABST refreshed)",
+ "priorReportReproduced": "1d696373e2b313167d147289bc0ee15cfc8e62d7bcd0ee6a4cace54724c12ddc",
+ "accepted": 2,
+ "refused": 4,
+ "subjects": [
+  {
+   "symbol": "AAIC",
+   "outcome": "refused",
+   "finalSession": null,
+   "reasons": [
+    "consideration-not-supported",
+    "last-trading-corroboration-insufficient"
+   ],
+   "refusedRowCount": 1,
+   "refusedRows": [
+    "2023-12-14"
+   ],
+   "lastTradingSourceIds": [
+    "ellington-aaic",
+    "sec-aaic-8k-completion"
+   ]
+  },
+  {
+   "symbol": "AAWW",
+   "outcome": "accepted",
+   "finalSession": "2023-03-17",
+   "reasons": [],
+   "refusedRowCount": 1,
+   "refusedRows": [
+    "2023-04-03"
+   ],
+   "lastTradingSourceIds": [
+    "nasdaq-aaww",
+    "sec-aaww-8k-completion"
+   ]
+  },
+  {
+   "symbol": "ABMD",
+   "outcome": "refused",
+   "finalSession": null,
+   "reasons": [
+    "consideration-not-supported"
+   ],
+   "refusedRowCount": 2,
+   "refusedRows": [
+    "2022-12-22",
+    "2023-01-03"
+   ],
+   "lastTradingSourceIds": [
+    "nasdaq-abmd",
+    "sec-abmd-8k-completion"
+   ]
+  },
+  {
+   "symbol": "ABST",
+   "outcome": "accepted",
+   "finalSession": "2023-07-26",
+   "reasons": [],
+   "refusedRowCount": 1,
+   "refusedRows": [
+    "2023-07-27"
+   ],
+   "lastTradingSourceIds": [
+    "nasdaq-abst",
+    "absolute-abst",
+    "sec-abst-25nse"
+   ]
+  },
+  {
+   "symbol": "ACB",
+   "outcome": "refused",
+   "finalSession": null,
+   "reasons": [
+    "not-a-terminal-event",
+    "request-does-not-reach-event"
+   ],
+   "refusedRowCount": 0,
+   "refusedRows": [],
+   "lastTradingSourceIds": []
+  },
+  {
+   "symbol": "ACC",
+   "outcome": "refused",
+   "finalSession": null,
+   "reasons": [
+    "last-trading-date-unverified"
+   ],
+   "refusedRowCount": 0,
+   "refusedRows": [],
+   "lastTradingSourceIds": []
+  }
+ ],
+ "secCollection": {
+  "formSet": "terminal",
+  "collectorRequests": 29,
+  "manualRequests": {
+   "edgarCompanyLookups": 6,
+   "fullIndexHeadRequests": 4
+  },
+  "runs": {
+   "AAIC": {
+    "cik": "0001209028",
+    "requests": 11,
+    "filings": 10,
+    "historyLimitReached": false,
+    "documentLimitReached": false,
+    "selected": [
+     {
+      "form": "15-15D",
+      "accession": "0001104659-24-002289",
+      "acceptedAt": "2024-01-08T22:02:12+00:00",
+      "contentSha256": "581862ebe2cca9879e3fc1307be2cc3fe92dc1d9d8a91cbb30d3fbb5ded5319d"
+     },
+     {
+      "form": "15-15D",
+      "accession": "0001104659-24-002287",
+      "acceptedAt": "2024-01-08T22:01:53+00:00",
+      "contentSha256": "98295692d98bbf5f75cae3602ef9309a67ea3ce0df8d268a95bb770cb3965434"
+     },
+     {
+      "form": "15-12G",
+      "accession": "0001104659-23-129197",
+      "acceptedAt": "2023-12-26T21:11:48+00:00",
+      "contentSha256": "a4741c609fba8417abb739a4382d304210cc288cc9d1074047c9b51378028391"
+     },
+     {
+      "form": "25",
+      "accession": "0001104659-23-129193",
+      "acceptedAt": "2023-12-26T21:10:04+00:00",
+      "contentSha256": "d8b654791d55bba0850890c97c27b9a6d1e297465e72a2148e83386075a9a096"
+     },
+     {
+      "form": "8-K",
+      "accession": "0001104659-23-126441",
+      "acceptedAt": "2023-12-15T21:48:02+00:00",
+      "contentSha256": "ba34bb3eb47af017602f319ae3f8b0f50ce352626ded85787f5a73e1a69012d8"
+     },
+     {
+      "form": "25-NSE",
+      "accession": "0000876661-23-000970",
+      "acceptedAt": "2023-12-14T16:01:15+00:00",
+      "contentSha256": "d3094c576d8e91783bd079c671ac08b332cc19e870828d9dc06970f170e51caa"
+     },
+     {
+      "form": "8-K",
+      "accession": "0000950170-23-069882",
+      "acceptedAt": "2023-12-13T13:03:08+00:00",
+      "contentSha256": "5cadfc9f42114837dcfb7181046b86903f672469398bd6cea336d0bd8e34fc80"
+     },
+     {
+      "form": "8-K",
+      "accession": "0000950170-23-067779",
+      "acceptedAt": "2023-12-04T21:30:06+00:00",
+      "contentSha256": "a025e735e073fa3ef8a92b04dabf0f8d972be06669223e8b76519d9ada3b6b29"
+     },
+     {
+      "form": "8-K",
+      "accession": "0000950170-23-063094",
+      "acceptedAt": "2023-11-13T21:57:52+00:00",
+      "contentSha256": "567de5da244177b6e70c59aa2eadb20cb953c50a6303317b5390c9930679e89d"
+     },
+     {
+      "form": "DEFM14A",
+      "accession": "0001104659-23-113886",
+      "acceptedAt": "2023-11-02T21:44:00+00:00",
+      "contentSha256": "ed8c9f0a12fe03b05747b35d8d0cff57b03aede77727d13b46666fc39844e5ab"
+     }
+    ]
+   },
+   "AAWW": {
+    "cik": "0001135185",
+    "requests": 5,
+    "filings": 4,
+    "historyLimitReached": false,
+    "documentLimitReached": false,
+    "selected": [
+     {
+      "form": "15-12G",
+      "accession": "0000950142-23-000805",
+      "acceptedAt": "2023-03-28T17:42:00+00:00",
+      "contentSha256": "9c99f34c12a84d520dbb6827fdc1f6d21603bd9181d4bb59cb6fee6d0338b4e2"
+     },
+     {
+      "form": "8-K",
+      "accession": "0001104659-23-033984",
+      "acceptedAt": "2023-03-17T21:07:12+00:00",
+      "contentSha256": "3ee7294ef9215641d4b8e361bad2b46156fb8df063631dab5f58ca10228efac4"
+     },
+     {
+      "form": "25-NSE",
+      "accession": "0001354457-23-000189",
+      "acceptedAt": "2023-03-17T20:59:15+00:00",
+      "contentSha256": "8ea7942f044e1696b6f629332ae866d5b0f3a058ab9e8cc0be04b065af96134b"
+     },
+     {
+      "form": "8-K",
+      "accession": "0001104659-23-032274",
+      "acceptedAt": "2023-03-14T20:08:19+00:00",
+      "contentSha256": "3d02e6b205206ba9f31c95a7fa7cd3d89940457fff21f1000560159029a30dc0"
+     }
+    ]
+   },
+   "ABMD": {
+    "cik": "0000815094",
+    "requests": 4,
+    "filings": 3,
+    "historyLimitReached": false,
+    "documentLimitReached": false,
+    "selected": [
+     {
+      "form": "15-12G",
+      "accession": "0001193125-23-000286",
+      "acceptedAt": "2023-01-03T13:30:58+00:00",
+      "contentSha256": "f4afa75a2be38e1f38ba4ba2f94d7179e37f13c4da916c0fec1f59d8834d2c97"
+     },
+     {
+      "form": "8-K",
+      "accession": "0001193125-22-311074",
+      "acceptedAt": "2022-12-22T21:31:57+00:00",
+      "contentSha256": "1d16f87350706672a640fb618444646ddae985ba4ffefffa45ffb5ba8bc31e76"
+     },
+     {
+      "form": "25-NSE",
+      "accession": "0001354457-22-000772",
+      "acceptedAt": "2022-12-22T13:51:14+00:00",
+      "contentSha256": "7b4710fa251e6c7b89b1068ffafdcd18592a9bea782b9f4787c7c31c77ceb98a"
+     }
+    ]
+   },
+   "ABST": {
+    "cik": "0001071058",
+    "requests": 3,
+    "filings": 2,
+    "historyLimitReached": false,
+    "documentLimitReached": false,
+    "selected": [
+     {
+      "form": "15-12G",
+      "accession": "0001193125-23-204723",
+      "acceptedAt": "2023-08-07T15:40:25+00:00",
+      "contentSha256": "7c6bb20b2b946f63cd898fbcb8aa9982e0dca31727d7388e56c0bb4390d86e21"
+     },
+     {
+      "form": "25-NSE",
+      "accession": "0001354457-23-000546",
+      "acceptedAt": "2023-07-27T12:54:43+00:00",
+      "contentSha256": "471ec4e9be12c51f73a0dc1dce93a1c48137223a8958e8901ccac17abf772b55"
+     }
+    ]
+   },
+   "ACC": {
+    "cik": "0001283630",
+    "requests": 6,
+    "filings": 5,
+    "historyLimitReached": false,
+    "documentLimitReached": false,
+    "selected": [
+     {
+      "form": "15-12G",
+      "accession": "0001193125-22-224580",
+      "acceptedAt": "2022-08-19T10:31:52+00:00",
+      "contentSha256": "13cfe13298ee2faf35007599a598e6d83cc3e22894288bc776aa81e2d1c4d8b9"
+     },
+     {
+      "form": "8-K/A",
+      "accession": "0001193125-22-219782",
+      "acceptedAt": "2022-08-12T19:02:35+00:00",
+      "contentSha256": "5e9d57c96c6db4709fe0f77b1709bdb70e0ca6ee2631dd06296ea38aa65bdbfe"
+     },
+     {
+      "form": "25-NSE",
+      "accession": "0000876661-22-000619",
+      "acceptedAt": "2022-08-10T13:11:31+00:00",
+      "contentSha256": "bc5718c72b2d114461d5ab467ab344723ec3c43664267613222913fa5adf2feb"
+     },
+     {
+      "form": "8-K",
+      "accession": "0001193125-22-216177",
+      "acceptedAt": "2022-08-09T20:26:08+00:00",
+      "contentSha256": "8d05403da2ddde70546283d57dd3feb7def6f8a7ac863fc40ea1499343c4c36d"
+     },
+     {
+      "form": "8-K",
+      "accession": "0001193125-22-212615",
+      "acceptedAt": "2022-08-04T20:52:24+00:00",
+      "contentSha256": "1fe1f7255a3767693e7f7d7b302d42e13853d2a61cbb753dbbf19355ba64d467"
+     }
+    ]
+   }
+  }
+ }
+}

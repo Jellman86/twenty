@@ -5,10 +5,12 @@ namespace Twenty.Ingestion.Sec;
 public sealed class SecCollector(SecClient client, SecArchive archive, SecLimits limits, ISecClock? clock = null)
 {
     private readonly ISecClock clock = clock ?? SecSystemClock.Instance;
-    private static readonly HashSet<string> Forms = [.. SecParser.PeriodicForms];
-    public async Task<SecCollectionResult> Collect(string cik, DateOnly from, DateOnly to, CancellationToken ct = default)
+    public Task<SecCollectionResult> Collect(string cik, DateOnly from, DateOnly to, CancellationToken ct = default) =>
+        Collect(cik, from, to, SecFormSet.Periodic, ct);
+    public async Task<SecCollectionResult> Collect(string cik, DateOnly from, DateOnly to, SecFormSet formSet, CancellationToken ct = default)
     {
         limits.Validate();
+        var forms = SecParser.Forms(formSet).ToHashSet(StringComparer.Ordinal);
         cik = SecIdentity.Cik(cik);
         if (from > to || to > DateOnly.FromDateTime(clock.UtcNow.UtcDateTime)) throw new SecCollectionException("invalid-date-window");
         using var run = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -42,7 +44,7 @@ public sealed class SecCollector(SecClient client, SecArchive archive, SecLimits
             throw;
         }
         var selected = metadata.GroupBy(x => x.Row.Accession).Select(x => x.OrderBy(y => y.Source.FirstSeenAt).First())
-            .Where(x => x.Row.FilingDate >= from && x.Row.FilingDate <= to && Forms.Contains(x.Row.Form))
+            .Where(x => x.Row.FilingDate >= from && x.Row.FilingDate <= to && forms.Contains(x.Row.Form))
             .OrderByDescending(x => x.Row.AcceptedAt).ThenBy(x => x.Row.Accession, StringComparer.Ordinal).ToArray();
         var collected = ImmutableArray.CreateBuilder<CollectedSecFiling>();
         foreach (var item in selected.Take(limits.MaximumDocuments))
@@ -55,7 +57,7 @@ public sealed class SecCollector(SecClient client, SecArchive archive, SecLimits
             collected.Add(new(item.Row, item.Source, document.Receipt));
         }
         var result = new SecCollectionResult(cik, clock.UtcNow, collected.ToImmutable(), client.Requests, visited,
-            chunks.Length > limits.MaximumHistoryFiles, selected.Length > limits.MaximumDocuments, SecParser.Version);
+            chunks.Length > limits.MaximumHistoryFiles, selected.Length > limits.MaximumDocuments, SecParser.Version, formSet);
         archive.SaveCatalogue(result);
         return result;
 

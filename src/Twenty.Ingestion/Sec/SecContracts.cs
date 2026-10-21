@@ -107,6 +107,9 @@ public static partial class SecIdentity
     }
 }
 
+[System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<SecFormSet>))]
+public enum SecFormSet { Periodic, Terminal }
+
 public sealed record SecFilingMetadata(string Cik, string Accession, string Form, DateOnly FilingDate,
     DateOnly? ReportDate, DateTimeOffset AcceptedAt, string PrimaryDocument)
 {
@@ -151,7 +154,8 @@ public sealed record CollectedSecFiling(SecFilingMetadata Metadata, SecReceipt M
     }
 }
 public sealed record SecCollectionResult(string Cik, DateTimeOffset CompletedAt, ImmutableArray<CollectedSecFiling> Filings,
-    int Requests, int HistoryFilesVisited, bool HistoryLimitReached, bool DocumentLimitReached, string ParserVersion)
+    int Requests, int HistoryFilesVisited, bool HistoryLimitReached, bool DocumentLimitReached, string ParserVersion,
+    SecFormSet FormSet = SecFormSet.Periodic)
 {
     public ImmutableArray<CollectedSecFiling> KnownAt(DateTimeOffset decisionAt) => decisionAt > CompletedAt
         ? throw new SecCollectionException("future-decision")

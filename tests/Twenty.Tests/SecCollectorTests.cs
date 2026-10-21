@@ -153,6 +153,48 @@ public class SecCollectorTests
     }
 
     [Fact]
+    public async Task TerminalFormSetSelectsDelistingAndMergerFilingsButNotPeriodicReports()
+    {
+        // Genuine terminal subjects file 8-K Items 2.01/3.01, exchange 25-NSE removals and merger proxies
+        // without report periods; 25-NSE primary documents use the SEC XSL rendering path.
+        var bytes = Change(root =>
+        {
+            var recent = root["filings"]!["recent"]!.AsObject();
+            void Append(string accession, string form, string filing, string accepted, string document)
+            {
+                recent["accessionNumber"]!.AsArray().Add(accession);
+                recent["form"]!.AsArray().Add(form);
+                recent["filingDate"]!.AsArray().Add(filing);
+                recent["reportDate"]!.AsArray().Add("");
+                recent["acceptanceDateTime"]!.AsArray().Add(accepted);
+                recent["primaryDocument"]!.AsArray().Add(document);
+                recent["unrecognisedUpstreamField"]!.AsArray().Add("retained in original");
+            }
+            Append("0000000001-24-000003", "8-K", "2024-02-10", "2024-02-10T12:00:00Z", "completion.htm");
+            Append("0000000002-24-000001", "25-NSE", "2024-02-12", "2024-02-12T13:00:00Z", "xslF25X02/primary_doc.xml");
+            Append("0000000001-24-000004", "DEFM14A", "2024-01-05", "2024-01-05T12:00:00Z", "proxy.htm");
+            Append("0000000001-24-000005", "144", "2024-02-06", "2024-02-06T12:00:00Z", "notice.htm");
+        });
+        using var rig = new Rig(request => request.RequestUri!.Host == "www.sec.gov"
+            ? Response(Encoding.UTF8.GetBytes("<html>AUTHORED SYNTHETIC</html>"), request.RequestUri.AbsolutePath.EndsWith(".xml") ? "text/xml" : "text/html")
+            : Response(request.RequestUri.AbsolutePath.Contains("-submissions-", StringComparison.Ordinal) ? Fixture("history") : bytes));
+        var result = await new SecCollector(rig.Client, rig.Archive, rig.Limits, rig.Clock)
+            .Collect("1", new DateOnly(2023, 1, 1), new DateOnly(2024, 3, 4), SecFormSet.Terminal);
+        Assert.Equal(["25-NSE", "8-K", "DEFM14A"], result.Filings.Select(f => f.Metadata.Form));
+        Assert.All(result.Filings, f => Assert.Null(f.Metadata.ReportDate));
+        Assert.Equal(SecFormSet.Terminal, result.FormSet);
+        Assert.Contains(rig.Requests, r => r.Uri.AbsolutePath == "/Archives/edgar/data/1/000000000224000001/xslF25X02/primary_doc.xml");
+        // Terminal filings have no report period, so they cannot become periodic Filing domain records.
+        Assert.Equal("report-period-required", Assert.Throws<SecCollectionException>(() => result.Filings[0].ToDomain("company-1")).Code);
+
+        var periodic = await new SecCollector(rig.Client, rig.Archive, rig.Limits, rig.Clock)
+            .Collect("1", new DateOnly(2023, 1, 1), new DateOnly(2024, 3, 4));
+        Assert.Equal(SecFormSet.Periodic, periodic.FormSet);
+        Assert.DoesNotContain(periodic.Filings, f => f.Metadata.ReportDate is null);
+        Assert.Empty(SecParser.TerminalForms.Intersect(SecParser.PeriodicForms));
+    }
+
+    [Fact]
     public void BlankPrimaryDocumentsCatalogueButInvalidOnesStillFail()
     {
         // Genuine ASML/AAPL payloads carry blank primaryDocument on paper-era rows

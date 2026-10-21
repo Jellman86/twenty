@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "terminal-disposition.v1",
+  "subjects": [
+    {
+      "symbol": "AAIC",
+      "lastTradingSourceIds": [
+        "ellington-aaic",
+        "sec-aaic-8k-completion"
+      ]
+    },
+    {
+      "symbol": "AAWW",
+      "lastTradingSourceIds": [
+        "nasdaq-aaww",
+        "sec-aaww-8k-completion"
+      ]
+    },
+    {
+      "symbol": "ABMD",
+      "lastTradingSourceIds": [
+        "nasdaq-abmd",
+        "sec-abmd-8k-completion"
+      ]
+    },
+    {
+      "symbol": "ABST",
+      "lastTradingSourceIds": [
+        "nasdaq-abst",
+        "absolute-abst",
+        "sec-abst-25nse"
+      ]
+    },
+    {
+      "symbol": "ACB",
+      "lastTradingSourceIds": []
+    },
+    {
+      "symbol": "ACC",
+      "lastTradingSourceIds": []
+    }
+  ]
+}

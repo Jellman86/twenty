@@ -41,3 +41,36 @@ Local validation: 550 .NET tests and 37 Python tests passed; Ruff, the research-
 Next evidence work is to resolve the post-trading row semantics with the data provider, obtain independently verified last-session facts for ACC and deliberately budget complete terminal-period history requests where needed. Usable terminal action observations also need source-bound first availability, actual consideration/settlement semantics, revisions, currency and a supported accounting path. These findings block treating the sample as accepted terminal-return coverage.
 
 A [separately declared ABST follow-up](terminal-outcome-follow-up.md) corrected that one original request window and found another post-last-trading row. It preserves all 22 earlier rows unchanged and does not replace this fixed six-capture record.
+
+## SEC corroboration and explicit dispositions (21 October 2026)
+
+V1-02 accepts declared terminal coverage that is either independently accepted or explicitly refused, provided failed names are not dropped. This checkpoint adds both halves without changing the earlier reviewed dates or captured histories.
+
+**SEC terminal filings.** `sec-collect` now takes `--forms terminal` (8-K/8-K/A, Form 25/25-NSE and amendments, DEFM14A/DEFM14C and 15-12B/15-12G/15-15D). These carry no report period, so they are review sources and never become periodic `Filing` records. With the owner-designated contact set privately in `TWENTY_SEC_CONTACT`, five bounded runs (AAIC, AAWW, ABMD, ABST, ACC; ACB is not terminal) made 29 collector requests and archived 24 original filings, with no history or document limit reached. Ten manual read-only requests looked up CIKs and sized the EDGAR full index. Originals stay private; their URLs, receipt times and hashes are in the [new reference bundle](terminal-outcome-references-2026-10-21.json). The 20 October bundle is unchanged and still reproduces its report byte-for-byte (`1d696373…`).
+
+What the filings establish:
+
+| Symbol | SEC evidence | Effect |
+| --- | --- | --- |
+| AAIC | Completion 8-K: merger consummated 2023-12-14; 0.3619 EFC shares plus USD 0.09 cash per common share. NYSE 25-NSE filed 2023-12-14. Neither states the 2023-12-13 last trading date | Consideration now from an original filing, still mixed. The last trading date has only the Ellington web extraction as a direct statement |
+| AAWW | Completion 8-K: merger consummated 2023-03-17 for USD 102.50 cash; Nasdaq notified 2023-03-14 and filed Form 25 on 2023-03-17 | Shares ceased to exist on 2023-03-17, independently of Nasdaq's notice. The 2023-04-03 vendor row cannot be a session |
+| ABMD | Completion 8-K: Nasdaq asked to suspend trading "effective as of the close of business on December 21, 2022"; USD 380 cash plus one non-tradeable CVR | Independently states the 2022-12-21 final session. The CVR remains unsupported |
+| ABST | Nasdaq 25-NSE accepted 2023-07-27 12:54 UTC, before the US open | With the issuer's completion release and Nasdaq ECA 2023-425, three original sources from three hosts bound trading to 2023-07-26 |
+| ACC | Original completion 8-K (replacing the earlier web extraction as evidence): suspension requested on 2022-08-09. The 2022-08-04 8-K expected closing on 2022-08-09. NYSE 25-NSE filed 2022-08-10 | None states whether 2022-08-09 traded. The final session stays unverified |
+
+**Dispositions.** `terminal-history-audit … --dispositions <file>` (`terminal-disposition-v1`) assigns every audited symbol exactly one outcome. The [declared disposition file](terminal-dispositions-2026-10-21.json) must list exactly the audited symbols and cite only each subject's own sources. A subject is **accepted** only if it is a completed cash-only merger, the request covers the event and final session, the final-session bar is present, and the last trading date is cited from at least two original responses on different hosts. Vendor rows after that date are then listed as **refused rows**: not executable sessions, returns or proceeds, and not deleted from captures. Everything else is **refused** with the audit's reason codes. The raw audit result (`auditValid: false`) is reported unchanged alongside.
+
+| Symbol | Outcome | Final session | Reasons | Refused rows |
+| --- | --- | --- | --- | --- |
+| AAIC | refused | — | consideration-not-supported, last-trading-corroboration-insufficient | 2023-12-14 |
+| AAWW | **accepted** | 2023-03-17 | — | 2023-04-03 |
+| ABMD | refused | — | consideration-not-supported | 2022-12-22, 2023-01-03 |
+| ABST | **accepted** | 2023-07-26 | — | 2023-07-27 |
+| ACB | refused | — | not-a-terminal-event, request-does-not-reach-event | — |
+| ACC | refused | — | last-trading-date-unverified | — |
+
+Result: 2 accepted, 4 refused, none dropped. Exit 0, and repeated output is byte-identical. [Compact evidence](terminal-disposition-audit.json) binds the reference, dispositions, audit report, output and every collected SEC accession/hash.
+
+Limitations: this is a six-symbol declared sample, not market coverage. AAWW's acceptance uses Nasdaq's stated final session plus the 8-K's same-day consummation. It establishes when trading ended, not cash payment timing, taxes or FX. Dispositions are not yet consumed by price conversion or the changing-universe backtest; that integration belongs to V1-03/V1-05. The per-year Form 25 coverage denominator is still unmeasured: quarterly `form.idx` files are 39–50 MB uncompressed (about 4–5 MB as `form.gz`), so it needs a separate bounded index collector. The vendor's meaning for the five later rows remains unexplained; refusing them does not explain them.
+
+Validation: 8 new authored tests (one terminal SEC selection case and seven disposition cases, including corroboration theories and exact-coverage refusals). Inputs are authored except this offline genuine audit; no accelerator, model trial, final holdout or broker request was used.

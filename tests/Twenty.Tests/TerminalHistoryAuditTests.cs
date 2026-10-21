@@ -187,4 +187,90 @@ public sealed class TerminalHistoryAuditTests : IDisposable
         Assert.Equal("terminal-reference-shape", Assert.Throws<ResearchException>(() => TerminalHistoryAudit.Build(store,
             JsonSerializer.SerializeToUtf8Bytes(refs with { Sources = [refs.Sources[0] with { Representation = "unknown" }] }, DatasetJson.Options), _ => Source)).Code);
     }
+
+    private static readonly byte[] Filing = Encoding.UTF8.GetBytes("Authored filing: trading suspended effective close of business June 7.");
+    private static TerminalReferences Corroborated(TerminalSubject? subject = null, string filingRepresentation = "original-response",
+        string filingHost = "regulator.example") => new("terminal-reference.v1",
+        [new("notice", "https://exchange.example/notice", new(2024, 6, 12, 0, 0, 0, TimeSpan.Zero), CaptureStore.Hash(Source), "original-response"),
+         new("filing", $"https://{filingHost}/filing", new(2024, 6, 12, 0, 0, 0, TimeSpan.Zero), CaptureStore.Hash(Filing), filingRepresentation)],
+        [subject ?? Subject() with { SourceIds = ["notice", "filing"] }]);
+    private TerminalHistoryReport RunCorroborated(TerminalReferences refs) => TerminalHistoryAudit.Build(store,
+        JsonSerializer.SerializeToUtf8Bytes(refs, DatasetJson.Options), sha => sha == CaptureStore.Hash(Filing) ? Filing : Source);
+    private static byte[] Dispositions(params (string Symbol, string[] Sources)[] subjects) => JsonSerializer.SerializeToUtf8Bytes(new
+    {
+        schemaVersion = "terminal-disposition.v1",
+        subjects = subjects.Select(s => new { symbol = s.Symbol, lastTradingSourceIds = s.Sources })
+    }, DatasetJson.Options);
+
+    [Fact]
+    public void CorroboratedCashMergerIsAcceptedWithPostTradingRowsExplicitlyRefused()
+    {
+        Record([6, 7, 10, 11]); var audit = RunCorroborated(Corroborated());
+        Assert.False(audit.Valid); // the raw audit still reports the vendor rows
+        var report = TerminalDispositions.Build(audit, Dispositions(("AAA", ["notice", "filing"])));
+        var subject = Assert.Single(report.Subjects);
+        Assert.Equal("accepted", subject.Outcome);
+        Assert.Equal(new[] { Day(10), Day(11) }, subject.RefusedRows); Assert.Equal(2, subject.RefusedRowCount);
+        Assert.Equal(Day(7), subject.FinalSession); Assert.Empty(subject.Reasons);
+        Assert.Equal((1, 0), (report.Accepted, report.Refused));
+        Assert.Equal(CaptureStore.Hash(JsonSerializer.SerializeToUtf8Bytes(audit, DatasetJson.Options)), report.AuditReportSha256);
+        Assert.Equal(JsonSerializer.SerializeToUtf8Bytes(report, DatasetJson.Options),
+            JsonSerializer.SerializeToUtf8Bytes(TerminalDispositions.Build(audit, Dispositions(("AAA", ["notice", "filing"]))), DatasetJson.Options));
+    }
+
+    [Theory]
+    [InlineData("one-source")]
+    [InlineData("same-host")]
+    [InlineData("extraction")]
+    public void LastTradingDateNeedsTwoIndependentOriginalSources(string scenario)
+    {
+        Record([6, 7, 10]);
+        var refs = Corroborated(filingHost: scenario == "same-host" ? "exchange.example" : "regulator.example",
+            filingRepresentation: scenario == "extraction" ? "web-tool-extraction" : "original-response");
+        var subject = Assert.Single(TerminalDispositions.Build(RunCorroborated(refs),
+            Dispositions(("AAA", scenario == "one-source" ? ["notice"] : ["notice", "filing"]))).Subjects);
+        Assert.Equal("refused", subject.Outcome);
+        Assert.Contains("last-trading-corroboration-insufficient", subject.Reasons);
+        Assert.Null(subject.FinalSession);
+    }
+
+    [Fact]
+    public void UnsupportedOrUnresolvedSubjectsAreRefusedWithTheirAuditReasonsNotDropped()
+    {
+        Record([6, 7]);
+        var mixed = Subject() with { SourceIds = ["notice", "filing"], Consideration = new("cash-and-cvr", 12m, "USD", null, null, 1m) };
+        var refused = TerminalDispositions.Build(RunCorroborated(Corroborated(mixed)), Dispositions(("AAA", ["notice", "filing"])));
+        Assert.Equal("consideration-not-supported", Assert.Single(Assert.Single(refused.Subjects).Reasons));
+        Assert.Equal((0, 1), (refused.Accepted, refused.Refused));
+
+        var unverified = Subject() with { SourceIds = ["notice", "filing"], LastTradingDate = null };
+        var subject = Assert.Single(TerminalDispositions.Build(RunCorroborated(Corroborated(unverified)), Dispositions(("AAA", []))).Subjects);
+        Assert.Equal("refused", subject.Outcome); Assert.Contains("last-trading-date-unverified", subject.Reasons);
+    }
+
+    [Fact]
+    public void MissingFinalSessionIsRefusedEvenWhenCorroborated()
+    {
+        Record([5, 6]);
+        var subject = Assert.Single(TerminalDispositions.Build(RunCorroborated(Corroborated()), Dispositions(("AAA", ["notice", "filing"]))).Subjects);
+        Assert.Equal("refused", subject.Outcome); Assert.Contains("last-trading-bar-missing", subject.Reasons);
+    }
+
+    [Fact]
+    public void DispositionsMustCoverExactlyTheAuditedSymbolsAndCiteTheirOwnSources()
+    {
+        Record([6, 7]); var audit = RunCorroborated(Corroborated());
+        Assert.Equal("terminal-disposition-subjects", Assert.Throws<ResearchException>(() => TerminalDispositions.Build(audit, Dispositions())).Code);
+        Assert.Equal("terminal-disposition-subjects", Assert.Throws<ResearchException>(() =>
+            TerminalDispositions.Build(audit, Dispositions(("AAA", ["notice"]), ("BBB", ["notice"])))).Code);
+        Assert.Equal("terminal-disposition-subjects", Assert.Throws<ResearchException>(() =>
+            TerminalDispositions.Build(audit, Dispositions(("AAA", ["notice"]), ("AAA", ["notice"])))).Code);
+        var narrow = RunCorroborated(Corroborated(Subject()));
+        Assert.Equal("terminal-disposition-shape", Assert.Throws<ResearchException>(() =>
+            TerminalDispositions.Build(narrow, Dispositions(("AAA", ["notice", "filing"])))).Code);
+        Assert.Equal("terminal-disposition-shape", Assert.Throws<ResearchException>(() =>
+            TerminalDispositions.Build(audit, Dispositions(("AAA", ["notice", "notice"])))).Code);
+        Assert.Equal("terminal-disposition-shape", Assert.Throws<ResearchException>(() =>
+            TerminalDispositions.Build(audit, Encoding.UTF8.GetBytes("{\"schemaVersion\":\"terminal-disposition.v0\",\"subjects\":[]}"))).Code);
+    }
 }

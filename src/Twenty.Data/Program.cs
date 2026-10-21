@@ -11,12 +11,19 @@ using Twenty.Ingestion.Tiingo;
 
 try
 {
-    if (args.Length == 7 && args[0] == "terminal-history-audit" && args[1] == "--archive" &&
+    if ((args.Length == 7 || args.Length == 9 && args[7] == "--dispositions") && args[0] == "terminal-history-audit" && args[1] == "--archive" &&
         args[3] == "--reference" && args[5] == "--sources")
     {
         using var captures = new CaptureStore(args[2]);
         var report = TerminalHistoryAudit.Build(captures, DatasetArchive.ReadBounded(args[4]),
             sha => DatasetArchive.ReadBounded(Path.Combine(Path.GetFullPath(args[6]), sha + ".bin")));
+        if (args.Length == 9)
+        {
+            // Every audited symbol receives an explicit outcome; the raw audit's validity is reported unchanged.
+            var dispositions = TerminalDispositions.Build(report, DatasetArchive.ReadBounded(args[8]));
+            Console.WriteLine(JsonSerializer.Serialize(new { auditValid = report.Valid, dispositions }, DatasetJson.Options));
+            return 0;
+        }
         Console.WriteLine(JsonSerializer.Serialize(report, DatasetJson.Options));
         return report.Valid ? 0 : 1;
     }
@@ -200,8 +207,16 @@ try
             historyFiles = page.History.Length, parserVersion = SecParser.Version }));
         return 0;
     }
-    if (args.Length == 8 && args[0] == "sec-collect" && args[2] == "--from" && args[4] == "--to" && args[6] == "--archive")
+    if (args.Length is 8 or 10 or 12 && args[0] == "sec-collect" && args[2] == "--from" && args[4] == "--to" && args[6] == "--archive")
     {
+        var formSet = SecFormSet.Periodic; var maximumDocuments = new SecLimits().MaximumDocuments;
+        for (var i = 8; i < args.Length; i += 2)
+        {
+            if (args[i] == "--forms" && args[i + 1] is "periodic" or "terminal")
+                formSet = args[i + 1] == "terminal" ? SecFormSet.Terminal : SecFormSet.Periodic;
+            else if (args[i] != "--max-documents" || !int.TryParse(args[i + 1], NumberStyles.None, CultureInfo.InvariantCulture, out maximumDocuments))
+                throw new SecCollectionException("invalid-arguments");
+        }
         var contact = Environment.GetEnvironmentVariable("TWENTY_SEC_CONTACT") ?? "";
         _ = SecIdentity.UserAgent(contact); // Fail before opening files or making requests.
         if (!DateOnly.TryParseExact(args[3], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var from) ||
@@ -212,15 +227,18 @@ try
         Console.CancelKeyPress += cancel;
         try
         {
-            var limits = new SecLimits();
+            var limits = new SecLimits { MaximumDocuments = maximumDocuments };
+            limits.Validate();
             using var archive = new SecArchive(args[7], limits);
             using var http = SecClient.CreateHttpClient();
             var client = new SecClient(http, archive, contact, limits);
-            var result = await new SecCollector(client, archive, limits).Collect(args[1], from, to, cancellation.Token);
+            var result = await new SecCollector(client, archive, limits).Collect(args[1], from, to, formSet, cancellation.Token);
             Console.WriteLine(JsonSerializer.Serialize(new { valid = true, cik = result.Cik, filings = result.Filings.Length,
                 requests = result.Requests, historyFilesVisited = result.HistoryFilesVisited,
                 historyLimitReached = result.HistoryLimitReached, documentLimitReached = result.DocumentLimitReached,
-                completedAt = result.CompletedAt, parserVersion = result.ParserVersion }));
+                completedAt = result.CompletedAt, parserVersion = result.ParserVersion, formSet = result.FormSet.ToString().ToLowerInvariant(),
+                selected = result.Filings.Select(f => new { accession = f.Metadata.Accession, form = f.Metadata.Form, filingDate = f.Metadata.FilingDate,
+                    acceptedAt = f.Metadata.AcceptedAt, primaryDocument = f.Metadata.PrimaryDocument, contentSha256 = f.DocumentSource.ContentSha256 }) }));
             return 0;
         }
         finally { Console.CancelKeyPress -= cancel; }
@@ -294,7 +312,7 @@ try
     }
     if (args.Length is not (2 or 4) || args[0] != "validate" || (args.Length == 4 && args[2] != "--archive"))
     {
-        Console.Error.WriteLine("Usage: Twenty.Data terminal-history-audit --archive <private-captures> --reference <assertions.json> --sources <private-source-documents>\n" +
+        Console.Error.WriteLine("Usage: Twenty.Data terminal-history-audit --archive <private-captures> --reference <assertions.json> --sources <private-source-documents> [--dispositions <dispositions.json>]\n" +
             "       Twenty.Data corporate-action-audit --archive <private-captures> --reference <assertions.json> --sources <private-source-documents>\n" +
             "       Twenty.Data french-panel --archive <captures> --from yyyy-mm-dd --to yyyy-mm-dd --output <private-inbox> [--portfolios industry|size-value25]\n" +
             "       Twenty.Data tiingo-check --archive <private-directory>\n" +
@@ -309,7 +327,7 @@ try
             "       Twenty.Data capture-public --archive <private-directory> --sources <comma-separated-source-ids>\n" +
             "       Twenty.Data validate <dataset.json> [--archive <directory>]\n" +
             "       Twenty.Data sec-inspect <CIK> <submissions.json>\n" +
-            "       Twenty.Data sec-collect <CIK> --from yyyy-mm-dd --to yyyy-mm-dd --archive <private-directory>\n" +
+            "       Twenty.Data sec-collect <CIK> --from yyyy-mm-dd --to yyyy-mm-dd --archive <private-directory> [--forms periodic|terminal] [--max-documents 1-20]\n" +
             "       Twenty.Data ecb-inspect <xml> --date yyyy-mm-dd --base USD --quote GBP\n" +
             "Live collection requires TWENTY_SEC_CONTACT (a monitored email address; never committed or printed).");
         return 2;

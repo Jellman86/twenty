@@ -4,7 +4,7 @@ Implemented in `Twenty.Ingestion.Sec`, invoked explicitly through `Twenty.Data`.
 
 ## Current verification
 
-Automated HTTP tests use in-memory handlers and authored synthetic fixtures under `fixtures/sec`. They exercise the collector, archive and chronological selection without making SEC requests. No live collection has been validated yet. Before a live smoke test, supply a genuine monitored contact email in private local configuration. Syntax validation cannot establish ownership or that a mailbox is monitored.
+Automated HTTP tests use in-memory handlers and authored synthetic fixtures under `fixtures/sec`. They exercise the collector, archive and chronological selection without making SEC requests. Live collection has run with the owner-designated contact set privately in `TWENTY_SEC_CONTACT`: periodic reports for Apple on 19 October 2026 ([validation](validation.md)) and terminal filings for five delisted subjects on 21 October 2026 ([terminal outcomes](terminal-outcomes.md#sec-corroboration-and-explicit-dispositions-21-october-2026)). The address is never committed, logged or printed. Syntax validation cannot establish ownership or that a mailbox is monitored.
 
 The SEC permits scripted access, currently limits access to 10 requests/second and asks clients to identify their User-Agent with a contact. Twenty chooses a more conservative shared two requests/second and one in-flight request. [SEC access guidance](https://www.sec.gov/search-filings/edgar-search-assistance/accessing-edgar-data), [developer FAQ](https://www.sec.gov/about/webmaster-frequently-asked-questions).
 
@@ -21,6 +21,8 @@ For live collection, set `TWENTY_SEC_CONTACT` privately to the monitored address
 ```sh
 dotnet run --project src/Twenty.Data -- sec-collect 320193 --from 2024-01-01 --to 2024-12-31 --archive data/sec
 ```
+
+Add `--forms terminal` to select listing-end evidence instead of periodic reports: 8-K/8-K/A, Form 25/25-NSE and amendments, DEFM14A/DEFM14C and 15-12B/15-12G/15-15D. These forms have no report period and cannot become `Filing` records. `--max-documents` raises the per-run document cap up to the hard ceiling of 20. The output lists each selected accession, form, acceptance time and document hash.
 
 CI never sets a real contact or runs that live command. The CLI refuses a missing/invalid/obvious placeholder contact before opening the archive or creating an HTTP client. It prints counts, coverage-limit flags and safe error codes, not contact details, headers, response bodies or framework exception text. Ctrl+C cancels collection. A nonzero exit means collection failed; already validated originals remain available for a later retry, but there is no successful catalogue for the failed run.
 

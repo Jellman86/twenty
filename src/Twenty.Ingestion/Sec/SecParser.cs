@@ -11,6 +11,16 @@ public static partial class SecParser
     public const string Version = "sec-submissions-v1";
     /// <summary>Periodic-report forms whose report period must already have ended by the filing date.</summary>
     public static readonly ImmutableArray<string> PeriodicForms = ["10-K", "10-K/A", "10-Q", "10-Q/A", "20-F", "20-F/A", "40-F", "40-F/A"];
+    /// <summary>Listing-end evidence: 8-K Items 2.01/3.01, issuer/exchange Form 25 removals, merger proxies and
+    /// deregistrations. These carry no report period; they are terminal-outcome review sources, not periodic filings.</summary>
+    public static readonly ImmutableArray<string> TerminalForms = ["8-K", "8-K/A", "25", "25/A", "25-NSE", "25-NSE/A",
+        "DEFM14A", "DEFM14C", "15-12B", "15-12G", "15-15D"];
+    public static ImmutableArray<string> Forms(SecFormSet set) => set switch
+    {
+        SecFormSet.Periodic => PeriodicForms,
+        SecFormSet.Terminal => TerminalForms,
+        _ => throw new SecCollectionException("invalid-form-set")
+    };
     [GeneratedRegex("^[A-Z0-9][A-Z0-9 /-]{0,31}$", RegexOptions.CultureInvariant)] private static partial Regex FormPattern();
     [GeneratedRegex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,7})?(?:Z|[+-][0-9]{2}:[0-9]{2})$", RegexOptions.CultureInvariant)]
     private static partial Regex ZonedTime();

@@ -1,0 +1,261 @@
+{
+  "schemaVersion": "terminal-reference.v1",
+  "sources": [
+    {
+      "id": "nasdaq-aaww",
+      "url": "https://www.nasdaqtrader.com/TraderNews.aspx?id=eca2023-160",
+      "retrievedAt": "2026-10-20T17:37:29.647978+00:00",
+      "contentSha256": "08086737e311991739a6e6b71472290d0c76db263f6bbf085cc1936c2889d606",
+      "representation": "original-response"
+    },
+    {
+      "id": "nasdaq-abmd",
+      "url": "https://www.nasdaqtrader.com/TraderNews.aspx?id=eca2022-460",
+      "retrievedAt": "2026-10-20T17:37:30.048189+00:00",
+      "contentSha256": "0bca5b898608fe847acc12037fa89fe5cd1c89be639c6e2b64eed815dc4074d9",
+      "representation": "original-response"
+    },
+    {
+      "id": "nasdaq-acb",
+      "url": "https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2024-70",
+      "retrievedAt": "2026-10-20T17:37:30.808151+00:00",
+      "contentSha256": "c96076dccb76f03d4e617eecaeaa49cac170eaf9d58f2efaaae5bc127db66cdf",
+      "representation": "original-response"
+    },
+    {
+      "id": "absolute-abst",
+      "url": "https://www.absolute.com/press-releases/absolute-software-announces-completion-of-acquisition-by-crosspoint-capital-partners",
+      "retrievedAt": "2026-10-20T17:38:06.858400+00:00",
+      "contentSha256": "96148eff3713e487f3477b5b7d5287936287fa7c159995f2fe1564fd1ba055b0",
+      "representation": "original-response"
+    },
+    {
+      "id": "blackstone-acc",
+      "url": "https://www.blackstone.com/news/press/blackstone-funds-complete-13-billion-acquisition-of-american-campus-communities/",
+      "retrievedAt": "2026-10-20T17:38:10.119438+00:00",
+      "contentSha256": "eac77619e91c9feba57757ae02244e1fbdde26d32451184e8145d55f7b34e6e2",
+      "representation": "original-response"
+    },
+    {
+      "id": "ellington-aaic",
+      "url": "https://www.ellingtonfinancial.com/news-releases/news-release-details/ellington-financial-completes-merger-arlington-asset-investment",
+      "retrievedAt": "2026-10-20T17:38:34.523Z",
+      "contentSha256": "e8c42f80abe554abe663d447a14bfc9d1106ff5597b6739cb4262e73c01b5758",
+      "representation": "web-tool-extraction"
+    },
+    {
+      "id": "ellington-aaic-terms",
+      "url": "https://ir.ellingtonfinancial.com/arlington-asset-investment-corp-merger-faqs-0",
+      "retrievedAt": "2026-10-20T17:38:36.861Z",
+      "contentSha256": "1a30f94e9ef48e9cb5810b800ac3464f8f59fbf5d25b74d9cb923e9442a36fc2",
+      "representation": "web-tool-extraction"
+    },
+    {
+      "id": "sec-acc",
+      "url": "https://www.sec.gov/Archives/edgar/data/1283630/000119312522216177/d390151d8k.htm",
+      "retrievedAt": "2026-10-20T17:38:39.123Z",
+      "contentSha256": "0efd2569dcd07b4acc8eeac8a8e25d175dedc2e90c1ecd2e0eb8195fbf74fbe4",
+      "representation": "web-tool-extraction"
+    },
+    {
+      "id": "nasdaq-abst",
+      "url": "https://www.nasdaqtrader.com/TraderNews.aspx?id=ECA2023-425",
+      "retrievedAt": "2026-10-20T17:43:36.434385+00:00",
+      "contentSha256": "c4f2a43e579bfe3f6a0971f77742fd76914ec287d3a163b6fc2beed8236b912f",
+      "representation": "original-response"
+    },
+    {
+      "id": "sec-aaic-8k-completion",
+      "url": "https://www.sec.gov/Archives/edgar/data/1209028/000110465923126441/tm2333039d1_8k.htm",
+      "retrievedAt": "2026-10-21T18:59:53.7670379+00:00",
+      "contentSha256": "ba34bb3eb47af017602f319ae3f8b0f50ce352626ded85787f5a73e1a69012d8",
+      "representation": "original-response"
+    },
+    {
+      "id": "sec-aaic-25nse",
+      "url": "https://www.sec.gov/Archives/edgar/data/1209028/000087666123000970/xslF25X02/primary_doc.xml",
+      "retrievedAt": "2026-10-21T18:59:55.2189809+00:00",
+      "contentSha256": "d3094c576d8e91783bd079c671ac08b332cc19e870828d9dc06970f170e51caa",
+      "representation": "original-response"
+    },
+    {
+      "id": "sec-aaww-8k-completion",
+      "url": "https://www.sec.gov/Archives/edgar/data/1135185/000110465923033984/tm239235d1_8k.htm",
+      "retrievedAt": "2026-10-21T18:59:59.0133783+00:00",
+      "contentSha256": "3ee7294ef9215641d4b8e361bad2b46156fb8df063631dab5f58ca10228efac4",
+      "representation": "original-response"
+    },
+    {
+      "id": "sec-aaww-25nse",
+      "url": "https://www.sec.gov/Archives/edgar/data/1135185/000135445723000189/xslF25X02/primary_doc.xml",
+      "retrievedAt": "2026-10-21T18:59:59.4661526+00:00",
+      "contentSha256": "8ea7942f044e1696b6f629332ae866d5b0f3a058ab9e8cc0be04b065af96134b",
+      "representation": "original-response"
+    },
+    {
+      "id": "sec-abmd-8k-completion",
+      "url": "https://www.sec.gov/Archives/edgar/data/815094/000119312522311074/d353287d8k.htm",
+      "retrievedAt": "2026-10-21T19:00:01.413084+00:00",
+      "contentSha256": "1d16f87350706672a640fb618444646ddae985ba4ffefffa45ffb5ba8bc31e76",
+      "representation": "original-response"
+    },
+    {
+      "id": "sec-abmd-25nse",
+      "url": "https://www.sec.gov/Archives/edgar/data/815094/000135445722000772/xslF25X02/primary_doc.xml",
+      "retrievedAt": "2026-10-21T19:00:01.888759+00:00",
+      "contentSha256": "7b4710fa251e6c7b89b1068ffafdcd18592a9bea782b9f4787c7c31c77ceb98a",
+      "representation": "original-response"
+    },
+    {
+      "id": "sec-abst-25nse",
+      "url": "https://www.sec.gov/Archives/edgar/data/1071058/000135445723000546/xslF25X02/primary_doc.xml",
+      "retrievedAt": "2026-10-21T19:00:03.3169687+00:00",
+      "contentSha256": "471ec4e9be12c51f73a0dc1dce93a1c48137223a8958e8901ccac17abf772b55",
+      "representation": "original-response"
+    },
+    {
+      "id": "sec-acc-8k-completion-original",
+      "url": "https://www.sec.gov/Archives/edgar/data/1283630/000119312522216177/d390151d8k.htm",
+      "retrievedAt": "2026-10-21T19:00:06.840313+00:00",
+      "contentSha256": "8d05403da2ddde70546283d57dd3feb7def6f8a7ac863fc40ea1499343c4c36d",
+      "representation": "original-response"
+    },
+    {
+      "id": "sec-acc-8k-expected-closing",
+      "url": "https://www.sec.gov/Archives/edgar/data/1283630/000119312522212615/d373681d8k.htm",
+      "retrievedAt": "2026-10-21T19:00:07.3898481+00:00",
+      "contentSha256": "1fe1f7255a3767693e7f7d7b302d42e13853d2a61cbb753dbbf19355ba64d467",
+      "representation": "original-response"
+    },
+    {
+      "id": "sec-acc-25nse",
+      "url": "https://www.sec.gov/Archives/edgar/data/1283630/000087666122000619/xslF25X02/primary_doc.xml",
+      "retrievedAt": "2026-10-21T19:00:06.6982769+00:00",
+      "contentSha256": "bc5718c72b2d114461d5ab467ab344723ec3c43664267613222913fa5adf2feb",
+      "representation": "original-response"
+    }
+  ],
+  "subjects": [
+    {
+      "symbol": "AAIC",
+      "eventKind": "completed-merger",
+      "eventDate": "2023-12-14",
+      "lastTradingDate": "2023-12-13",
+      "suspensionDate": null,
+      "consideration": {
+        "kind": "cash-and-stock",
+        "cashPerShare": 0.09,
+        "currency": "USD",
+        "successorSymbol": "EFC",
+        "sharesPerShare": 0.3619,
+        "rightsPerShare": null
+      },
+      "sourceIds": [
+        "ellington-aaic",
+        "ellington-aaic-terms",
+        "sec-aaic-8k-completion",
+        "sec-aaic-25nse"
+      ]
+    },
+    {
+      "symbol": "AAWW",
+      "eventKind": "completed-merger",
+      "eventDate": "2023-03-17",
+      "lastTradingDate": "2023-03-17",
+      "suspensionDate": "2023-03-20",
+      "consideration": {
+        "kind": "cash-only",
+        "cashPerShare": 102.5,
+        "currency": "USD",
+        "successorSymbol": null,
+        "sharesPerShare": null,
+        "rightsPerShare": null
+      },
+      "sourceIds": [
+        "nasdaq-aaww",
+        "sec-aaww-8k-completion",
+        "sec-aaww-25nse"
+      ]
+    },
+    {
+      "symbol": "ABMD",
+      "eventKind": "completed-merger",
+      "eventDate": "2022-12-22",
+      "lastTradingDate": "2022-12-21",
+      "suspensionDate": "2022-12-23",
+      "consideration": {
+        "kind": "cash-and-cvr",
+        "cashPerShare": 380,
+        "currency": "USD",
+        "successorSymbol": null,
+        "sharesPerShare": null,
+        "rightsPerShare": 1
+      },
+      "sourceIds": [
+        "nasdaq-abmd",
+        "sec-abmd-8k-completion",
+        "sec-abmd-25nse"
+      ]
+    },
+    {
+      "symbol": "ABST",
+      "eventKind": "completed-merger",
+      "eventDate": "2023-07-27",
+      "lastTradingDate": "2023-07-26",
+      "suspensionDate": "2023-07-28",
+      "consideration": {
+        "kind": "cash-only",
+        "cashPerShare": 11.5,
+        "currency": "USD",
+        "successorSymbol": null,
+        "sharesPerShare": null,
+        "rightsPerShare": null
+      },
+      "sourceIds": [
+        "absolute-abst",
+        "nasdaq-abst",
+        "sec-abst-25nse"
+      ]
+    },
+    {
+      "symbol": "ACB",
+      "eventKind": "continued-listing-notice",
+      "eventDate": "2024-02-20",
+      "lastTradingDate": null,
+      "suspensionDate": null,
+      "consideration": {
+        "kind": "none",
+        "cashPerShare": null,
+        "currency": null,
+        "successorSymbol": null,
+        "sharesPerShare": null,
+        "rightsPerShare": null
+      },
+      "sourceIds": [
+        "nasdaq-acb"
+      ]
+    },
+    {
+      "symbol": "ACC",
+      "eventKind": "completed-merger",
+      "eventDate": "2022-08-09",
+      "lastTradingDate": null,
+      "suspensionDate": null,
+      "consideration": {
+        "kind": "cash-only",
+        "cashPerShare": 65.47,
+        "currency": "USD",
+        "successorSymbol": null,
+        "sharesPerShare": null,
+        "rightsPerShare": null
+      },
+      "sourceIds": [
+        "sec-acc",
+        "blackstone-acc",
+        "sec-acc-8k-completion-original",
+        "sec-acc-8k-expected-closing",
+        "sec-acc-25nse"
+      ]
+    }
+  ]
+}
