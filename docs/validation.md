@@ -1,5 +1,9 @@
 # Validation record
 
+## Explicit raw split settlement (21 October 2026)
+
+The [offline reference](raw-gbp-ledger.md#explicit-split-settlement-21-october-2026) now books exact pure split quantities with immutable action receipts. Late-fill conflicts, effective ordering, revised/missing evidence, post-event ownership and mixed consideration fail closed. Identical later vintages preserve the old receipt and remain usable. Twenty additional authored cases pass (641 .NET total); four exported scenarios match independent Python Decimal quantity/cash/fee/GBP valuations. Boundary and full-history/files secret checks pass, including the fake-secret refusal. No accelerator, vendor/broker request, production trial or genuine holdout was used; cash/terminal and backtest integration remain open.
+
 ## Raw-quantity GBP reference (21 October 2026)
 
 The offline [ledger reference](raw-gbp-ledger.md) records explicit raw quantities, fees and GBP cash, and values raw holdings through an explicitly labelled FX purpose. Thirteen new authored tests cover foreign/pence arithmetic, partial/full sales, refusal atomicity, temporal/unit checks, stale/missing/reversed/reference FX and unhandled-action refusal. An independent Python Decimal calculation matches an exported C# receipt. A deliberate FX-rate substitution fails the foreign-quantity regression and is restored. The full suite now passes 621 .NET tests; Python/frontend gates remain unchanged. There is no application route, broker action, genuine study or notional-report migration; corporate-action and backtest integration remain open. [Passing CI/image/deployment and cross-version compatibility](raw-gbp-ledger.md#publication-compatibility-and-deployment-acceptance) preserve the existing application state and authored spent-final evidence.

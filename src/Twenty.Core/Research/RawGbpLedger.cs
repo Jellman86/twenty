@@ -6,7 +6,13 @@ namespace Twenty.Core.Research;
 public sealed record RawQuantityPosition(decimal Quantity, Denomination Denomination, DateTimeOffset OpenedAt);
 public sealed record RawLedgerEntry(string Id, DateTimeOffset At, string Kind, string? ListingId, decimal Quantity,
     decimal? RawPrice, Denomination? Denomination, decimal FeeGbp, decimal CashChangeGbp, string? FxId,
-    decimal GbpPerLocalUnit, decimal CashAfterGbp);
+    decimal GbpPerLocalUnit, decimal CashAfterGbp)
+{
+    public string? ActionId { get; init; }
+    public string? ActionObservationId { get; init; }
+    public DateTimeOffset? ActionEffectiveAt { get; init; }
+    public decimal? SplitRatio { get; init; }
+}
 public sealed record RawPositionValue(string ListingId, decimal Quantity, string PriceId, string? FxId,
     decimal RawPrice, Denomination Denomination, decimal GbpPerLocalUnit, decimal ValueGbp);
 public sealed record RawGbpValuation(DateTimeOffset At, FxPurpose FxPurpose, decimal CashGbp, decimal EquityGbp,
@@ -15,11 +21,13 @@ public sealed record RawGbpValuation(DateTimeOffset At, FxPurpose FxPurpose, dec
 /// <summary>Offline, single-owner decimal reference for explicit raw fills and GBP cash.
 /// Supplied fill prices are execution assumptions, never inferred from an adjusted bar.
 /// This is not an order adapter, a historical execution simulator or a return-index portfolio.
-/// Corporate-action intervals are refused until a separate settlement contract exists.</summary>
+/// Exact split quantities can be settled explicitly; cash/stock distributions remain refused.</summary>
 public sealed class RawGbpLedger
 {
     private ImmutableDictionary<string, RawQuantityPosition> holdings = ImmutableDictionary.Create<string, RawQuantityPosition>(StringComparer.Ordinal);
     private ImmutableHashSet<string> ids = ImmutableHashSet.Create<string>(StringComparer.Ordinal);
+    private ImmutableDictionary<(string ListingId, string ActionId), CorporateAction> bookedActions =
+        ImmutableDictionary<(string ListingId, string ActionId), CorporateAction>.Empty;
     private DateTimeOffset? lastAt;
     public decimal CashGbp { get; private set; }
     public decimal ContributionsGbp { get; private set; }
@@ -43,17 +51,31 @@ public sealed class RawGbpLedger
     }
     private static Listing ListingAt(DataSlice market, string id) => market.ListingsAt(market.DecisionAt).SingleOrDefault(l => l.ListingId == id)
         ?? throw new ResearchException("raw-ledger-listing");
-    private void CheckHoldings(DataSlice market)
+    private void CheckBookedActions(DataSlice market)
     {
+        foreach (var (key, original) in bookedActions)
+        {
+            var current = market.EffectiveActions(key.ListingId).SingleOrDefault(a => a.ActionId == key.ActionId);
+            if (current is null) throw new ResearchException("raw-ledger-action-evidence");
+            // An identical economic vintage need not block every subsequent capture.
+            // Keep the original receipt; changed/withdrawn terms need explicit reconstruction.
+            if (current with { Id = original.Id, Evidence = original.Evidence } != original)
+                throw new ResearchException("raw-ledger-action-revised");
+        }
+    }
+    private static bool IsNeutralAction(CorporateAction action) =>
+        action.Action is CorporateActionKind.SymbolChange or CorporateActionKind.Split or CorporateActionKind.Dividend &&
+        action.TerminalOutcome == TerminalOutcome.NotApplicable && action.SuccessorListingId is null &&
+        action.CashPerShare is null or 0 && action.SplitRatio is null or 1 &&
+        (action.NewSymbol is null || action.Action == CorporateActionKind.SymbolChange);
+    private void CheckHoldings(DataSlice market, CorporateAction? settling = null)
+    {
+        CheckBookedActions(market);
         foreach (var (id, position) in holdings)
         {
-            if (market.EffectiveActions(id).Any(a => a.EffectiveAt > position.OpenedAt && a.Action switch
-                {
-                    CorporateActionKind.SymbolChange => false,
-                    CorporateActionKind.Split => a.SplitRatio != 1,
-                    CorporateActionKind.Dividend => a.CashPerShare != 0,
-                    _ => true
-                })) throw new ResearchException("raw-ledger-action-unsupported");
+            if (market.EffectiveActions(id).Any(a => a.EffectiveAt > position.OpenedAt &&
+                (settling is null || a.EffectiveAt <= settling.EffectiveAt) && a != settling &&
+                !bookedActions.ContainsKey((a.ListingId, a.ActionId)) && !IsNeutralAction(a))) throw new ResearchException("raw-ledger-action-unsupported");
             if (ListingAt(market, id).Denomination != position.Denomination) throw new ResearchException("raw-ledger-units");
         }
     }
@@ -99,6 +121,34 @@ public sealed class RawGbpLedger
         Record(new(id, market.DecisionAt.ToUniversalTime(), signedQuantity > 0 ? "buy" : "sell", listingId,
             signedQuantity, rawPrice, listing.Denomination, feeGbp, change, fxId, rate, cash));
         holdings = next; CashGbp = cash; FeesGbp = fees;
+    }
+    public void ApplySplit(string id, DataSlice market, string listingId, string actionId)
+    {
+        ArgumentNullException.ThrowIfNull(market);
+        CheckEvent(id, market.DecisionAt); CheckBookedActions(market);
+        var action = market.EffectiveActions(listingId).SingleOrDefault(a => a.ActionId == actionId);
+        if (action is not { Action: CorporateActionKind.Split, SplitRatio: > 0 }) throw new ResearchException("raw-ledger-action");
+        if (action.CashPerShare is not (null or 0) || action.SuccessorListingId is not null ||
+            action.TerminalOutcome != TerminalOutcome.NotApplicable || action.NewSymbol is not null)
+            throw new ResearchException("raw-ledger-action-complex");
+        var key = (listingId, actionId);
+        if (bookedActions.ContainsKey(key)) throw new ResearchException("raw-ledger-action-already-booked");
+        if (!holdings.TryGetValue(listingId, out var position) || position.OpenedAt >= action.EffectiveAt)
+            throw new ResearchException("raw-ledger-action-position");
+        // A late disclosure cannot reinterpret a fill that used the old share count.
+        // Previously booked earlier splits are compared by effective time, not receipt time.
+        if (Entries.Any(e => e.ListingId == listingId &&
+            ((e.Kind is "buy" or "sell") && e.At >= action.EffectiveAt || e.Kind == "split" && e.ActionEffectiveAt >= action.EffectiveAt)))
+            throw new ResearchException("raw-ledger-action-history");
+        CheckHoldings(market, action);
+        var quantity = position.Quantity * action.SplitRatio.Value;
+        if (quantity <= 0) throw new ResearchException("raw-ledger-quantity");
+        var next = holdings.SetItem(listingId, position with { Quantity = quantity });
+        var actions = bookedActions.Add(key, action);
+        Record(new(id, market.DecisionAt.ToUniversalTime(), "split", listingId, quantity - position.Quantity,
+            null, position.Denomination, 0, 0, null, 1, CashGbp)
+        { ActionId = action.ActionId, ActionObservationId = action.Id, ActionEffectiveAt = action.EffectiveAt.ToUniversalTime(), SplitRatio = action.SplitRatio });
+        holdings = next; bookedActions = actions;
     }
     public RawGbpValuation Value(DataSlice market, TimeSpan maximumPriceAge, TimeSpan maximumFxAge, FxPurpose purpose)
     {

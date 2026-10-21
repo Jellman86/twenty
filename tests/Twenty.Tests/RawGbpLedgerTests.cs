@@ -11,7 +11,7 @@ public sealed class RawGbpLedgerTests
     private static Evidence Known(DateTimeOffset at) => new("fixture-source", at, at, AvailabilityEvidence.ArchivedPublication, TimePrecision.Second, null, null);
     private static DataSlice Market(DateTimeOffset at, Denomination? denomination = null, decimal price = 100m,
         decimal fx = .8m, FxPurpose purpose = FxPurpose.Executable, bool adjustedOnly = false,
-        bool reverseFx = false, int fxAgeDays = 0, int priceAgeDays = 0, bool futureFx = false, bool split = false)
+        bool reverseFx = false, int fxAgeDays = 0, int priceAgeDays = 0, bool futureFx = false, bool split = false, ImmutableArray<CorporateAction> actions = default)
     {
         var fixture = DatasetJson.Read(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "point-in-time.v1.json")));
         var units = denomination ?? new("USD", QuoteUnit.Major);
@@ -27,6 +27,7 @@ public sealed class RawGbpLedgerTests
             reverseFx ? units.Currency : "GBP", fx, observed, purpose));
         if (split) rows.Add(new CorporateAction("split", Known(at.AddMinutes(-1)), listing.ListingId, "split-event", CorporateActionKind.Split,
             at.AddHours(-1), 2, null, null, null, null, TerminalOutcome.NotApplicable));
+        if (!actions.IsDefault) rows.AddRange(actions);
         return new PointInTimeDataset(fixture with { Observations = rows.ToImmutable() }).AsOf(at);
     }
 
@@ -128,6 +129,180 @@ public sealed class RawGbpLedgerTests
         ledger.Fill("buy", Market(BuyAt), "listing-a", 1, 100, PriceBasis.Raw, 0, Age);
         Assert.Equal("raw-ledger-time", Assert.Throws<ResearchException>(() => ledger.Deposit("past", BuyAt.AddMinutes(-1), 1)).Code);
         Assert.Equal("raw-ledger-units", Assert.Throws<ResearchException>(() => ledger.Value(Market(BuyAt.AddDays(1), new("GBP", QuoteUnit.Major)), Age, Age, FxPurpose.Executable)).Code);
+    }
+
+    private static CorporateAction Split(string id = "split-event", decimal ratio = 2, int effectiveHours = 1) =>
+        new(id + "-observation", Known(BuyAt.AddMinutes(1)), "listing-a", id, CorporateActionKind.Split,
+            BuyAt.AddHours(effectiveHours), ratio, null, null, null, null, TerminalOutcome.NotApplicable);
+
+    [Fact]
+    public void ExplicitSplitPreservesCashAndValueAndCannotBeBookedTwice()
+    {
+        var ledger = new RawGbpLedger(); ledger.Deposit("deposit", BuyAt, 200);
+        ledger.Fill("buy", Market(BuyAt), "listing-a", 1, 100, PriceBasis.Raw, 0, Age);
+        var action = Split(); var next = Market(BuyAt.AddDays(1), price: 50, actions: [action]);
+        ledger.ApplySplit("settle", next, "listing-a", action.ActionId);
+        Assert.Equal(2, ledger.Holdings["listing-a"].Quantity); Assert.Equal(120, ledger.CashGbp);
+        Assert.Equal(200, ledger.Value(next, Age, Age, FxPurpose.Executable).EquityGbp);
+        Assert.Equal(0, ledger.FeesGbp); Assert.Equal(200, ledger.ContributionsGbp);
+        Assert.Equal("raw-ledger-action-already-booked", Assert.Throws<ResearchException>(() => ledger.ApplySplit("another", next, "listing-a", action.ActionId)).Code);
+        Assert.Equal(3, ledger.Entries.Length);
+    }
+
+    [Fact]
+    public void PendingSplitsMustBeSettledInEffectiveOrderEvenWhenBookedLate()
+    {
+        var ledger = new RawGbpLedger(); ledger.Deposit("deposit", BuyAt, 200);
+        ledger.Fill("buy", Market(BuyAt), "listing-a", 1, 100, PriceBasis.Raw, 0, Age);
+        var first = Split(); var second = Split("second", 2, 2);
+        var next = Market(BuyAt.AddDays(1), price: 25, actions: [first, second]);
+        Assert.Equal("raw-ledger-action-unsupported", Assert.Throws<ResearchException>(() => ledger.ApplySplit("out-of-order", next, "listing-a", second.ActionId)).Code);
+        ledger.ApplySplit("first", next, "listing-a", first.ActionId);
+        Assert.Equal("raw-ledger-action-unsupported", Assert.Throws<ResearchException>(() => ledger.Value(next, Age, Age, FxPurpose.Executable)).Code);
+        ledger.ApplySplit("out-of-order", next, "listing-a", second.ActionId);
+        Assert.Equal(4, ledger.Holdings["listing-a"].Quantity);
+        Assert.Equal(200, ledger.Value(next, Age, Age, FxPurpose.Executable).EquityGbp);
+        Assert.Equal(first.EffectiveAt, ledger.Entries[2].ActionEffectiveAt);
+        Assert.Equal(first.Id, ledger.Entries[2].ActionObservationId);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(-.5)]
+    public void LateSplitCannotReinterpretAnInterveningFill(decimal quantity)
+    {
+        var ledger = new RawGbpLedger(); ledger.Deposit("deposit", BuyAt, 400);
+        ledger.Fill("buy", Market(BuyAt), "listing-a", 2, 100, PriceBasis.Raw, 0, Age);
+        ledger.Fill("unknown-action-fill", Market(BuyAt.AddHours(2)), "listing-a", quantity, 100, PriceBasis.Raw, 0, Age);
+        var cash = ledger.CashGbp; var held = ledger.Holdings["listing-a"].Quantity;
+        Assert.Equal("raw-ledger-action-history", Assert.Throws<ResearchException>(() => ledger.ApplySplit("split", Market(BuyAt.AddDays(1), actions: [Split()]), "listing-a", "split-event")).Code);
+        Assert.Equal(cash, ledger.CashGbp); Assert.Equal(held, ledger.Holdings["listing-a"].Quantity); Assert.Equal(3, ledger.Entries.Length);
+    }
+
+    [Fact]
+    public void BookedSplitRevisionOrMissingEvidenceRequiresExplicitReconstruction()
+    {
+        var ledger = new RawGbpLedger(); ledger.Deposit("deposit", BuyAt, 200);
+        ledger.Fill("buy", Market(BuyAt), "listing-a", 1, 100, PriceBasis.Raw, 0, Age);
+        var split = Split();
+        ledger.ApplySplit("settle", Market(BuyAt.AddHours(1), actions: [split]), "listing-a", split.ActionId);
+        var revision = split with { Id = "revised-split", SplitRatio = 1,
+            Evidence = Known(BuyAt.AddHours(2)) with { RevisionOf = split.Id } };
+        Assert.Equal("raw-ledger-action-revised", Assert.Throws<ResearchException>(() => ledger.Value(Market(BuyAt.AddDays(1), actions: [split, revision]), Age, Age, FxPurpose.Executable)).Code);
+        Assert.Equal("raw-ledger-action-evidence", Assert.Throws<ResearchException>(() => ledger.Value(Market(BuyAt.AddDays(1)), Age, Age, FxPurpose.Executable)).Code);
+        Assert.Equal(2, ledger.Holdings["listing-a"].Quantity); Assert.Equal(3, ledger.Entries.Length);
+    }
+
+    [Fact]
+    public void UnchangedSplitVintageDoesNotRewriteTheReceiptOrBlockLaterValuation()
+    {
+        var ledger = new RawGbpLedger(); ledger.Deposit("deposit", BuyAt, 200);
+        ledger.Fill("buy", Market(BuyAt), "listing-a", 1, 100, PriceBasis.Raw, 0, Age);
+        var split = Split();
+        ledger.ApplySplit("settle", Market(BuyAt.AddHours(1), actions: [split]), "listing-a", split.ActionId);
+        var receipt = ledger.Entries;
+        var repeated = split with { Id = "repeated", Evidence = Known(BuyAt.AddHours(2)) with { RevisionOf = split.Id } };
+        Assert.Equal(200, ledger.Value(Market(BuyAt.AddDays(1), price: 50, actions: [split, repeated]), Age, Age, FxPurpose.Executable).EquityGbp);
+        Assert.Equal(receipt, ledger.Entries); Assert.Equal(split.Id, ledger.Entries[2].ActionObservationId);
+    }
+
+    [Fact]
+    public void FutureSplitIsNotBookableAndFailedAttemptDoesNotConsumeIdentity()
+    {
+        var ledger = new RawGbpLedger(); ledger.Deposit("deposit", BuyAt, 200);
+        ledger.Fill("buy", Market(BuyAt), "listing-a", 1, 100, PriceBasis.Raw, 0, Age);
+        var action = Split();
+        Assert.Equal("raw-ledger-action", Assert.Throws<ResearchException>(() => ledger.ApplySplit("settle", Market(BuyAt.AddMinutes(30), actions: [action]), "listing-a", action.ActionId)).Code);
+        ledger.ApplySplit("settle", Market(BuyAt.AddHours(1), actions: [action]), "listing-a", action.ActionId);
+        Assert.Equal(2, ledger.Holdings["listing-a"].Quantity);
+    }
+
+    [Fact]
+    public void EarlierUnsettledDividendCannotBeSkippedToApplyASplit()
+    {
+        var ledger = new RawGbpLedger(); ledger.Deposit("deposit", BuyAt, 200);
+        ledger.Fill("buy", Market(BuyAt), "listing-a", 1, 100, PriceBasis.Raw, 0, Age);
+        var split = Split(); var dividend = split with { Id = "dividend", ActionId = "dividend-event", Action = CorporateActionKind.Dividend,
+            EffectiveAt = BuyAt.AddMinutes(30), SplitRatio = null, CashPerShare = 1, CashCurrency = "USD" };
+        Assert.Equal("raw-ledger-action-unsupported", Assert.Throws<ResearchException>(() => ledger.ApplySplit("settle", Market(BuyAt.AddDays(1), actions: [split, dividend]), "listing-a", split.ActionId)).Code);
+        Assert.Equal(1, ledger.Holdings["listing-a"].Quantity); Assert.Equal(2, ledger.Entries.Length);
+    }
+
+    [Theory]
+    [InlineData(.25, 400)]
+    [InlineData(.5, 200)]
+    [InlineData(4, 25)]
+    public void ExactFractionalOrForwardSplitQuantitiesConserveValue(decimal ratio, decimal price)
+    {
+        var ledger = new RawGbpLedger(); ledger.Deposit("deposit", BuyAt, 200);
+        ledger.Fill("buy", Market(BuyAt), "listing-a", 1, 100, PriceBasis.Raw, 0, Age);
+        var action = Split(ratio: ratio); var next = Market(BuyAt.AddDays(1), price: price, actions: [action]);
+        ledger.ApplySplit("settle", next, "listing-a", action.ActionId);
+        Assert.Equal(ratio, ledger.Holdings["listing-a"].Quantity);
+        Assert.Equal(200, ledger.Value(next, Age, Age, FxPurpose.Executable).EquityGbp);
+    }
+
+    [Fact]
+    public void APostSplitBuyerHasNoOldQuantityToSettle()
+    {
+        var ledger = new RawGbpLedger(); ledger.Deposit("deposit", BuyAt, 200);
+        var action = Split(); var next = Market(BuyAt.AddHours(2), price: 50, actions: [action]);
+        ledger.Fill("buy", next, "listing-a", 1, 50, PriceBasis.Raw, 0, Age);
+        Assert.Equal("raw-ledger-action-position", Assert.Throws<ResearchException>(() => ledger.ApplySplit("settle", next, "listing-a", action.ActionId)).Code);
+        Assert.Equal(1, ledger.Holdings["listing-a"].Quantity); Assert.Equal(160, ledger.CashGbp);
+    }
+
+    [Fact]
+    public void ClosingAPositionDoesNotEraseItsBookedActionEvidence()
+    {
+        var ledger = new RawGbpLedger(); ledger.Deposit("deposit", BuyAt, 200);
+        ledger.Fill("buy", Market(BuyAt), "listing-a", 1, 100, PriceBasis.Raw, 0, Age);
+        var action = Split(); var next = Market(BuyAt.AddHours(1), price: 50, actions: [action]);
+        ledger.ApplySplit("settle", next, "listing-a", action.ActionId);
+        ledger.Fill("sell", next, "listing-a", -2, 50, PriceBasis.Raw, 0, Age);
+        Assert.Empty(ledger.Holdings);
+        var revised = action with { Id = "changed", SplitRatio = 3, Evidence = Known(BuyAt.AddHours(2)) with { RevisionOf = action.Id } };
+        Assert.Equal("raw-ledger-action-revised", Assert.Throws<ResearchException>(() => ledger.Value(Market(BuyAt.AddDays(1), actions: [action, revised]), Age, Age, FxPurpose.Executable)).Code);
+        Assert.Equal(200, ledger.CashGbp);
+    }
+
+    [Theory]
+    [InlineData("cash")]
+    [InlineData("successor")]
+    [InlineData("terminal")]
+    [InlineData("symbol")]
+    public void SplitSettlementCannotDiscardAdditionalConsideration(string kind)
+    {
+        var ledger = new RawGbpLedger(); ledger.Deposit("deposit", BuyAt, 200);
+        ledger.Fill("buy", Market(BuyAt), "listing-a", 1, 100, PriceBasis.Raw, 0, Age);
+        var action = Split();
+        action = kind switch
+        {
+            "cash" => action with { CashPerShare = 1, CashCurrency = "USD" },
+            "successor" => action with { SuccessorListingId = "listing-a" },
+            "terminal" => action with { TerminalOutcome = TerminalOutcome.Zero },
+            _ => action with { NewSymbol = "NEW" }
+        };
+        Assert.Equal("raw-ledger-action-complex", Assert.Throws<ResearchException>(() => ledger.ApplySplit("settle", Market(BuyAt.AddDays(1), actions: [action]), "listing-a", action.ActionId)).Code);
+        Assert.Equal(1, ledger.Holdings["listing-a"].Quantity); Assert.Equal(2, ledger.Entries.Length);
+    }
+
+    [Theory]
+    [InlineData("split")]
+    [InlineData("symbol")]
+    [InlineData("dividend")]
+    public void NominallyNeutralActionsCannotHideOtherEconomicTerms(string kind)
+    {
+        var ledger = new RawGbpLedger(); ledger.Deposit("deposit", BuyAt, 200);
+        ledger.Fill("buy", Market(BuyAt), "listing-a", 1, 100, PriceBasis.Raw, 0, Age);
+        var action = Split(ratio: 1);
+        action = kind switch
+        {
+            "split" => action with { CashPerShare = 1, CashCurrency = "USD" },
+            "symbol" => action with { Action = CorporateActionKind.SymbolChange, NewSymbol = "NEW", CashPerShare = 1, CashCurrency = "USD" },
+            _ => action with { Action = CorporateActionKind.Dividend, SplitRatio = 2, CashPerShare = 0, CashCurrency = "USD" }
+        };
+        Assert.Equal("raw-ledger-action-unsupported", Assert.Throws<ResearchException>(() => ledger.Value(Market(BuyAt.AddDays(1), actions: [action]), Age, Age, FxPurpose.Executable)).Code);
     }
 
     [Fact]
