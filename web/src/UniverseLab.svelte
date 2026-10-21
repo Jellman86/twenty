@@ -1,12 +1,14 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import SearchDiagnostics from './SearchDiagnostics.svelte';
+  import UniverseStudies from './UniverseStudies.svelte';
 
   type Trial = {
     id: string; datasetId: string; synthetic: boolean; universeId: string; status: string;
     createdAt: string; errorCode: string | null; codeCommit: string;
     informationStart: string | null; informationEnd: string | null;
     requestArtifactSha256: string | null;
+    studyStage?: string;
   };
   type Summary = {
     strategy: string; endingEquityGbp: number; contributionsGbp: number;
@@ -23,6 +25,7 @@
   let selected = $state<Trial | null>(null);
   let report = $state<Report | null>(null);
   let loading = $state(false), inspecting = $state(false), error = $state(''), totalTrials = $state(0);
+  let inspectionRevision = 0;
   const labels: Record<string, string> = { equal_weight: 'Equal weight', momentum: 'Momentum', cash: 'Cash' };
   const amount = (value: number) => new Intl.NumberFormat('en-GB', { maximumFractionDigits: 2 }).format(value);
   const percent = (value: number) => `${(value * 100).toFixed(1)}%`;
@@ -49,17 +52,25 @@
     finally { loading = false; }
   }
   async function inspect(trial: Trial) {
+    const revision = ++inspectionRevision;
     selected = trial; report = null; error = ''; inspecting = trial.status === 'succeeded';
     if (!inspecting) return;
     try {
       const result = await read<Report>(`/api/research/universe-runs/${trial.id}/report`);
-      if (selected?.id === trial.id) report = result;
+      if (revision === inspectionRevision && selected?.id === trial.id) report = result;
     } catch (e) {
-      if (selected?.id === trial.id) error = e instanceof Error ? e.message : 'Report is unavailable.';
-    } finally { if (selected?.id === trial.id) inspecting = false; }
+      if (revision === inspectionRevision && selected?.id === trial.id) error = e instanceof Error ? e.message : 'Report is unavailable.';
+    } finally { if (revision === inspectionRevision && selected?.id === trial.id) inspecting = false; }
+  }
+  async function openStudyReport(id: string) {
+    const revision = ++inspectionRevision; selected = null; report = null; error = '';
+    try { const trial = await read<Trial>(`/api/research/universe-runs/${id}`); if (revision === inspectionRevision) await inspect(trial); }
+    catch (e) { if (revision === inspectionRevision) error = e instanceof Error ? e.message : 'Trial is unavailable.'; }
   }
   onMount(() => { void refresh(); });
 </script>
+
+<UniverseStudies onInspect={id => void openStudyReport(id)} onUpdated={() => void refresh()} />
 
 <section class="panel compact evidence-intro" aria-labelledby="universe-title">
   <div class="panel-heading">
@@ -116,6 +127,6 @@
     <details><summary>Report limitations</summary><ul class="limitations">{#each report.limitations as limitation}<li>{limitation}</li>{/each}</ul></details>
   {/if}
 </section>
-{#if report && selected?.status === 'succeeded'}
+{#if report && selected?.status === 'succeeded' && !selected.studyStage?.startsWith('final-')}
   <SearchDiagnostics anchorRunId={selected.id} family="universe" />
 {/if}

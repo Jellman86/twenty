@@ -70,7 +70,8 @@ public sealed partial class ResearchStore
         command.Parameters.AddWithValue("$id", id); using var reader = command.ExecuteReader(); var result = new List<object>();
         while (reader.Read()) result.Add(new { sequence = reader.GetInt64(0), at = reader.GetString(1), kind = reader.GetString(2) }); return result;
     }
-    private int ReservedStudySlots() => Studies().Count(s => s.Status is "development" or "candidate-frozen") * 2;
+    private int ReservedStudySlots() => (Studies().Count(s => s.Status is "development" or "candidate-frozen") +
+        UniverseStudies().Count(s => s.Status is "development" or "candidate-frozen")) * 2;
     private void WriteStudy(SqliteConnection db, SqliteTransaction tx, ResearchStudy study, string kind, bool insert = false)
     {
         var json = JsonSerializer.Serialize(study, Json);
@@ -133,7 +134,7 @@ public sealed partial class ResearchStore
             var previous = Studies().SingleOrDefault(s => s.RequestId == request.RequestId);
             if (previous is not null)
             { if (previous.RequestSha256 != requestHash) throw new ResearchException("request-id-conflict"); return previous; }
-            if (Studies().Count >= MaximumStudies) throw new ResearchException("study-capacity");
+            if (Studies().Count + UniverseStudies().Count >= MaximumStudies) throw new ResearchException("study-capacity");
             var panel = Panel(request.DatasetId);
             var identity = ResearchIdentity.Current;
             var plan = StudyProtocol.Declare(panel, request.MonthlyGbp, request.Costs, request.Purpose, identity.Sha256,
@@ -142,8 +143,7 @@ public sealed partial class ResearchStore
             {
                 GuardStudyReservations(panel, plan.Candidates[0].Config);
                 GuardPriorReservedExposure(plan.ReservedStart, plan.ReservedEnd);
-                if (Studies().Any(s => !s.Plan.Synthetic && (s.FinalRequestedAt is not null || s.Status is "development" or "candidate-frozen" or "final-evaluation") &&
-                    Overlap(plan.ReservedStart, plan.ReservedEnd, s.Plan.ReservedStart, s.Plan.ReservedEnd))) throw new ResearchException("study-reserved-window-conflict");
+                GuardStudyReservations(plan.ReservedStart, plan.ReservedEnd);
             }
             var prior = ListRuns();
             var priorUniverse = ListUniverseRuns().ToImmutableArray();
@@ -161,47 +161,22 @@ public sealed partial class ResearchStore
         }
     }
     // Outcome intervals are half-open. Include all feature/training history: moving a later evaluation start cannot hide earlier training access.
-    private static bool Overlap(DateOnly a, DateOnly b, DateOnly c, DateOnly d) => a < d && c < b;
     private static (DateOnly Start, DateOnly End) InformationWindow(MonthlyPanel panel, ExperimentConfig config)
     {
         config.Validate(panel);
         var reserved = panel.Dates.Length - 1 - config.HoldoutMonths;
         return (panel.Dates[0], config.EvaluateHoldout ? panel.Dates[^1] : config.DevelopmentEnd ?? panel.Dates[reserved]);
     }
-    private void GuardPriorReservedExposure(DateOnly start, DateOnly end, string? ownStudy = null)
-    {
-        foreach (var run in ListUniverseRuns().Where(r => !r.Synthetic))
-        {
-            // Legacy trials did not retain their decision windows. Do not guess a
-            // narrow window from their report or silently certify unseen outcomes.
-            if (run.InformationStart is null || run.InformationEnd is null)
-                throw new ResearchException("study-universe-exposure-unknown");
-            if (Overlap(start, end, run.InformationStart.Value, run.InformationEnd.Value))
-                throw new ResearchException("study-known-reserved-exposure");
-        }
-        var panels = new Dictionary<string, MonthlyPanel>(StringComparer.Ordinal);
-        foreach (var run in ListRuns().Where(r => !r.Synthetic && (ownStudy is null || r.StudyId != ownStudy) && (r.StartedAt is not null || r.Status is "queued" or "planned")))
-        {
-            if (!panels.TryGetValue(run.DatasetId, out var panel)) panels[run.DatasetId] = panel = Panel(run.DatasetId);
-            var window = InformationWindow(panel, run.Config);
-            if (Overlap(start, end, window.Start, window.End)) throw new ResearchException("study-known-reserved-exposure");
-        }
-        using var db = Open(); using var command = db.CreateCommand(); command.CommandText = "SELECT start_date,end_date FROM study_holdout_claims WHERE synthetic=0 AND study_id!=$own";
-        command.Parameters.AddWithValue("$own", ownStudy ?? ""); using var reader = command.ExecuteReader();
-        while (reader.Read()) if (Overlap(start, end, DateOnly.ParseExact(reader.GetString(0), "yyyy-MM-dd", CultureInfo.InvariantCulture), DateOnly.ParseExact(reader.GetString(1), "yyyy-MM-dd", CultureInfo.InvariantCulture)))
-            throw new ResearchException("study-holdout-spent");
-    }
+    private void GuardPriorReservedExposure(DateOnly start, DateOnly end, string? ownStudy = null) =>
+        GuardPriorReservedExposure(UtcDate(start), UtcDate(end), ownStudy);
     private void GuardStudyReservations(MonthlyPanel panel, ExperimentConfig config, string? ownStudy = null)
     {
         if (panel.Synthetic) return;
         var window = InformationWindow(panel, config);
         GuardStudyReservations(window.Start, window.End, ownStudy);
     }
-    private void GuardStudyReservations(DateOnly start, DateOnly end, string? ownStudy = null)
-    {
-        if (Studies().Any(s => !s.Plan.Synthetic && (ownStudy is null || s.Id != ownStudy) && (s.Status is "development" or "candidate-frozen" or "final-evaluation") &&
-            Overlap(start, end, s.Plan.ReservedStart, s.Plan.ReservedEnd))) throw new ResearchException("study-reserved-window-conflict");
-    }
+    private void GuardStudyReservations(DateOnly start, DateOnly end, string? ownStudy = null) =>
+        GuardStudyReservations(UtcDate(start), UtcDate(end), ownStudy);
     public ResearchStudy EvaluateStudy(string id, StudyEvaluationRequest request, string commit)
     {
         if (!Guid.TryParseExact(request.RequestId, "D", out _)) throw new ResearchException("study-evaluation-request");

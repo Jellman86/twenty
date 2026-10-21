@@ -21,6 +21,9 @@ public sealed partial class ResearchStore : IDisposable
     private readonly string connectionString;
     private readonly FileStream lease;
     private readonly object gate = new();
+    private readonly SemaphoreSlim computation = new(1, 1);
+    internal bool TryBeginComputation() => computation.Wait(0);
+    internal void EndComputation() => computation.Release();
     private readonly TimeProvider clock;
     public ResearchStore(string root, TimeProvider? clock = null)
     {
@@ -38,6 +41,7 @@ public sealed partial class ResearchStore : IDisposable
             "CREATE TABLE IF NOT EXISTS holdout_access(dataset_id TEXT NOT NULL, run_id TEXT NOT NULL UNIQUE, at TEXT NOT NULL);" );
         InitialiseStudies(db);
         InitialiseUniverseRuns(db);
+        InitialiseUniverseStudies(db);
         foreach (var run in ListRuns().Where(r => r.Status == "running")) Save(run with { Status = "interrupted", FinishedAt = this.clock.GetUtcNow(), ErrorCode = "process-restarted" }, "restart-interrupted");
         InterruptStaleUniverseRuns();
     }

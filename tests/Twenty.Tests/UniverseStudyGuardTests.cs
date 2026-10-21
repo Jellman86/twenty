@@ -21,7 +21,7 @@ public sealed class UniverseStudyGuardTests
         public void Dispose() { Store.Dispose(); Directory.Delete(Root, true); }
     }
 
-    private static DatasetEntry Monthly(ResearchStore store, int startYear = 2010)
+    internal static DatasetEntry Monthly(ResearchStore store, int startYear = 2010)
     {
         var csv = new StringBuilder("date,symbol,total_return_index_gbp\n");
         for (var i = 0; i < 180; i++)

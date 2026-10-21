@@ -1,5 +1,11 @@
 # Validation record
 
+## Registered changing-universe studies (21 October 2026)
+
+The [registered workflow](universe-studies.md) now declares eight development trials, freezes a candidate from all base/stress results and permits one explicitly requested final pair. Both trial registers share reservations, capacity and a computation lease. Exact UTC exposure prevents intraday overlap from disappearing in date-only comparisons. Original plans, requests, reports and spent claims remain immutable; older writers cannot enforce the new reservations and are not a supported downgrade path. [Review and second-order effects](reviews/2026-10-21-universe-studies.md).
+
+Local validation passes 608 .NET tests, 39 Python tests, Ruff and Svelte check/build with zero errors/warnings. The scientific-boundary probe and full-history/files secret scanning, including deliberate fake-secret refusal, pass. Authored HTTP acceptance independently checks four selection margins, eight development/two final trials, request replay, final replacement refusal and exact artifacts after restart. Built-asset browser acceptance checks lost-response retries, stale selection, report inspection and 390-pixel layout. These are engineering inputs; no vendor/broker request, production trial, genuine holdout or accelerator is used. Combined capture-to-study and raw-price/GBP-FX acceptance remain separate gates. Publication/deployment evidence follows after execution.
+
 ## Ticker identity correction and universe declaration foundation (20 October 2026)
 
 The delayed historical-range review exposed a remaining dot/hyphen alias in history capture IDs. Request-URL/source binding now disambiguates legacy captures, new punctuation IDs are distinct, and the independent Python audit retains original ticker punctuation. [TDD, compatibility and downstream review](reviews/2026-10-20-ticker-capture-identity.md). AAPL conversion preserves all 5,980 observations; genuine action/terminal reports replay byte-identically, with terminal evidence still refused. CI/image publication and the Git-backed Dockhand deployment of `c522dda` passed, preserving 58 reports, four diagnostics, six collections and study plans.

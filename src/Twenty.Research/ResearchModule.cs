@@ -55,6 +55,21 @@ public static class ResearchModule
         api.MapPost("/studies", (StudyRequest request) => Results.Accepted("/api/research/studies", store.RegisterStudy(request, Commit())));
         api.MapPost("/studies/{id}/evaluate", (string id, StudyEvaluationRequest request) => Results.Accepted("/api/research/studies/" + id, store.EvaluateStudy(id, request, Commit())));
         api.MapPost("/studies/{id}/cancel", (string id) => store.CancelStudy(id));
+        api.MapGet("/universe-datasets", () => store.UniverseDatasets());
+        api.MapGet("/universe-studies", () =>
+        {
+            var runs = store.ListUniverseRuns();
+            return store.UniverseStudies().Select(s => new { s.Id, s.Name, s.Status, s.CreatedAt, s.Plan.Purpose,
+                s.Plan.Synthetic, s.PlanSha256, s.SelectedCandidateId, s.ErrorCode, s.FinalPassed,
+                completedRuns = runs.Count(r => r.StudyId == s.Id && r.Status == "succeeded"),
+                plannedRuns = s.DevelopmentRuns.Length * 2 + (s.FinalRequestedAt is null ? 0 : 2) });
+        });
+        api.MapGet("/universe-studies/{id}", (string id) => store.UniverseStudy(id) is { } study ? Results.Ok(study) : Results.NotFound());
+        api.MapGet("/universe-studies/{id}/plan", (string id) => store.UniverseStudyPlanJson(id) is { } json ? Results.Content(json, "application/json") : Results.NotFound());
+        api.MapGet("/universe-studies/{id}/events", (string id) => store.UniverseStudyEvents(id));
+        api.MapPost("/universe-studies", (UniverseStudyRequest request) => Results.Accepted("/api/research/universe-studies", store.RegisterUniverseStudy(request, Commit())));
+        api.MapPost("/universe-studies/{id}/evaluate", (string id, StudyEvaluationRequest request) => Results.Accepted("/api/research/universe-studies/" + id, store.EvaluateUniverseStudy(id, request, Commit())));
+        api.MapPost("/universe-studies/{id}/cancel", (string id) => store.CancelUniverseStudy(id));
         api.MapPost("/universe-runs/import-dataset", (UniverseDatasetImportRequest request) =>
             Results.Ok(new { datasetSha256 = store.ImportUniverseDatasetInbox(request) }));
         api.MapGet("/universe-runs", () => store.ListUniverseRuns().Take(100));
@@ -73,6 +88,8 @@ public static class ResearchModule
             searchDiagnostics = new { method = SearchDiagnostics.Version, universeMethod = SearchDiagnostics.UniverseVersion,
                 pairedCalendarResampling = true, completeTrialRegistrySnapshot = true, preregisteredPromotion = false },
             changingUniverse = new { panel = ChangingUniversePanel.BuilderVersion, backtest = UniverseBacktest.Version,
-                registeredTrials = true, retrospectiveDiagnostics = true, registeredCandidateSelection = false }, broker = brokerCapabilities() });
+                registeredTrials = true, retrospectiveDiagnostics = true, registeredCandidateSelection = true,
+                studyProtocol = UniverseStudyProtocol.Version, finalWindowRequestRequired = true, investmentNomination = false,
+                units = "Local-currency adjusted returns in GBP notionals; no raw execution or FX conversion" }, broker = brokerCapabilities() });
     }
 }

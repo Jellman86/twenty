@@ -79,6 +79,8 @@ Regression cases hand-check value conservation, existing-successor merging, no r
 
 ## Cross-register research controls (20 October 2026)
 
+Superseded details: the [21 October registered study workflow](universe-studies.md) implements candidate selection and one final pair, adds exact UTC exposure/claim boundaries and shares one computation lease with the model worker. Legacy day-only exposure is widened conservatively; the original date-only description below records the earlier checkpoint. Notional results still cannot nominate an investment or enable broker execution.
+
 Follow-up: [retrospective universe diagnostics](search-diagnostics.md#changing-universe-families-and-complete-disclosure-20-october-2026) now consume registered momentum/equal-weight/cash paths and disclose both trial registers. Registered changing-universe candidate selection/final evaluation remains separate work. Earlier sections stating that no diagnostic or UI exists describe the earlier checkpoint.
 
 Universe trials now share the workspace's 1,000-trial budget with ordinary model runs and registered study jobs, including the two slots reserved for each pending study final pair. Study declarations retain a `PriorUniverseTrials` snapshot alongside ordinary prior-trial metadata. This improves local disclosure; it does not compute a whole-programme multiple-testing correction.

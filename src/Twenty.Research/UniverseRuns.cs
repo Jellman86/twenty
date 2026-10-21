@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Data.Sqlite;
 using Twenty.Core.Data;
 using Twenty.Core.Research;
@@ -14,7 +15,17 @@ public sealed record UniverseRunEntry(string Id, string DatasetSha256, string Da
     string Status, DateTimeOffset CreatedAt, DateTimeOffset? FinishedAt, string? ErrorCode, string CodeCommit,
     string RequestSha256, string? PanelSha256 = null, string? ReportSha256 = null,
     DateOnly? InformationStart = null, DateOnly? InformationEnd = null,
-    string? IdentityScheme = null, string? ResearchSha256 = null, string? RequestArtifactSha256 = null);
+    string? IdentityScheme = null, string? ResearchSha256 = null, string? RequestArtifactSha256 = null)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? StudyId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? StudyCandidateId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? StudyStage { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? StartedAt { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? InformationStartAt { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? InformationEndAt { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? WorkerCommit { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool CancelRequested { get; init; }
+}
 
 /// <summary>Registered changing-universe trials. Every admitted attempt is inserted as
 /// "started" before any computation and reaches exactly one terminal state, so failures
@@ -62,6 +73,32 @@ public sealed partial class ResearchStore
 
     public UniverseRunEntry ExecuteUniverseRun(UniverseRunRequest request, string codeCommit)
     {
+        if (!TryBeginComputation())
+        {
+            // A replay is a read, even while the shared computation slot is busy.
+            lock (gate)
+            {
+                if (request is not null && request.Config is not null && request.Costs is not null)
+                {
+                    using var db = Open(); using var lookup = db.CreateCommand();
+                    lookup.CommandText = "SELECT json FROM universe_runs WHERE request_id=$request";
+                    lookup.Parameters.AddWithValue("$request", request.RequestId ?? "");
+                    if (lookup.ExecuteScalar() is string existing)
+                    {
+                        var prior = JsonSerializer.Deserialize<UniverseRunEntry>(existing, Json)!;
+                        if (prior.RequestSha256 != UniverseRequestHash(request)) throw new ResearchException("request-id-conflict");
+                        return prior;
+                    }
+                }
+            }
+            throw new ResearchException("research-worker-busy");
+        }
+        try { return ExecuteUniverseRunCore(request, codeCommit); }
+        finally { EndComputation(); }
+    }
+
+    private UniverseRunEntry ExecuteUniverseRunCore(UniverseRunRequest request, string codeCommit)
+    {
         if (request is null || !Guid.TryParseExact(request.RequestId, "D", out _) || !IsSha256(request.DatasetSha256) ||
             request.UniverseId is not { Length: >= 1 and <= 128 } || request.Decisions.IsDefault ||
             request.MaximumPriceAgeDays is < 1 or > 92 || request.Config is null || request.Costs is null)
@@ -93,15 +130,17 @@ public sealed partial class ResearchStore
             var first = DateOnly.FromDateTime(request.Decisions.Min().UtcDateTime);
             var informationStart = DateOnly.FromDayNumber(Math.Max(0, first.DayNumber - request.MaximumPriceAgeDays));
             var informationEnd = DateOnly.FromDateTime(request.Decisions.Max().UtcDateTime);
+            var window = UniverseInformationWindow(request);
             if (!datasetFile.Manifest.Synthetic)
-                GuardStudyReservations(informationStart, informationEnd);
+                GuardStudyReservations(window.Start, window.End);
             using var count = db.CreateCommand(); count.Transaction = transaction;
             count.CommandText = "SELECT (SELECT COUNT(*) FROM universe_runs) + (SELECT COUNT(*) FROM runs)";
             if ((long)count.ExecuteScalar()! + ReservedStudySlots() >= 1000) throw new ResearchException("trial-capacity");
             entry = new(Guid.NewGuid().ToString("N"), request.DatasetSha256, datasetFile.Manifest.DatasetId,
                 datasetFile.Manifest.Synthetic, request.UniverseId, "started", clock.GetUtcNow(), null, null,
                 codeCommit, requestHash, InformationStart: informationStart, InformationEnd: informationEnd,
-                IdentityScheme: ResearchIdentity.Scheme, ResearchSha256: ResearchIdentity.Current.Sha256);
+                IdentityScheme: ResearchIdentity.Scheme, ResearchSha256: ResearchIdentity.Current.Sha256)
+                { InformationStartAt = window.Start, InformationEndAt = window.End, StartedAt = clock.GetUtcNow(), WorkerCommit = codeCommit };
             var requestBytes = JsonSerializer.SerializeToUtf8Bytes(request, Json);
             EnsureArtifactCapacity(requestBytes);
             var directory = Path.Combine(Root, "runs", entry.Id); Directory.CreateDirectory(directory);
@@ -114,36 +153,48 @@ public sealed partial class ResearchStore
             insert.Parameters.AddWithValue("$json", JsonSerializer.Serialize(entry, Json)); insert.ExecuteNonQuery();
             UniverseEvent(db, transaction, entry.Id, "started"); transaction.Commit();
         }
+        return ComputeUniverseRun(entry, request, datasetFile);
+    }
+
+    private UniverseRunEntry ComputeUniverseRun(UniverseRunEntry entry, UniverseRunRequest request, DatasetFile datasetFile,
+        CancellationToken ct = default)
+    {
         string? panelSha = null;
         try
         {
+            ct.ThrowIfCancellationRequested();
             var panel = ChangingUniversePanel.FromDataset(new PointInTimeDataset(datasetFile), request.UniverseId,
                 request.Decisions, TimeSpan.FromDays(request.MaximumPriceAgeDays));
             panelSha = panel.Sha256;
-            var report = UniverseBacktest.Run(panel, request.Config, request.Costs);
+            var report = UniverseBacktest.Run(panel, request.Config, request.Costs, ct);
+            ct.ThrowIfCancellationRequested();
             var reportBytes = JsonSerializer.SerializeToUtf8Bytes(report, Json);
             lock (gate)
             {
+                ct.ThrowIfCancellationRequested();
+                if (FindUniverseRun(entry.Id)?.CancelRequested == true) throw new ResearchException("user-cancelled");
                 EnsureArtifactCapacity(reportBytes);
                 ImmutableWrite(Path.Combine(Root, "runs", entry.Id, "universe-report.json"), reportBytes);
+                entry = entry with
+                {
+                    Status = "succeeded", FinishedAt = clock.GetUtcNow(), PanelSha256 = panelSha,
+                    ReportSha256 = Convert.ToHexStringLower(SHA256.HashData(reportBytes))
+                };
+                SaveUniverseRun(entry, "succeeded");
             }
-            entry = entry with
-            {
-                Status = "succeeded", FinishedAt = clock.GetUtcNow(), PanelSha256 = panelSha,
-                ReportSha256 = Convert.ToHexStringLower(SHA256.HashData(reportBytes))
-            };
-            SaveUniverseRun(entry, "succeeded");
         }
         catch (Exception error)
         {
             var code = error switch
             {
+                OperationCanceledException => "deadline-or-shutdown",
                 ResearchException re => re.Code,
                 InvalidDatasetException ide => ide.Validation.Issues.FirstOrDefault()?.Code ?? "dataset-invalid",
                 _ => "universe-run-input-unavailable"
             };
-            entry = entry with { Status = "failed", FinishedAt = clock.GetUtcNow(), ErrorCode = code, PanelSha256 = panelSha };
-            SaveUniverseRun(entry, "failed");
+            entry = entry with { Status = code == "user-cancelled" ? "cancelled" : error is OperationCanceledException ? "interrupted" : "failed",
+                FinishedAt = clock.GetUtcNow(), ErrorCode = code, PanelSha256 = panelSha, CancelRequested = FindUniverseRun(entry.Id)?.CancelRequested ?? false };
+            SaveUniverseRun(entry, entry.Status);
         }
         return entry;
     }

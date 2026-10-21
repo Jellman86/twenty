@@ -39,7 +39,7 @@ public sealed partial class DiagnosticStore
     {
         attempt = attempt with { DatasetId = anchor.DatasetId, Synthetic = anchor.Synthetic, FamilyEngine = "changing-universe" };
         Save(attempt);
-        if (anchor.Status != "succeeded" || anchor.ReportSha256 is null || anchor.PanelSha256 is null ||
+        if (anchor.Status != "succeeded" || anchor.StudyStage?.StartsWith("final-", StringComparison.Ordinal) == true || anchor.ReportSha256 is null || anchor.PanelSha256 is null ||
             anchor.IdentityScheme != ResearchIdentity.Scheme || anchor.ResearchSha256 is null)
             throw new ResearchException("diagnostic-development-run-required");
         var anchorRequest = UniverseRequest(anchor);
@@ -51,6 +51,7 @@ public sealed partial class DiagnosticStore
         {
             ct.ThrowIfCancellationRequested();
             var reason = run.Status != "succeeded" ? "incomplete-or-failed-trial"
+                : run.StudyStage?.StartsWith("final-", StringComparison.Ordinal) == true ? "reserved-final-evaluation"
                 : run.DatasetSha256 != anchor.DatasetSha256 ? "other-dataset"
                 : run.UniverseId != anchor.UniverseId ? "other-universe"
                 : run.IdentityScheme != anchor.IdentityScheme || run.ResearchSha256 != anchor.ResearchSha256 ? "different-engine-artifact"
