@@ -2,7 +2,7 @@
 
 ## Explicit raw split settlement (21 October 2026)
 
-The [offline reference](raw-gbp-ledger.md#explicit-split-settlement-21-october-2026) now books exact pure split quantities with immutable action receipts. Late-fill conflicts, effective ordering, revised/missing evidence, post-event ownership and mixed consideration fail closed. Identical later vintages preserve the old receipt and remain usable. Twenty additional authored cases pass (641 .NET total); four exported scenarios match independent Python Decimal quantity/cash/fee/GBP valuations. Boundary and full-history/files secret checks pass, including the fake-secret refusal. No accelerator, vendor/broker request, production trial or genuine holdout was used; cash/terminal and backtest integration remain open.
+The [offline reference](raw-gbp-ledger.md#explicit-split-settlement-21-october-2026) now books exact pure split quantities with immutable action receipts. Late-fill conflicts, effective ordering, revised/missing evidence, post-event ownership and mixed consideration fail closed. Identical later vintages preserve the old receipt and remain usable. Twenty additional authored cases pass (641 .NET total); four exported scenarios match independent Python Decimal quantity/cash/fee/GBP valuations. Boundary and full-history/files secret checks pass, including the fake-secret refusal. [CI, image, deployment and compatibility acceptance](raw-gbp-ledger.md#explicit-split-settlement-21-october-2026) subsequently passed under `9a9877a`, preserving eight collections, 58 reports, four diagnostics and study plans. No accelerator, vendor/broker request, production trial or genuine holdout was used; cash/terminal and backtest integration remain open.
 
 ## Raw-quantity GBP reference (21 October 2026)
 
