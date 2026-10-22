@@ -46,6 +46,8 @@ public static partial class SecIdentity
     [GeneratedRegex("^[0-9]{1,10}$", RegexOptions.CultureInvariant)] private static partial Regex CikPattern();
     [GeneratedRegex("^[0-9]{10}-[0-9]{2}-[0-9]{6}$", RegexOptions.CultureInvariant)] private static partial Regex AccessionPattern();
     [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$", RegexOptions.CultureInvariant)] private static partial Regex DocumentPattern();
+    [GeneratedRegex("^/Archives/edgar/full-index/[0-9]{4}/QTR[1-4]/form\\.gz$", RegexOptions.CultureInvariant)]
+    private static partial Regex FullIndexPattern();
     public static string Cik(string value)
     {
         if (!CikPattern().IsMatch(value) || !ulong.TryParse(value, out var number) || number == 0)
@@ -97,12 +99,21 @@ public static partial class SecIdentity
         return new("https://www.sec.gov/Archives/edgar/data/" + ulong.Parse(Cik(cik), CultureInfo.InvariantCulture) +
             "/" + accession.Replace("-", "", StringComparison.Ordinal) + "/" + document);
     }
+    /// <summary>One quarterly EDGAR full-index by form type. Only the compressed form is requested:
+    /// it is 4–5 MB where the plain index is 39–50 MB, and the response cap applies to the wire bytes.</summary>
+    public static Uri FullIndex(int year, int quarter)
+    {
+        if (year is < 1994 or > 2100 || quarter is < 1 or > 4) throw new SecCollectionException("invalid-index-window");
+        return new("https://www.sec.gov/Archives/edgar/full-index/" + year.ToString(CultureInfo.InvariantCulture) +
+            "/QTR" + quarter.ToString(CultureInfo.InvariantCulture) + "/form.gz");
+    }
     public static void AllowedUri(Uri uri)
     {
         if (!uri.IsAbsoluteUri || uri.Scheme != "https" || uri.Port != 443 || uri.UserInfo != "" ||
             uri.Query != "" || uri.Fragment != "" || uri.AbsolutePath.Contains('%') ||
             !(uri.Host == "data.sec.gov" && uri.AbsolutePath.StartsWith("/submissions/CIK", StringComparison.Ordinal) ||
-              uri.Host == "www.sec.gov" && uri.AbsolutePath.StartsWith("/Archives/edgar/data/", StringComparison.Ordinal)))
+              uri.Host == "www.sec.gov" && uri.AbsolutePath.StartsWith("/Archives/edgar/data/", StringComparison.Ordinal) ||
+              uri.Host == "www.sec.gov" && FullIndexPattern().IsMatch(uri.AbsolutePath)))
             throw new SecCollectionException("off-origin-request");
     }
 }

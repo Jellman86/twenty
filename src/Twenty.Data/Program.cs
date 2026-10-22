@@ -234,6 +234,39 @@ try
             historyFiles = page.History.Length, parserVersion = SecParser.Version }));
         return 0;
     }
+    if (args.Length is 7 or 9 && args[0] == "sec-form-index" && args[1] == "--from" && args[3] == "--to" && args[5] == "--archive" &&
+        (args.Length == 7 || args[7] == "--max-requests"))
+    {
+        var contact = Environment.GetEnvironmentVariable("TWENTY_SEC_CONTACT") ?? "";
+        _ = SecIdentity.UserAgent(contact); // Fail before opening files or making requests.
+        if (!int.TryParse(args[2], NumberStyles.None, CultureInfo.InvariantCulture, out var fromYear) ||
+            !int.TryParse(args[4], NumberStyles.None, CultureInfo.InvariantCulture, out var toYear))
+            throw new SecCollectionException("invalid-index-window");
+        var maximumRequests = new SecLimits().MaximumRequests;
+        if (args.Length == 9 && !int.TryParse(args[8], NumberStyles.None, CultureInfo.InvariantCulture, out maximumRequests))
+            throw new SecCollectionException("invalid-arguments");
+        using var cancellation = new CancellationTokenSource();
+        ConsoleCancelEventHandler cancel = (_, e) => { e.Cancel = true; cancellation.Cancel(); };
+        Console.CancelKeyPress += cancel;
+        try
+        {
+            var limits = new SecLimits { MaximumRequests = maximumRequests };
+            limits.Validate();
+            using var archive = new SecArchive(args[6], limits);
+            using var http = SecClient.CreateHttpClient();
+            var client = new SecClient(http, archive, contact, limits);
+            var report = await SecFormIndex.Collect(client, fromYear, toYear, null, cancellation.Token);
+            Console.WriteLine(JsonSerializer.Serialize(new
+            {
+                valid = true, version = report.Version, from = report.From, to = report.To,
+                quarters = report.Quarters, counts = report.Counts, totalRows = report.TotalRows,
+                totalDelistings = report.TotalDelistings, requestLimitReached = report.RequestLimitReached,
+                requests = client.Requests, limitations = report.Limitations
+            }, DatasetJson.Options));
+            return 0;
+        }
+        finally { Console.CancelKeyPress -= cancel; }
+    }
     if (args.Length is 8 or 10 or 12 && args[0] == "sec-collect" && args[2] == "--from" && args[4] == "--to" && args[6] == "--archive")
     {
         var formSet = SecFormSet.Periodic; var maximumDocuments = new SecLimits().MaximumDocuments;
@@ -355,6 +388,7 @@ try
             "       Twenty.Data capture-public --archive <private-directory> --sources <comma-separated-source-ids>\n" +
             "       Twenty.Data validate <dataset.json> [--archive <directory>]\n" +
             "       Twenty.Data sec-inspect <CIK> <submissions.json>\n" +
+            "       Twenty.Data sec-form-index --from yyyy --to yyyy --archive <private-directory> [--max-requests 25-100]\n" +
             "       Twenty.Data sec-collect <CIK> --from yyyy-mm-dd --to yyyy-mm-dd --archive <private-directory> [--forms periodic|terminal] [--max-documents 1-20]\n" +
             "       Twenty.Data ecb-inspect <xml> --date yyyy-mm-dd --base USD --quote GBP\n" +
             "Live collection requires TWENTY_SEC_CONTACT (a monitored email address; never committed or printed).");
