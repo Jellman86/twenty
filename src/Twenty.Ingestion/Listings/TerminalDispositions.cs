@@ -56,6 +56,11 @@ public static class TerminalDispositions
              "Mixed stock/cash consideration, contingent value rights, unverified final sessions and non-terminal subjects are refused until a supported accounting path and evidence exist."]);
     }
 
+    /// <summary>Content hash of a report as serialized by the dataset JSON options, so a consumer can
+    /// bind the exact evidence it acted on into a manifest.</summary>
+    public static string ContentHash(TerminalDispositionReport report) =>
+        CaptureStore.Hash(JsonSerializer.SerializeToUtf8Bytes(report, DatasetJson.Options));
+
     /// <summary>Reads an already emitted report so a consumer can bind it into a dataset. Shape and
     /// semantic checks are the consuming conversion's: it decides what the report may bound.</summary>
     public static TerminalDispositionReport ReadReport(byte[] bytes)

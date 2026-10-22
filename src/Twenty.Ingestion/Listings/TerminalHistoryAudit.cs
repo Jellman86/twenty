@@ -94,7 +94,8 @@ public static class TerminalHistoryAudit
              "Cash amounts describe stated common-share entitlements, not actual account receipts. Mixed stock/cash and contingent rights are unsupported. No dataset, action, model trial, holdout or broker state is changed."]);
     }
 
-    private static TerminalReferences ReadReferences(byte[] bytes)
+    /// <summary>Reads a reviewed reference bundle with the same fail-closed shape rules the audit applies.</summary>
+    public static TerminalReferences ReadReferences(byte[] bytes)
     {
         if (bytes.Length is 0 or > 1024 * 1024) throw new ResearchException("terminal-reference-size");
         var refs = JsonSerializer.Deserialize<TerminalReferences>(bytes, DatasetJson.Options)

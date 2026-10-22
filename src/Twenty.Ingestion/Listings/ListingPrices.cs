@@ -297,6 +297,5 @@ public static class ListingPrices
         return matches[0];
     }
 
-    private static string TerminalReportHash(TerminalDispositionReport report) =>
-        CaptureStore.Hash(JsonSerializer.SerializeToUtf8Bytes(report, DatasetJson.Options));
+    private static string TerminalReportHash(TerminalDispositionReport report) => TerminalDispositions.ContentHash(report);
 }

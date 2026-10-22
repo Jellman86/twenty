@@ -94,6 +94,28 @@ try
         }, DatasetJson.Options));
         return 0;
     }
+    if ((args.Length is 11 or 13) && args[0] == "terminal-actions" &&
+        args[1] == "--dataset" && args[3] == "--reference" && args[5] == "--dispositions" &&
+        args[7] == "--dataset-archive" && args[9] == "--created-at" &&
+        (args.Length == 11 || args[11] == "--dataset-id"))
+    {
+        if (!System.Text.RegularExpressions.Regex.IsMatch(args[10], @"T.*(?:Z|[+-]\d{2}:\d{2})$", System.Text.RegularExpressions.RegexOptions.CultureInvariant) ||
+            !DateTimeOffset.TryParse(args[10], CultureInfo.InvariantCulture, DateTimeStyles.None, out var createdAt) || createdAt > DateTimeOffset.UtcNow)
+            throw new ResearchException("terminal-actions-created-at");
+        var input = DatasetJson.Read(DatasetArchive.ReadBounded(args[2]));
+        var report = TerminalDispositions.ReadReport(DatasetArchive.ReadBounded(args[6]));
+        var result = TerminalActions.Convert(input, DatasetArchive.ReadBounded(args[4]), report,
+            args.Length == 13 ? args[12] : "terminal-actions-sample", createdAt);
+        var outputBytes = JsonSerializer.SerializeToUtf8Bytes(result.Dataset, DatasetJson.Options);
+        var storedPath = DatasetArchive.Store(Path.GetFullPath(args[8]), outputBytes);
+        Console.WriteLine(JsonSerializer.Serialize(new
+        {
+            valid = true, converter = TerminalActions.Version,
+            datasetSha256 = Path.GetFileNameWithoutExtension(storedPath), synthetic = result.Dataset.Manifest.Synthetic,
+            result.ActionsAdded, result.Omitted
+        }, DatasetJson.Options));
+        return 0;
+    }
     if ((args.Length is 9 or 11 or 13) && args[0] == "listing-prices" &&
         args[1] == "--dataset" && args[3] == "--archive" && args[5] == "--dataset-archive" && args[7] == "--created-at" &&
         (args.Length == 9 || args[9] is "--dataset-id" or "--dispositions") &&
@@ -318,6 +340,7 @@ try
     if (args.Length is not (2 or 4) || args[0] != "validate" || (args.Length == 4 && args[2] != "--archive"))
     {
         Console.Error.WriteLine("Usage: Twenty.Data terminal-history-audit --archive <private-captures> --reference <assertions.json> --sources <private-source-documents> [--dispositions <dispositions.json>]\n" +
+            "       Twenty.Data terminal-actions --dataset <input.json> --reference <assertions.json> --dispositions <report.json> --dataset-archive <output> --created-at <iso8601-offset> [--dataset-id <id>]\n" +
             "       Twenty.Data corporate-action-audit --archive <private-captures> --reference <assertions.json> --sources <private-source-documents>\n" +
             "       Twenty.Data french-panel --archive <captures> --from yyyy-mm-dd --to yyyy-mm-dd --output <private-inbox> [--portfolios industry|size-value25]\n" +
             "       Twenty.Data tiingo-check --archive <private-directory>\n" +
