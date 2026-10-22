@@ -22,7 +22,7 @@ public sealed class RawExecutionRunTests
         new(id, Ev(close.AddHours(1)), "listing-aaa", DateOnly.FromDateTime(close.UtcDateTime), close,
             new Denomination("GBP", QuoteUnit.Major), PriceBasis.Raw, price, price, price, price, volume);
 
-    private static DataSlice Slice(DateTimeOffset at)
+    private static DataSlice Slice(DateTimeOffset at, Denomination? units = null, params Observation[] extra)
     {
         var observations = new List<Observation>
         {
@@ -34,6 +34,13 @@ public sealed class RawExecutionRunTests
             Bar("feb15-close", new(2024, 2, 15, 21, 0, 0, TimeSpan.Zero), 110m, 100000m),
             Bar("mar15-close", new(2024, 3, 15, 21, 0, 0, TimeSpan.Zero), 120m, 100000m),
         };
+        if (units is not null) observations = observations.Select<Observation, Observation>(o => o switch
+        {
+            Listing l => l with { Denomination = units },
+            PriceBar b => b with { Denomination = units },
+            _ => o
+        }).ToList();
+        observations.AddRange(extra);
         var manifest = new DatasetManifest(DatasetValidator.SchemaVersion, "raw-execution-fixture", Mar20.AddDays(30),
             "features.v1", [new FeatureDefinition("execution", "v1", "Authored fixture", "Available at capture time")],
             [new SourceSnapshot("fixture-source", "urn:twenty:synthetic:raw-execution", "Authored fixture; no market data",
@@ -139,4 +146,143 @@ public sealed class RawExecutionRunTests
         Assert.Equal("invalid-execution-run", Assert.Throws<ResearchException>(() =>
             RawExecutionRun.Run([new RawExecutionStep(Slice(Feb20), Slice(Feb20), _ => [])], 2000m, Flat, -1m, MaxAge, MaxAge)).Code);
     }
+    [Fact]
+    public void AFinalBuyIsMarkedAfterItsFillAndFees()
+    {
+        var result = RawExecutionRun.Run([new(Slice(Jan31), Slice(Feb20), _ => [Buy(1100)])],
+            2000, Flat, 1, MaxAge, MaxAge);
+        Assert.Equal(2000, result.Months[0].EquityGbp);
+        Assert.Equal(1999, result.ClosingEquityGbp);
+        Assert.Equal(Feb20, result.ClosingValuation.At);
+        Assert.Equal(899, result.ClosingValuation.CashGbp);
+        Assert.Equal(10, Assert.Single(result.ClosingValuation.Positions).Quantity);
+    }
+
+    [Fact]
+    public void SellingTheEntirePositionCreditsCashAndRemovesShares()
+    {
+        var steps = new RawExecutionStep[]
+        {
+            new(Slice(Jan31), Slice(Feb20), _ => [Buy(1100)]),
+            new(Slice(Feb29), Slice(Mar20), value =>
+            {
+                Assert.Equal(10, Assert.Single(value.Positions).Quantity);
+                return [new("listing-aaa", false, 1200, Feb29, Mar20)];
+            }),
+            new(Slice(Mar20), Slice(Mar20), value =>
+            {
+                Assert.Empty(value.Positions);
+                Assert.Equal(4098, value.CashGbp);
+                return [];
+            })
+        };
+        var result = RawExecutionRun.Run(steps, 4000, Flat, 1, MaxAge, MaxAge);
+        Assert.Equal(4098, result.ClosingEquityGbp);
+        Assert.False(Assert.Single(result.Months[1].Fills).Buy);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void OverlappingOrRepeatedDecisionsAreRefusedBeforeCallingTheStrategy(bool repeated)
+    {
+        var calls = 0;
+        var next = repeated ? Jan31 : Jan31.AddDays(1);
+        var steps = new RawExecutionStep[]
+        {
+            new(Slice(Jan31), Slice(Feb20), _ => { calls++; return []; }),
+            new(Slice(next), Slice(Feb20), _ => { calls++; return []; })
+        };
+        Assert.Equal("raw-execution-time", Assert.Throws<ResearchException>(() =>
+            RawExecutionRun.Run(steps, 2000, Flat, 0, MaxAge, MaxAge)).Code);
+        Assert.Equal(0, calls);
+    }
+
+    [Theory]
+    [InlineData(-1, 0)]
+    [InlineData(1, 0)]
+    [InlineData(0, 1)]
+    public void OrdersCannotUseAnotherDecisionOrExtendBeyondTheNextDecision(int decisionDays, int deadlineDays)
+    {
+        var steps = Stepped();
+        steps[0] = steps[0] with { Orders = _ => [new("listing-aaa", true, 1100,
+            Jan31.AddDays(decisionDays), Feb29.AddDays(deadlineDays))] };
+        Assert.Equal("raw-execution-order-time", Assert.Throws<ResearchException>(() =>
+            RawExecutionRun.Run(steps, 2000, Flat, 0, MaxAge, MaxAge)).Code);
+    }
+
+    [Fact]
+    public void AnOverdrawnSellIsRefusedInsteadOfCreatingAShortPosition()
+    {
+        var steps = new RawExecutionStep[]
+        {
+            new(Slice(Jan31), Slice(Feb20), _ => [Buy(1100)]),
+            new(Slice(Feb29), Slice(Mar20), _ => [new("listing-aaa", false, 1320, Feb29, Mar20)])
+        };
+        Assert.Equal("raw-ledger-quantity", Assert.Throws<ResearchException>(() =>
+            RawExecutionRun.Run(steps, 4000, Flat, 1, MaxAge, MaxAge)).Code);
+    }
+
+    [Fact]
+    public void PenceRoundTripUsesMajorCashButRetainsQuotedPricesAndSignedReceipts()
+    {
+        var units = new Denomination("GBP", QuoteUnit.Pence);
+        var steps = new RawExecutionStep[]
+        {
+            new(Slice(Jan31, units), Slice(Feb20, units), _ => [Buy(11)]),
+            new(Slice(Feb29, units), Slice(Mar20, units), value =>
+            {
+                Assert.Equal(10, Assert.Single(value.Positions).Quantity);
+                Assert.Equal(28, value.CashGbp);
+                return [new("listing-aaa", false, 12, Feb29, Mar20)];
+            })
+        };
+        var result = RawExecutionRun.Run(steps, 40, Flat, 1, MaxAge, MaxAge);
+        Assert.Equal(39, result.ClosingEquityGbp);
+        Assert.Equal(Mar20, result.ClosingValuation.At);
+        Assert.Equal(39, result.ClosingValuation.CashGbp);
+        Assert.Empty(result.ClosingValuation.Positions);
+        Assert.Equal(new decimal[] { 10, -10 }, result.Entries.Skip(1).Select(e => e.Quantity));
+        Assert.Equal(new decimal?[] { 110, 120 }, result.Entries.Skip(1).Select(e => e.RawPrice));
+        Assert.Equal(new decimal[] { -12, 11 }, result.Entries.Skip(1).Select(e => e.CashChangeGbp));
+    }
+
+    [Fact]
+    public void ForeignFillUsesExecutableBookingFxWhileTheClosingMarkRetainsItsReferencePurpose()
+    {
+        var usd = new Denomination("USD", QuoteUnit.Major);
+        var fxAt = Feb20.AddDays(-1);
+        var executable = new FxRate("execution-fx", Ev(fxAt), "USD", "GBP", .8m, fxAt, FxPurpose.Executable);
+        var reference = new FxRate("reference-fx", Ev(fxAt), "USD", "GBP", .75m, fxAt, FxPurpose.Reference);
+        var result = RawExecutionRun.Run([new(Slice(Jan31, usd), Slice(Feb20, usd, executable, reference), _ => [Buy(1100)])],
+            2000, Flat, 1, MaxAge, MaxAge, FxPurpose.Reference);
+        Assert.Equal(1119, result.ClosingValuation.CashGbp);
+        Assert.Equal(1944, result.ClosingEquityGbp);
+        Assert.Equal(FxPurpose.Reference, result.ClosingValuation.FxPurpose);
+        Assert.Equal("reference-fx", Assert.Single(result.ClosingValuation.Positions).FxId);
+        var receipt = result.Entries[1];
+        Assert.Equal("execution-fx", receipt.FxId);
+        Assert.Equal(.8m, receipt.GbpPerLocalUnit);
+        Assert.Equal(-881, receipt.CashChangeGbp);
+        Assert.Equal(Feb20, receipt.At);
+    }
+
+    [Fact]
+    public void AReferenceMarkCannotFundAForeignFillWithoutExecutableFx()
+    {
+        var usd = new Denomination("USD", QuoteUnit.Major);
+        var fxAt = Feb20.AddDays(-1);
+        var reference = new FxRate("reference-fx", Ev(fxAt), "USD", "GBP", .75m, fxAt, FxPurpose.Reference);
+        Assert.Throws<InvalidDatasetException>(() => RawExecutionRun.Run(
+            [new(Slice(Jan31, usd), Slice(Feb20, usd, reference), _ => [Buy(1100)])],
+            2000, Flat, 1, MaxAge, MaxAge, FxPurpose.Reference));
+    }
+
+    [Fact]
+    public void UnfundedFillsAbortTheRunRatherThanReturningAReportedFill()
+    {
+        Assert.Equal("raw-ledger-cash", Assert.Throws<ResearchException>(() => RawExecutionRun.Run(
+            [new(Slice(Jan31), Slice(Feb20), _ => [Buy(2000)])], 2000, Flat, 1, MaxAge, MaxAge)).Code);
+    }
+
 }

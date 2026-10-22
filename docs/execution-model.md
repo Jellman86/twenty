@@ -1,12 +1,12 @@
-# Executable prices and sizing (`execution-v1`)
+# Executable prices and sizing (`execution-v2`)
 
-**Status: planner and raw settlement run implemented 22 October 2026 (`ExecutionPlanner`, `FillPolicy`, `RawExecutionRun`); backtest mode exposure and report disclosure are not.** Written to settle the approach for the last named gap in the [roadmap](roadmap.md)'s P0 changing-universe row — "executable-price handling" — and the sizing/execution contract that the [raw GBP ledger](raw-gbp-ledger.md) explicitly defers. Nothing here is a claim that any order would have filled.
+**Status: offline planner and raw settlement reference corrected 22 October 2026 (`execution-v2`, `raw-execution-v2`); registered backtest integration and report disclosure remain open.** Written to settle the approach for the last named gap in the [roadmap](roadmap.md)'s P0 changing-universe row — "executable-price handling" — and the sizing/execution contract that the [raw GBP ledger](raw-gbp-ledger.md) explicitly defers. Nothing here is a claim that any order would have filled.
 
 ## The problem
 
 Two separate questions are currently conflated into one flat cost rate.
 
-**What price could a trade have achieved?** `UniverseBacktest` fills at the decision-time close, and `RawGbpLedger.Fill` takes its price on trust. Both are wrong in the same way: the decision is made *after* the session closes, using that close, and the fill is then priced at that same close. That is only achievable in the closing auction, submitted before the decision was made. It is look-ahead, and the flat `HalfSpreadBps`/`SlippageBps` charge does not repair it — it prices the trade at information the trader had not yet acted on. The adjusted basis compounds the problem: `TotalReturnAdjusted` is a research series, not a quote anyone transacted at.
+**What price could a trade have achieved?** The notional backtest uses decision-boundary return-index accounting. That does not establish executable closing-auction trades. `RawGbpLedger.Fill` deliberately accepts a supplied raw fill assumption; it does not itself infer or certify execution. A strategy using a session close needs a later execution convention. `TotalReturnAdjusted` is a research series, not a transacted quote, and a flat cost rate cannot establish execution timing.
 
 **What size could a trade have been?** Notionals are fractional GBP with a minimum order and no share step, no volume participation and no rejection. `RawGbpLedger` records a supplied quantity and fee and says plainly that "quantity steps, minimum orders, spread, slippage and cost reserves belong to a later sizing/execution contract".
 
@@ -18,7 +18,7 @@ Two separate questions are currently conflated into one flat cost rate.
 - Its orders fill at session *t+1*'s **open**, on the **`Raw` basis** — execution is a share transaction, not a return index — converted with an explicit `Executable`-purpose FX observation when the listing is not GBP.
 - If no *t+1* session exists before the next decision — halt, suspension, delisting, or simply never captured — **every order that would have filled there is rejected** with a recorded reason. Nothing fills at the close that was just observed.
 
-The check is mechanical: a fill price must equal a bar open that became available *after* the decision that produced it. A test can therefore assert that filling at the decision close is impossible.
+The implementation selects the first **observed** raw bar with a session close after the order decision, within its deadline and visible in the supplied fill slice. It does not have a complete exchange-session schedule to prove that bar is the actual next session. Missing earlier bars can therefore delay the modelled fill. Neither this selection nor a daily bar proves an opening-auction fill, and the final engine must validate expected sessions before calling this a next-session execution backtest.
 
 ## Sizing
 
@@ -39,7 +39,7 @@ buyFill  = open × (1 + halfSpreadBps + slippageBps)
 sellFill = open × (1 − halfSpreadBps − slippageBps)
 ```
 
-`BuyTaxBps`, `FxBps` and `MinimumOrderGbp` stay as separately reported charges. Every receipt records the modelled fill **and** the observed open it derives from, so the distance between them is auditable rather than buried in a rate.
+Those notional-engine cost fields are not imported into this offline run. It charges the caller's explicit GBP fee per booked fill; security taxes, FX spread beyond the supplied rate and a GBP minimum remain outside this reference. Every receipt records the modelled fill **and** the observed open it derives from, so the distance between them is auditable rather than buried in a rate.
 
 ## Refusals, never approximations
 
@@ -65,7 +65,7 @@ Order books and quotes, partial fills, intraday order timing, security-level tax
 
 1. **Done.** `FillPolicy` and `ExecutionPlanner.Plan` in `Twenty.Core.Research`: planned orders become `Fill | Rejected(reason)`, with the modelled fill price, the observed open it derives from, and the bar id that evidences it.
 2. **Done.** `RawExecutionRun` settles a sequence of decision points through the planner into a `RawGbpLedger`, so the price and quantity the ledger takes on trust are produced by this contract instead. Valuation is raw closes with the caller's explicit FX purpose, taken **before** each month's fills because those fills happen after the decision. It is deliberately separate from the notional engine, which is never relabelled as executable.
-3. `UniverseBacktest` exposing the raw run beside the research-notional mode. **Blocked, deliberately not attempted.** `RawGbpLedger.CheckHoldings` refuses any unbooked, non-neutral action effective after a position opened (`raw-ledger-action-unsupported`), and a delisting is exactly such an action. A changing universe's whole purpose is that names leave, so a raw run over one would throw on the first terminal exit rather than settle it. The ledger must gain terminal settlement — zero, cash and successor-share proceeds, matching the outcomes the [panel](changing-universe-panel.md) already models — before this is anything but a trap. Until then the raw run covers continuing positions only, which its limitations say.
+3. `UniverseBacktest` exposing the raw run beside the research-notional mode. **Blocked, deliberately not attempted.** `RawGbpLedger.CheckHoldings` refuses any unbooked, non-neutral action effective after a position opened (`raw-ledger-action-unsupported`), and a delisting is exactly such an action. A changing universe's whole purpose is that names leave, so a raw run over one would throw on the first terminal exit rather than settle it. The ledger must gain terminal settlement — zero, cash and successor-share proceeds, matching the outcomes the [panel](changing-universe-panel.md) already models — before this is anything but a trap. Until then the raw run covers continuing positions only and refuses effective unsupported actions.
 4. Report disclosure: per-trade fill versus observed open, and rejection counts by reason.
 
 ## Decisions recorded (22 October 2026)
@@ -74,3 +74,14 @@ Order books and quotes, partial fills, intraday order timing, security-level tax
 2. **Quantity step: fractional.** A fractional fill is a broker product feature, but the research portfolio already sizes fractionally; the step remains available.
 3. **Participation cap: 5% of the fill session's share volume.**
 4. **Keep the notional mode**, relabelled research-notional — it is the only mode a genuine panel can run today.
+
+
+## Corrected accounting and timing contract (22 October 2026)
+
+Review of `4514901` reproduced three defects despite its passing suite: sell quantities were booked positive, major-currency notionals were divided by pence quotes, and closing valuation went backwards to the final decision after booking its later fills. The v2 reference fixes all three. Quantity sizing and the post-step minimum use `Denomination.ToMajor(fillPrice)`; reported fill prices remain in original quote units. Ledger quantities are signed by buy/sell direction. Decision rows remain pre-fill marks; `ClosingValuation` is a distinct post-fill mark at the final `FillMarket.DecisionAt`, with its cash, positions, purpose and time retained. `Entries` exposes immutable signed ledger receipts; `ClosingEquityGbp` equals that closing mark's equity. No trailing empty step is required.
+
+Decisions must increase strictly, and each prior fill/booking slice must be no later than the following decision. Orders must use their own step's decision time and may not extend beyond the following decision. Invalid chronology is refused, not repaired by reordering. Callbacks run in supplied order and can observe only the supplied valuation argument through this API; the offline callback is not a sandbox or a registered strategy/policy artifact.
+
+Planner rejections return recorded reasons without ledger changes. Insufficient cash (including fees), overselling, missing executable FX and other ledger/evidence violations abort the run; no completed partial result is returned. Orders are booked in caller order, with no automatic sell-first reordering or financing. The local ledger remains inaccessible after a thrown run. This differs from a durable per-order rejection journal, which remains future integration work.
+
+The fill slice is an explicit **booking/knowledge** snapshot. Its executable FX is not evidence of a rate available at the earlier bar's open. Receipts retain that booking time and rate; a reference-purpose closing mark may use a different rate and cannot fund the fill. Source-bound execution-time FX, complete session coverage, action/payment scheduling, terminal settlement and registered replay remain open. These limitations appear in the returned result; none of this checkpoint's authored examples establishes executable historical returns.

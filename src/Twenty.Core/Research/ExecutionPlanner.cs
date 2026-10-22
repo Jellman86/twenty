@@ -48,7 +48,7 @@ public sealed record ExecutionPlan(ImmutableArray<ExecutionFill> Fills, Immutabl
 /// here: it is the ledger's job, and it refuses an unfunded fill atomically.</summary>
 public static class ExecutionPlanner
 {
-    public const string Version = "execution-v1";
+    public const string Version = "execution-v2";
 
     public static ExecutionPlan Plan(DataSlice market, IEnumerable<PlannedOrder> orders, FillPolicy policy)
     {
@@ -85,9 +85,10 @@ public static class ExecutionPlanner
 
             var fillPrice = bar.Open * (order.Buy ? 1m + policy.Rate : 1m - policy.Rate);
             if (fillPrice <= 0) { rejections.Add(new(order.ListingId, order.Buy, ExecutionRefusal.NoOpen, order.NotionalMajor)); continue; }
-            var quantity = order.NotionalMajor / fillPrice;
+            var majorPrice = bar.Denomination.ToMajor(fillPrice);
+            var quantity = order.NotionalMajor / majorPrice;
             if (policy.QuantityStep > 0) quantity = decimal.Floor(quantity / policy.QuantityStep) * policy.QuantityStep;
-            var gross = quantity * fillPrice;
+            var gross = quantity * majorPrice;
             if (quantity <= 0 || gross < policy.MinimumOrderValue)
             { rejections.Add(new(order.ListingId, order.Buy, ExecutionRefusal.BelowMinimum, order.NotionalMajor)); continue; }
             if (bar.Volume <= 0 || quantity > policy.MaximumParticipation * bar.Volume)

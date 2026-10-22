@@ -24,7 +24,9 @@ public sealed class ExecutionPlannerTests
 
     /// <summary>Bars are named for their session: the decision session's close is at Jan31 and a
     /// fill must come from a strictly later session.</summary>
-    private static DataSlice Slice(DateTimeOffset at, params Observation[] extra)
+    private static DataSlice Slice(DateTimeOffset at, params Observation[] extra) => SliceWithUnits(at, new("GBP", QuoteUnit.Major), extra);
+
+    private static DataSlice SliceWithUnits(DateTimeOffset at, Denomination units, params Observation[] extra)
     {
         var observations = new List<Observation>
         {
@@ -37,6 +39,12 @@ public sealed class ExecutionPlannerTests
             Bar("feb15-open", new(2024, 2, 15, 21, 0, 0, TimeSpan.Zero), 120m, 1000m),
             Bar("mar01-open", new(2024, 3, 1, 21, 0, 0, TimeSpan.Zero), 130m, 1000m),
         };
+        observations = observations.Select<Observation, Observation>(o => o switch
+        {
+            Listing l => l with { Denomination = units },
+            PriceBar b => b with { Denomination = units },
+            _ => o
+        }).ToList();
         observations.AddRange(extra);
         var manifest = new DatasetManifest(DatasetValidator.SchemaVersion, "execution-fixture", Mar20.AddDays(30),
             "features.v1", [new FeatureDefinition("execution", "v1", "Authored fixture", "Available at capture time")],
@@ -195,4 +203,32 @@ public sealed class ExecutionPlannerTests
         Assert.Equal(896.8m, ledger.CashGbp);
         Assert.Equal(10m, ledger.Holdings["listing-aaa"].Quantity);
     }
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void PenceSizingAndMinimumUseMajorCurrencyUnits(bool buy)
+    {
+        var market = SliceWithUnits(Mar20, new("GBP", QuoteUnit.Pence));
+        var policy = new FillPolicy(0, 0, 1, 1);
+        var plan = ExecutionPlanner.Plan(market, [new("listing-aaa", buy, 11, Jan31, Feb29)], policy);
+        Assert.Equal(10, Assert.Single(plan.Fills).Quantity);
+        Assert.Equal(110, plan.Fills[0].FillPrice);
+        var refused = ExecutionPlanner.Plan(market, [new("listing-aaa", buy, .5m, Jan31, Feb29)], policy);
+        Assert.Equal(ExecutionRefusal.BelowMinimum, Assert.Single(refused.Rejections).Reason);
+    }
+
+    [Fact]
+    public void PenceStepMinimumAndParticipationUseTheCorrectShareQuantity()
+    {
+        var market = SliceWithUnits(Mar20, new("GBP", QuoteUnit.Pence));
+        var order = new PlannedOrder("listing-aaa", true, 11.5m, Jan31, Feb29);
+        var policy = new FillPolicy(0, 0, 1, 1, 1);
+        var fill = Assert.Single(ExecutionPlanner.Plan(market, [order], policy).Fills);
+        Assert.Equal(10, fill.Quantity);
+        Assert.Equal(ExecutionRefusal.BelowMinimum, Assert.Single(ExecutionPlanner.Plan(market, [order],
+            policy with { MinimumOrderValue = 11.25m }).Rejections).Reason);
+        Assert.Equal(ExecutionRefusal.VolumeParticipation, Assert.Single(ExecutionPlanner.Plan(market, [order],
+            policy with { MaximumParticipation = .001m }).Rejections).Reason);
+    }
+
 }

@@ -13,7 +13,8 @@ public sealed record RawExecutionStep(DataSlice DecisionMarket, DataSlice FillMa
 public sealed record RawExecutionMonth(DateTimeOffset DecisionAt, decimal EquityGbp, decimal CashGbp,
     ImmutableArray<ExecutionFill> Fills, ImmutableArray<ExecutionRejection> Rejections);
 public sealed record RawExecutionResult(string Version, decimal OpeningCashGbp, decimal ClosingEquityGbp,
-    ImmutableArray<RawExecutionMonth> Months, ImmutableArray<string> Limitations);
+    ImmutableArray<RawExecutionMonth> Months, ImmutableArray<string> Limitations,
+    RawGbpValuation ClosingValuation, ImmutableArray<RawLedgerEntry> Entries);
 
 /// <summary>Settles desired trades through <see cref="ExecutionPlanner"/> into a
 /// <see cref="RawGbpLedger"/>, so what a strategy wanted becomes what it could actually have done.
@@ -21,7 +22,7 @@ public sealed record RawExecutionResult(string Version, decimal OpeningCashGbp, 
 /// is never relabelled as executable. Valuation is raw closes with the caller's explicit FX purpose.</summary>
 public static class RawExecutionRun
 {
-    public const string Version = "raw-execution-v1";
+    public const string Version = "raw-execution-v2";
 
     public static RawExecutionResult Run(IReadOnlyList<RawExecutionStep> steps, decimal openingCashGbp,
         FillPolicy policy, decimal feeGbp, TimeSpan maximumPriceAge, TimeSpan maximumFxAge,
@@ -40,7 +41,8 @@ public static class RawExecutionRun
             if (steps[i].FillMarket.DecisionAt < steps[i].DecisionMarket.DecisionAt)
                 throw new ResearchException("raw-execution-time");
             // A ledger is strictly ordered: a later decision cannot be booked before an earlier one.
-            if (i > 0 && steps[i].DecisionMarket.DecisionAt < steps[i - 1].DecisionMarket.DecisionAt)
+            if (i > 0 && (steps[i].DecisionMarket.DecisionAt <= steps[i - 1].DecisionMarket.DecisionAt ||
+                steps[i].DecisionMarket.DecisionAt < steps[i - 1].FillMarket.DecisionAt))
                 throw new ResearchException("raw-execution-time");
         }
 
@@ -53,22 +55,29 @@ public static class RawExecutionRun
             // Value at the decision, before it: the trades this decision wants are filled later,
             // at the next session's open, so the equity it reports is what it was deciding with.
             var value = ledger.Value(step.DecisionMarket, maximumPriceAge, maximumFxAge, purpose);
-            var orders = step.Orders(value) ?? [];
+            var orders = step.Orders(value) ?? throw new ResearchException("invalid-execution-run");
+            if (orders.Any(o => o is null)) throw new ResearchException("invalid-execution-run");
+            if (orders.Any(o => o.DecisionAt != value.At ||
+                i + 1 < steps.Count && o.NextDecisionAt > steps[i + 1].DecisionMarket.DecisionAt))
+                throw new ResearchException("raw-execution-order-time");
             var plan = ExecutionPlanner.Plan(step.FillMarket, orders, policy);
             for (var f = 0; f < plan.Fills.Length; f++)
             {
                 var fill = plan.Fills[f];
-                ledger.Fill($"raw-execution-{i}-{f}", step.FillMarket, fill.ListingId, fill.Quantity,
+                ledger.Fill($"raw-execution-{i}-{f}", step.FillMarket, fill.ListingId, fill.Buy ? fill.Quantity : -fill.Quantity,
                     fill.FillPrice, PriceBasis.Raw, feeGbp, maximumFxAge);
             }
             months.Add(new(value.At, value.EquityGbp, value.CashGbp, plan.Fills, plan.Rejections));
         }
-        return new(Version, openingCashGbp,
-            ledger.Value(steps[^1].DecisionMarket, maximumPriceAge, maximumFxAge, purpose).EquityGbp,
+        var closing = ledger.Value(steps[^1].FillMarket, maximumPriceAge, maximumFxAge, purpose);
+        return new(Version, openingCashGbp, closing.EquityGbp,
             months.ToImmutable(),
             ["Equity is raw closes marked with the caller's explicit FX purpose, not a total-return index and not achievable GBP wealth.",
-             "A fill is priced at the next session's open and booked whole or not at all; partial fills, order books, intraday timing, security-level taxes and settlement cycles are not modelled.",
-             "A refused order leaves cash, holdings and fees unchanged. Refusal is disclosed, never scaled into a smaller trade.",
-             "This is an offline reference over supplied market data. It makes no claim that a real order would have filled, and no broker, venue or ISA eligibility is established."]);
+             "Fills use the first observed later raw session's open; an exchange-session completeness proof is not supplied.",
+             "Booking time and executable FX come from FillMarket, not independently established opening-auction execution evidence.",
+             "Partial fills, order books, intraday timing, security-level taxes and settlement cycles are not modelled.",
+             "Planner refusals are returned without booking; funding or holdings violations abort the run rather than returning a partial result.",
+             "Terminal settlement and corporate-action scheduling are not integrated; affected holdings fail closed.",
+             "This is an offline reference over supplied market data. It makes no claim that a real order would have filled, and no broker, venue or ISA eligibility is established."], closing, ledger.Entries);
     }
 }
