@@ -30,7 +30,7 @@ A newly opened holding uses the modelled execution instant. Retroactive fills ca
 
 The first regressions failed on calendar-gap acceptance, missed deadline semantics, skipped next-session bars and future FX. Further authored cases cover weekends/holidays, DST, early closes, mourning closures, range/ref binding, hash determinism, inclusive FX-age/availability boundaries, wrong direction/purpose/pins, later-rate perturbation, altered source/receipt evidence, cash atomicity, backdated funding and intervening actions. All money/market inputs are authored; the calendar adapter reuses the reviewed factual table.
 
-Registered strategy selection, actual executable quote/import acceptance, durable order refusals, multi-calendar portfolio scheduling, raw terminal settlement and combined end-to-end acceptance remain open. No old notional report is reinterpreted and no genuine holdout, broker order or accelerator is used by these checks.
+Registered strategy selection, actual executable quote/import acceptance, durable order refusals, multi-calendar portfolio scheduling, registered terminal/action scheduling and combined end-to-end acceptance remain open. No old notional report is reinterpreted and no genuine holdout, broker order or accelerator is used by these checks.
 
 
 ## Publication and deployment acceptance (22 October 2026)
@@ -42,3 +42,6 @@ A fresh private compatibility clone under the new scientific identity preserved 
 After rechecking that no production runs or studies were active, the published commit-specific registry digest was verified against `dev`, then deployed through Git-backed Dockhand sync/deploy. Live metadata reports the exact source and one running healthy container. Eight stored collections, 58 byte-identical reports, four diagnostic responses and completed study plans were preserved. Trial counts remain 61 model and zero universe trials; seven paper accounts are unchanged. Broker connection and automatic purchases remain disabled.
 
 Read-only shared Playwright checks passed at desktop and 390px widths with no page errors, horizontal overflow or research/execution writes. Native preview was attempted first and reported missing host browser libraries. Deployment receipts are under `/mnt/apps/developer/jellman86/artifacts/twenty/deploy-timing-20261022`. These are engineering acceptance checks for the offline timing contract, not actual market-fill or initial-v1 acceptance.
+
+
+The subsequent [terminal ledger reference](raw-terminal-accounting.md) adds explicit retirement and settlement primitives. The execution run still requires event scheduling, pending-claim valuation and registered integration before it can consume those events automatically.

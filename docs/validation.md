@@ -1,5 +1,11 @@
 # Validation record
 
+## Raw terminal entitlement and explicit settlement (22 October 2026)
+
+The [offline terminal contract](raw-terminal-accounting.md) retires original shares into a source-bound frozen cash/stock claim or confirmed zero write-off, then credits only an explicit exact net settlement/delivery. Pending claims cannot fund purchases or disappear through ordinary/dividend valuation. Cash uses pinned settlement-time executable FX, withholding and actual GBP fees; stock adds exact successor shares with no invented cash/FX, including existing holdings and different units/currency. Historical/post-cutoff movements, stale active listings, mixed terms, action revisions and successor history fail closed. Physical settlement IDs cannot be counted again as dividend payments. Two further regressions reproduced later-disclosed economic actions disappearing after retirement; frozen ownership intervals now keep those checks active after settlement.
+
+Sixty new authored cases bring .NET tests to 895; seven exports independently match Python Decimal cash, equity, fees and delivered quantities. Python passed 39 tests; Ruff, web check/build, security and research-boundary gates passed. Private proof is under `/mnt/apps/developer/jellman86/artifacts/twenty/raw-terminal-20261022`. No vendor/broker request, model trial, genuine holdout or accelerator was used. Source authentication/legal entitlement, pending terminal valuation, event scheduling, durable replay and registered raw mode remain open; no old notional report or dataset schema was reinterpreted.
+
 ## Bound sessions and pinned execution FX (`execution-v3`, 22 October 2026)
 
 The [timing contract](execution-timing.md) replaces first-observed-bar selection and booking-date conversion with an explicit complete session table bound to the dataset calendar/venue, an exact next-session raw bar and a pinned foreign→GBP execution observation available and fresh at the modelled open. The ledger rechecks the selected session/table, price and FX source snapshots/hashes and original observation terms, retaining modelled execution separately from booking. Backdated fills cannot spend later deposits or hide intervening economic actions. Legacy explicit-price fills retain their original assumption contract; no old report or dataset schema is reinterpreted.

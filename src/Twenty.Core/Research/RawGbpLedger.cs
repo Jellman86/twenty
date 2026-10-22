@@ -15,6 +15,8 @@ public sealed record RawLedgerEntry(string Id, DateTimeOffset At, string Kind, s
     public RawDividendEntitlement? DividendEntitlement { get; init; }
     public RawDividendPayment? DividendPayment { get; init; }
     public ExecutionFill? ModelledExecution { get; init; }
+    public RawTerminalEntitlement? TerminalEntitlement { get; init; }
+    public RawTerminalSettlement? TerminalSettlement { get; init; }
 }
 public sealed record RawPositionValue(string ListingId, decimal Quantity, string PriceId, string? FxId,
     decimal RawPrice, Denomination Denomination, decimal GbpPerLocalUnit, decimal ValueGbp);
@@ -24,7 +26,7 @@ public sealed record RawGbpValuation(DateTimeOffset At, FxPurpose FxPurpose, dec
 /// <summary>Offline, single-owner decimal reference for explicit raw fills and GBP cash.
 /// Supplied fill prices are execution assumptions, never inferred from an adjusted bar.
 /// This is not an order adapter, a historical execution simulator or a return-index portfolio.
-/// Exact splits and explicit dividend payments are supported; terminal distributions remain refused.</summary>
+/// Exact splits and explicit dividend payments are supported; explicit terminal claims/settlement are supported; event scheduling remains a caller responsibility.</summary>
 public sealed partial class RawGbpLedger
 {
     private ImmutableDictionary<string, RawQuantityPosition> holdings = ImmutableDictionary.Create<string, RawQuantityPosition>(StringComparer.Ordinal);
@@ -65,6 +67,12 @@ public sealed partial class RawGbpLedger
             if (current with { Id = original.Id, Evidence = original.Evidence } != original)
                 throw new ResearchException("raw-ledger-action-revised");
         }
+        // Retirement must not hide newly disclosed events on the old ownership interval,
+        // or later distributions contradicting the asserted complete terminal consideration.
+        foreach (var claim in terminals.Values)
+            if (market.EffectiveActions(claim.Action.ListingId).Any(a => a.EffectiveAt > claim.PositionOpenedAt &&
+                !bookedActions.ContainsKey((a.ListingId, a.ActionId)) && !IsNeutralAction(a)))
+                throw new ResearchException("raw-ledger-terminal-action");
     }
     private static bool IsNeutralAction(CorporateAction action) =>
         action.Action is CorporateActionKind.SymbolChange or CorporateActionKind.Split or CorporateActionKind.Dividend &&
@@ -79,7 +87,11 @@ public sealed partial class RawGbpLedger
             if (market.EffectiveActions(id).Any(a => a.EffectiveAt > position.OpenedAt &&
                 (settling is null || a.EffectiveAt <= settling.EffectiveAt) && a != settling &&
                 !bookedActions.ContainsKey((a.ListingId, a.ActionId)) && !IsNeutralAction(a))) throw new ResearchException("raw-ledger-action-unsupported");
-            if (ListingAt(market, id).Denomination != position.Denomination) throw new ResearchException("raw-ledger-units");
+            var listing = settling is { Action: CorporateActionKind.Delisting or CorporateActionKind.Merger } && settling.ListingId == id
+                ? market.ListingsAt(settling.EffectiveAt.AddTicks(-1)).SingleOrDefault(l => l.ListingId == id)
+                    ?? throw new ResearchException("raw-ledger-listing")
+                : ListingAt(market, id);
+            if (listing.Denomination != position.Denomination) throw new ResearchException("raw-ledger-units");
         }
     }
     private static (decimal Rate, string? Id) Conversion(DataSlice market, string currency, FxPurpose purpose, TimeSpan maximumAge)
@@ -108,8 +120,11 @@ public sealed partial class RawGbpLedger
         ArgumentNullException.ThrowIfNull(market);
         CheckEvent(id, market.DecisionAt); CheckAge(maximumFxAge);
         if (basis != PriceBasis.Raw) throw new ResearchException("raw-ledger-basis");
+        if (terminals.Keys.Any(k => k.ListingId == listingId)) throw new ResearchException("raw-ledger-terminal-closed");
         if (signedQuantity == 0 || rawPrice <= 0 || feeGbp < 0) throw new ResearchException("raw-ledger-fill");
         CheckHoldings(market);
+        if (market.EffectiveActions(listingId).Any(a => a.Action is CorporateActionKind.Delisting or CorporateActionKind.Merger &&
+            a.TerminalOutcome != TerminalOutcome.NotApplicable)) throw new ResearchException("raw-ledger-terminal-closed");
         var listing = ListingAt(market, listingId);
         if (listing.Status != ListingStatus.Active) throw new ResearchException("raw-ledger-listing");
         var held = holdings.GetValueOrDefault(listingId);
@@ -163,6 +178,7 @@ public sealed partial class RawGbpLedger
         CheckTime(market.DecisionAt); CheckAge(maximumPriceAge); CheckAge(maximumFxAge);
         if (!Enum.IsDefined(purpose)) throw new ResearchException("raw-ledger-fx-purpose");
         CheckHoldings(market);
+        if (terminals.Values.Any(t => t.SettledAt is null)) throw new ResearchException("raw-ledger-terminal-unsettled");
         if (requireSettledDividends && dividends.Values.Any(d => d.PaidAt is null)) throw new ResearchException("raw-ledger-dividend-unpaid");
         var values = ImmutableArray.CreateBuilder<RawPositionValue>();
         foreach (var (id, position) in holdings.OrderBy(x => x.Key, StringComparer.Ordinal))

@@ -19,7 +19,7 @@ public sealed partial class RawGbpLedger
     public ImmutableArray<RawDividendEntitlement> DividendEntitlements => dividends.Values.OrderBy(d => d.ListingId, StringComparer.Ordinal)
         .ThenBy(d => d.ActionId, StringComparer.Ordinal).ToImmutableArray();
 
-    private static bool DividendSource(string? reference, string? hash) =>
+    private static bool LedgerSource(string? reference, string? hash) =>
         !string.IsNullOrWhiteSpace(reference) && reference.Length <= 200 && hash is { Length: 64 } &&
         hash.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
 
@@ -31,7 +31,7 @@ public sealed partial class RawGbpLedger
         if (action.SplitRatio is not (null or 1) || action.SuccessorListingId is not null || action.NewSymbol is not null ||
             action.TerminalOutcome != TerminalOutcome.NotApplicable) throw new ResearchException("raw-ledger-action-complex");
         if (evidence is null || evidence.EntitlementAt != action.EffectiveAt || evidence.AvailableAt == default ||
-            evidence.AvailableAt > market.DecisionAt || !DividendSource(evidence.SourceReference, evidence.ContentSha256))
+            evidence.AvailableAt > market.DecisionAt || !LedgerSource(evidence.SourceReference, evidence.ContentSha256))
             throw new ResearchException("raw-ledger-dividend-evidence");
         var key = (listingId, actionId);
         if (bookedActions.ContainsKey(key)) throw new ResearchException("raw-ledger-action-already-booked");
@@ -58,13 +58,13 @@ public sealed partial class RawGbpLedger
         if (!dividends.TryGetValue(key, out var entitlement)) throw new ResearchException("raw-ledger-dividend-entitlement");
         if (entitlement.PaidAt is not null) throw new ResearchException("raw-ledger-dividend-paid");
         if (payment is null || string.IsNullOrWhiteSpace(payment.SourcePaymentId) || payment.SourcePaymentId.Length > 128 ||
-            !DividendSource(payment.SourceReference, payment.ContentSha256) || payment.PaidAt == default ||
+            !LedgerSource(payment.SourceReference, payment.ContentSha256) || payment.PaidAt == default ||
             payment.PaidAt < entitlement.EffectiveAt || payment.PaidAt > market.DecisionAt ||
             payment.AvailableAt < payment.PaidAt || payment.AvailableAt > market.DecisionAt ||
             payment.Currency != entitlement.Currency || payment.GrossLocal != entitlement.GrossLocal ||
             payment.WithheldLocal < 0 || payment.WithheldLocal > payment.GrossLocal || payment.FeeGbp < 0)
             throw new ResearchException("raw-ledger-dividend-payment");
-        if (dividendPaymentIds.Contains(payment.SourcePaymentId)) throw new ResearchException("raw-ledger-dividend-payment-id");
+        if (dividendPaymentIds.Contains(payment.SourcePaymentId) || terminalSettlementIds.Contains(payment.SourcePaymentId)) throw new ResearchException("raw-ledger-dividend-payment-id");
         var net = payment.GrossLocal - payment.WithheldLocal;
         decimal? rate; string? fxId;
         if (net == 0)

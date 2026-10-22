@@ -26,7 +26,7 @@ public sealed partial class RawGbpLedger
             if (!byAction.TryGetValue((claim.ListingId, claim.ActionId), out var assumption) ||
                 assumption.Currency != claim.Currency || assumption.ExpectedWithheldLocal < 0 || assumption.ExpectedWithheldLocal > claim.GrossLocal ||
                 assumption.ExpectedFeeGbp < 0 || assumption.AvailableAt == default || assumption.AvailableAt > market.DecisionAt ||
-                !DividendSource(assumption.SourceReference, assumption.ContentSha256))
+                !LedgerSource(assumption.SourceReference, assumption.ContentSha256))
                 throw new ResearchException("raw-ledger-dividend-valuation");
         }
         // The ordinary valuation keeps its settled-only contract. This explicit wrapper
