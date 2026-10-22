@@ -37,8 +37,7 @@ public sealed partial class RawGbpLedger
         if (bookedActions.ContainsKey(key)) throw new ResearchException("raw-ledger-action-already-booked");
         if (!holdings.TryGetValue(listingId, out var position) || position.OpenedAt >= action.EffectiveAt)
             throw new ResearchException("raw-ledger-action-position");
-        if (Entries.Any(e => e.ListingId == listingId &&
-            ((e.Kind is "buy" or "sell") && e.At >= action.EffectiveAt || e.Kind == "split" && e.ActionEffectiveAt >= action.EffectiveAt)))
+        if (HasQuantityHistoryAfter(listingId, action.EffectiveAt))
             throw new ResearchException("raw-ledger-action-history");
         CheckHoldings(market, action);
         var gross = position.Quantity * action.CashPerShare.Value;

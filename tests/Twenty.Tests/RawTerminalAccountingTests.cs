@@ -493,4 +493,67 @@ public sealed partial class RawGbpLedgerTests
         Assert.Equal(289.5m, ledger.CashGbp); Assert.Equal(2, ledger.TerminalEntitlements[0].Quantity);
     }
 
+    [Theory]
+    [InlineData("dividend")]
+    [InlineData("split")]
+    [InlineData("terminal")]
+    public void ADeliveredSuccessorLotCannotBeAppliedRetroactivelyToAnEarlierEntitlement(string kind)
+    {
+        var ledger = DividendBook(); var action = Terminal(TerminalOutcome.Stock); var delivered = TerminalAt.AddDays(1); var later = delivered.AddDays(1);
+        ledger.Fill("existing", TerminalMarket(BuyAt, action), "successor", 1, 50, PriceBasis.Raw, 0, Age);
+        ledger.CaptureTerminal("exit", TerminalMarket(TerminalAt, action), "listing-a", action.ActionId, TerminalProof(action));
+        ledger.SettleTerminal("deliver", TerminalMarket(delivered, action), "listing-a", action.ActionId, StockSettlement(delivered), Age);
+        var cutoff = TerminalAt.AddHours(-1);
+        var extra = kind switch
+        {
+            "dividend" => new CorporateAction("late-successor", Known(later), "successor", "late-successor", CorporateActionKind.Dividend,
+                cutoff, null, 1, "USD", null, null, TerminalOutcome.NotApplicable),
+            "split" => new CorporateAction("late-successor", Known(later), "successor", "late-successor", CorporateActionKind.Split,
+                cutoff, 2, null, null, null, null, TerminalOutcome.NotApplicable),
+            _ => new CorporateAction("late-successor", Known(later), "successor", "late-successor", CorporateActionKind.Delisting,
+                cutoff, null, null, null, null, null, TerminalOutcome.Zero)
+        };
+        var market = TerminalMarket(later, action, extra: [extra]);
+        var error = kind switch
+        {
+            "dividend" => Assert.Throws<ResearchException>(() => ledger.CaptureDividend("late", market, "successor", extra.ActionId,
+                EntitlementEvidence(extra) with { AvailableAt = later })),
+            "split" => Assert.Throws<ResearchException>(() => ledger.ApplySplit("late", market, "successor", extra.ActionId)),
+            _ => Assert.Throws<ResearchException>(() => ledger.CaptureTerminal("late", market, "successor", extra.ActionId,
+                TerminalProof(extra) with { AvailableAt = later }))
+        };
+        Assert.Equal("raw-ledger-action-history", error.Code);
+        Assert.Equal(4, ledger.Holdings["successor"].Quantity); Assert.Equal(102, ledger.CashGbp);
+    }
+
+    [Fact]
+    public void LateSuccessorActionsInsideTheExchangeWindowCannotDisappearAfterDelivery()
+    {
+        var ledger = DividendBook(); var action = Terminal(TerminalOutcome.Stock); var delivered = TerminalAt.AddDays(1); var later = delivered.AddDays(1);
+        ledger.CaptureTerminal("exit", TerminalMarket(TerminalAt, action), "listing-a", action.ActionId, TerminalProof(action));
+        ledger.SettleTerminal("deliver", TerminalMarket(delivered, action), "listing-a", action.ActionId, StockSettlement(delivered), Age);
+        var extra = new CorporateAction("late-window-split", Known(later), "successor", "late-window-split", CorporateActionKind.Split,
+            TerminalAt.AddHours(1), 2, null, null, null, null, TerminalOutcome.NotApplicable);
+        Assert.Equal("raw-ledger-terminal-successor-history", Assert.Throws<ResearchException>(() =>
+            ledger.Value(TerminalMarket(later, action, extra: [extra]), Age, Age, FxPurpose.Executable)).Code);
+        Assert.Equal(3, ledger.Holdings["successor"].Quantity);
+    }
+
+    [Fact]
+    public void ARegularSuccessorSplitAfterDeliveryPreservesValueAndUsesAllDeliveredShares()
+    {
+        var ledger = DividendBook(); var action = Terminal(TerminalOutcome.Stock); var delivered = TerminalAt.AddDays(1); var later = delivered.AddDays(1);
+        ledger.CaptureTerminal("exit", TerminalMarket(TerminalAt, action), "listing-a", action.ActionId, TerminalProof(action));
+        var deliveredMarket = TerminalMarket(delivered, action);
+        ledger.SettleTerminal("deliver", deliveredMarket, "listing-a", action.ActionId, StockSettlement(delivered), Age);
+        var before = ledger.Value(deliveredMarket, Age, Age, FxPurpose.Executable);
+        var split = new CorporateAction("successor-later-split", Known(later), "successor", "successor-later-split", CorporateActionKind.Split,
+            delivered.AddHours(1), 2, null, null, null, null, TerminalOutcome.NotApplicable);
+        var market = TerminalMarket(later, action, successorPrice: 40, extra: [split]);
+        ledger.ApplySplit("split", market, "successor", split.ActionId);
+        Assert.Equal(6, ledger.Holdings["successor"].Quantity);
+        Assert.Equal(before.EquityGbp, ledger.Value(market, Age, Age, FxPurpose.Executable).EquityGbp);
+        Assert.Equal(319.5m, before.EquityGbp);
+    }
+
 }

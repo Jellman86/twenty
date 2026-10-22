@@ -70,10 +70,20 @@ public sealed partial class RawGbpLedger
         // Retirement must not hide newly disclosed events on the old ownership interval,
         // or later distributions contradicting the asserted complete terminal consideration.
         foreach (var claim in terminals.Values)
+        {
             if (market.EffectiveActions(claim.Action.ListingId).Any(a => a.EffectiveAt > claim.PositionOpenedAt &&
                 !bookedActions.ContainsKey((a.ListingId, a.ActionId)) && !IsNeutralAction(a)))
                 throw new ResearchException("raw-ledger-terminal-action");
+            if (claim.Action.TerminalOutcome == TerminalOutcome.Stock && claim.SettledAt is { } delivered &&
+                market.EffectiveActions(claim.Action.SuccessorListingId!).Any(a => a.EffectiveAt >= claim.Action.EffectiveAt &&
+                    a.EffectiveAt <= delivered && !IsNeutralAction(a)))
+                throw new ResearchException("raw-ledger-terminal-successor-history");
+        }
     }
+    private bool HasQuantityHistoryAfter(string listingId, DateTimeOffset cutoff) => Entries.Any(e =>
+        e.ListingId == listingId && ((e.Kind is "buy" or "sell") && e.At >= cutoff || e.Kind == "split" && e.ActionEffectiveAt >= cutoff) ||
+        e.TerminalSettlement is { SuccessorQuantity: > 0 } delivery && delivery.SuccessorListingId == listingId && delivery.SettledAt >= cutoff);
+
     private static bool IsNeutralAction(CorporateAction action) =>
         action.Action is CorporateActionKind.SymbolChange or CorporateActionKind.Split or CorporateActionKind.Dividend &&
         action.TerminalOutcome == TerminalOutcome.NotApplicable && action.SuccessorListingId is null &&
@@ -157,8 +167,7 @@ public sealed partial class RawGbpLedger
             throw new ResearchException("raw-ledger-action-position");
         // A late disclosure cannot reinterpret a fill that used the old share count.
         // Previously booked earlier splits are compared by effective time, not receipt time.
-        if (Entries.Any(e => e.ListingId == listingId &&
-            ((e.Kind is "buy" or "sell") && e.At >= action.EffectiveAt || e.Kind == "split" && e.ActionEffectiveAt >= action.EffectiveAt)))
+        if (HasQuantityHistoryAfter(listingId, action.EffectiveAt))
             throw new ResearchException("raw-ledger-action-history");
         CheckHoldings(market, action);
         var quantity = position.Quantity * action.SplitRatio.Value;
