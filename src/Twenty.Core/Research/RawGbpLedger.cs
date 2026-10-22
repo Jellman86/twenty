@@ -14,6 +14,7 @@ public sealed record RawLedgerEntry(string Id, DateTimeOffset At, string Kind, s
     public decimal? SplitRatio { get; init; }
     public RawDividendEntitlement? DividendEntitlement { get; init; }
     public RawDividendPayment? DividendPayment { get; init; }
+    public ExecutionFill? ModelledExecution { get; init; }
 }
 public sealed record RawPositionValue(string ListingId, decimal Quantity, string PriceId, string? FxId,
     decimal RawPrice, Denomination Denomination, decimal GbpPerLocalUnit, decimal ValueGbp);
@@ -102,7 +103,7 @@ public sealed partial class RawGbpLedger
         CashGbp = cash; ContributionsGbp = contributions;
     }
     public void Fill(string id, DataSlice market, string listingId, decimal signedQuantity, decimal rawPrice,
-        PriceBasis basis, decimal feeGbp, TimeSpan maximumFxAge)
+        PriceBasis basis, decimal feeGbp, TimeSpan maximumFxAge, ExecutionFill? execution = null, ExecutionCalendar? executionCalendar = null)
     {
         ArgumentNullException.ThrowIfNull(market);
         CheckEvent(id, market.DecisionAt); CheckAge(maximumFxAge);
@@ -114,14 +115,16 @@ public sealed partial class RawGbpLedger
         var held = holdings.GetValueOrDefault(listingId);
         var quantity = (held?.Quantity ?? 0) + signedQuantity;
         if (quantity < 0) throw new ResearchException("raw-ledger-quantity");
-        var (rate, fxId) = Conversion(market, listing.Denomination.Currency, FxPurpose.Executable, maximumFxAge);
+        var (rate, fxId) = execution is null
+            ? Conversion(market, listing.Denomination.Currency, FxPurpose.Executable, maximumFxAge)
+            : ValidateExecution(market, listing, signedQuantity, rawPrice, execution, executionCalendar, maximumFxAge);
         var change = -signedQuantity * listing.Denomination.ToMajor(rawPrice) * rate - feeGbp;
         var cash = CashGbp + change; var fees = FeesGbp + feeGbp;
         if (cash < 0) throw new ResearchException("raw-ledger-cash");
         var next = quantity == 0 ? holdings.Remove(listingId) : holdings.SetItem(listingId,
-            new(quantity, listing.Denomination, held?.OpenedAt ?? market.DecisionAt.ToUniversalTime()));
+            new(quantity, listing.Denomination, held?.OpenedAt ?? execution?.Timing.Session.OpenAt ?? market.DecisionAt.ToUniversalTime()));
         Record(new(id, market.DecisionAt.ToUniversalTime(), signedQuantity > 0 ? "buy" : "sell", listingId,
-            signedQuantity, rawPrice, listing.Denomination, feeGbp, change, fxId, rate, cash));
+            signedQuantity, rawPrice, listing.Denomination, feeGbp, change, fxId, rate, cash) { ModelledExecution = execution });
         holdings = next; CashGbp = cash; FeesGbp = fees;
     }
     public void ApplySplit(string id, DataSlice market, string listingId, string actionId)

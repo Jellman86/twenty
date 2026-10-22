@@ -6,7 +6,7 @@ namespace Twenty.Core.Research;
 public enum ExecutionRefusal
 {
     InvalidOrder = 0, NoNextSession = 1, NoOpen = 2, OpenNotObservable = 3,
-    BelowMinimum = 4, VolumeParticipation = 5, UnsupportedAction = 6
+    BelowMinimum = 4, VolumeParticipation = 5, UnsupportedAction = 6, InvalidExecutionFx = 7
 }
 
 public sealed record FillPolicy(decimal HalfSpreadBps = 5m, decimal SlippageBps = 5m,
@@ -28,11 +28,19 @@ public sealed record FillPolicy(decimal HalfSpreadBps = 5m, decimal SlippageBps 
 /// <summary>A desired trade, in the listing's own major currency units. Quantity is derived at the
 /// fill price, never assumed at the price the decision was made on.</summary>
 public sealed record PlannedOrder(string ListingId, bool Buy, decimal NotionalMajor,
-    DateTimeOffset DecisionAt, DateTimeOffset NextDecisionAt);
+    DateTimeOffset DecisionAt, DateTimeOffset NextDecisionAt)
+{
+    public string? FxObservationId { get; init; }
+}
 
 public sealed record ExecutionFill(string ListingId, bool Buy, decimal Quantity, decimal FillPrice,
     decimal ObservedOpen, Denomination Denomination, string PriceId, DateTimeOffset FillSessionCloseAt)
 {
+    public required ExecutionSessionEvidence Timing { get; init; }
+    public FxRate? ExecutionFx { get; init; }
+    public required SourceSnapshot PriceSource { get; init; }
+    public required Evidence PriceEvidence { get; init; }
+    public SourceSnapshot? FxSource { get; init; }
     /// <summary>Modelled execution versus the open it derives from: the distance a reader can audit
     /// instead of finding it buried in a cost rate.</summary>
     public decimal SlippageFromOpen => ObservedOpen <= 0 ? 0 : FillPrice / ObservedOpen - 1m;
@@ -48,14 +56,16 @@ public sealed record ExecutionPlan(ImmutableArray<ExecutionFill> Fills, Immutabl
 /// here: it is the ledger's job, and it refuses an unfunded fill atomically.</summary>
 public static class ExecutionPlanner
 {
-    public const string Version = "execution-v2";
+    public const string Version = "execution-v3";
 
-    public static ExecutionPlan Plan(DataSlice market, IEnumerable<PlannedOrder> orders, FillPolicy policy)
+    public static ExecutionPlan Plan(DataSlice market, IEnumerable<PlannedOrder> orders, FillPolicy policy, ExecutionCalendar calendar, TimeSpan maximumFxAge)
     {
         ArgumentNullException.ThrowIfNull(market);
         ArgumentNullException.ThrowIfNull(orders);
         ArgumentNullException.ThrowIfNull(policy);
         policy.Validate();
+        ArgumentNullException.ThrowIfNull(calendar);
+        if (maximumFxAge < TimeSpan.Zero) throw new ResearchException("raw-ledger-age");
         var fills = ImmutableArray.CreateBuilder<ExecutionFill>();
         var rejections = ImmutableArray.CreateBuilder<ExecutionRejection>();
         foreach (var order in orders)
@@ -70,9 +80,10 @@ public static class ExecutionPlanner
             if (listing is not { Status: ListingStatus.Active })
             { rejections.Add(new(order.ListingId, order.Buy, ExecutionRefusal.InvalidOrder, order.NotionalMajor)); continue; }
 
-            // The fill session is the first one strictly after the decision. Nothing fills at the
-            // decision session's close: that price was the input to the decision, not a quote.
-            var bar = bars.FirstOrDefault(b => b.SessionCloseAt > order.DecisionAt && b.SessionCloseAt <= order.NextDecisionAt);
+            if (listing.Venue != calendar.Venue || market.Calendars.SingleOrDefault(c => c.Id == listing.CalendarId) != calendar.Reference)
+                throw new ResearchException("execution-calendar-binding");
+            var session = calendar.Next(order.DecisionAt, order.NextDecisionAt);
+            var bar = session is null ? null : bars.SingleOrDefault(b => b.SessionDate == session.Date && b.SessionCloseAt == session.CloseAt);
             if (bar is null) { rejections.Add(new(order.ListingId, order.Buy, ExecutionRefusal.NoNextSession, order.NotionalMajor)); continue; }
             if (bar.Open <= 0) { rejections.Add(new(order.ListingId, order.Buy, ExecutionRefusal.NoOpen, order.NotionalMajor)); continue; }
             if (bar.Evidence.AvailableAt > order.NextDecisionAt)
@@ -82,6 +93,10 @@ public static class ExecutionPlanner
                 a.EffectiveAt <= bar.SessionCloseAt && a.Action is CorporateActionKind.Split or CorporateActionKind.Dividend
                     or CorporateActionKind.Merger or CorporateActionKind.SpinOff or CorporateActionKind.Delisting))
             { rejections.Add(new(order.ListingId, order.Buy, ExecutionRefusal.UnsupportedAction, order.NotionalMajor)); continue; }
+
+            if (!ExecutionFx.TrySelect(market, bar.Denomination.Currency, order.FxObservationId,
+                session!.OpenAt!.Value, maximumFxAge, out var fx))
+            { rejections.Add(new(order.ListingId, order.Buy, ExecutionRefusal.InvalidExecutionFx, order.NotionalMajor)); continue; }
 
             var fillPrice = bar.Open * (order.Buy ? 1m + policy.Rate : 1m - policy.Rate);
             if (fillPrice <= 0) { rejections.Add(new(order.ListingId, order.Buy, ExecutionRefusal.NoOpen, order.NotionalMajor)); continue; }
@@ -94,7 +109,13 @@ public static class ExecutionPlanner
             if (bar.Volume <= 0 || quantity > policy.MaximumParticipation * bar.Volume)
             { rejections.Add(new(order.ListingId, order.Buy, ExecutionRefusal.VolumeParticipation, order.NotionalMajor)); continue; }
 
-            fills.Add(new(order.ListingId, order.Buy, quantity, fillPrice, bar.Open, bar.Denomination, bar.Id, bar.SessionCloseAt));
+            fills.Add(new(order.ListingId, order.Buy, quantity, fillPrice, bar.Open, bar.Denomination, bar.Id, bar.SessionCloseAt)
+            {
+                Timing = new(calendar.Reference, calendar.Venue, calendar.SourceReference, calendar.Sha256, session!),
+                ExecutionFx = fx, PriceEvidence = bar.Evidence,
+                PriceSource = market.Sources.Single(s => s.Id == bar.Evidence.SourceId),
+                FxSource = fx is null ? null : market.Sources.Single(s => s.Id == fx.Evidence.SourceId)
+            });
         }
         return new(fills.ToImmutable(), rejections.ToImmutable());
     }

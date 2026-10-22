@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Twenty.Core.Data;
 using Twenty.Core.Research;
+using Twenty.Ingestion.Listings;
 
 namespace Twenty.Tests;
 
@@ -31,8 +32,8 @@ public sealed class RawExecutionRunTests
                 new Denomination("GBP", QuoteUnit.Major), "ny-calendar",
                 Jan31.AddDays(-30), null, ListingStatus.Active),
             Bar("jan31-close", Jan31, 100m, 100000m),
-            Bar("feb15-close", new(2024, 2, 15, 21, 0, 0, TimeSpan.Zero), 110m, 100000m),
-            Bar("mar15-close", new(2024, 3, 15, 21, 0, 0, TimeSpan.Zero), 120m, 100000m),
+            Bar("feb01-close", new(2024, 2, 1, 21, 0, 0, TimeSpan.Zero), 110m, 100000m),
+            Bar("mar01-close", new(2024, 3, 1, 21, 0, 0, TimeSpan.Zero), 120m, 100000m),
         };
         if (units is not null) observations = observations.Select<Observation, Observation>(o => o switch
         {
@@ -45,13 +46,14 @@ public sealed class RawExecutionRunTests
             "features.v1", [new FeatureDefinition("execution", "v1", "Authored fixture", "Available at capture time")],
             [new SourceSnapshot("fixture-source", "urn:twenty:synthetic:raw-execution", "Authored fixture; no market data",
                 Mar20.AddDays(30), null, new string('a', 64), "fixture-v1", "Immutable")],
-            [new CalendarReference("ny-calendar", "America/New_York", "v1", new string('b', 64))],
+            [NasdaqSessions.Reference("ny-calendar")],
             [new UniverseDefinition("research-universe", UniverseKind.Research, "Authored fixture")], true);
         return new PointInTimeDataset(new(manifest, [.. observations])).AsOf(at);
     }
 
     private static readonly FillPolicy Flat = new(HalfSpreadBps: 0m, SlippageBps: 0m,
         MinimumOrderValue: 1m, MaximumParticipation: 1m);
+    private static readonly ExecutionCalendar Calendar = NasdaqSessions.ExecutionCalendar("ny-calendar", new(2024, 1, 1), new(2024, 4, 30));
     private static readonly TimeSpan MaxAge = TimeSpan.FromDays(3650);
     private static PlannedOrder Buy(decimal notional) => new("listing-aaa", true, notional, Jan31, Feb29);
 
@@ -66,14 +68,14 @@ public sealed class RawExecutionRunTests
     [Fact]
     public void ABuyIsBookedAtTheNextOpenAndEquityIsValuedAtTheDecision()
     {
-        var result = RawExecutionRun.Run(Stepped(), 2000m, Flat, feeGbp: 1m, MaxAge, MaxAge);
+        var result = RawExecutionRun.Run(Stepped(), 2000m, Flat, feeGbp: 1m, MaxAge, MaxAge, Calendar);
 
         // The 31 January decision is taken holding only cash: its fill happens at the
-        // 15 February open, after it.
+        // 1 February open, after it.
         Assert.Equal(2000m, result.Months[0].EquityGbp);
         Assert.Equal(2000m, result.Months[0].CashGbp);
         var fill = Assert.Single(result.Months[0].Fills);
-        Assert.Equal("feb15-close", fill.PriceId);
+        Assert.Equal("feb01-close", fill.PriceId);
         Assert.Equal(110m, fill.ObservedOpen);
         Assert.Equal(10m, fill.Quantity); // 1,100 at the 110 open
         Assert.Empty(result.Months[0].Rejections);
@@ -83,7 +85,7 @@ public sealed class RawExecutionRunTests
         Assert.Equal(1999m, result.Months[1].EquityGbp);
         Assert.Empty(result.Months[1].Fills);
 
-        // 20 March revalues the same 10 shares at the 15 March close of 120.
+        // 20 March revalues the same 10 shares at the 1 March close of 120.
         Assert.Equal(2099m, result.Months[2].EquityGbp);
         Assert.Equal(2099m, result.ClosingEquityGbp);
         Assert.Equal(2000m, result.OpeningCashGbp);
@@ -92,9 +94,9 @@ public sealed class RawExecutionRunTests
     [Fact]
     public void ARefusedOrderLeavesCashAndHoldingsExactlyAsTheyWere()
     {
-        // 5% of the 15 February session's 100,000 shares is 5,000; this wants about 9,091.
+        // 5% of the 1 February session's 100,000 shares is 5,000; this wants about 9,091.
         var steps = new[] { new RawExecutionStep(Slice(Jan31), Slice(Feb20), _ => [Buy(1000000m)]) };
-        var result = RawExecutionRun.Run(steps, 2000m, Flat with { MaximumParticipation = 0.05m }, 1m, MaxAge, MaxAge);
+        var result = RawExecutionRun.Run(steps, 2000m, Flat with { MaximumParticipation = 0.05m }, 1m, MaxAge, MaxAge, Calendar);
 
         Assert.Empty(result.Months[0].Fills);
         Assert.Equal(ExecutionRefusal.VolumeParticipation, Assert.Single(result.Months[0].Rejections).Reason);
@@ -105,7 +107,7 @@ public sealed class RawExecutionRunTests
     [Fact]
     public void ARevaluationMonthChangesEquityWithoutTrading()
     {
-        var result = RawExecutionRun.Run(Stepped(), 2000m, Flat, 1m, MaxAge, MaxAge);
+        var result = RawExecutionRun.Run(Stepped(), 2000m, Flat, 1m, MaxAge, MaxAge, Calendar);
         Assert.Empty(result.Months[2].Fills);
         Assert.Empty(result.Months[2].Rejections);
         Assert.Equal(1999m, result.Months[1].EquityGbp);
@@ -118,7 +120,7 @@ public sealed class RawExecutionRunTests
         var late = new RawExecutionStep(Slice(Mar20), Slice(Mar20), _ => Array.Empty<PlannedOrder>());
         var early = new RawExecutionStep(Slice(Feb20), Slice(Feb20), _ => Array.Empty<PlannedOrder>());
         Assert.Equal("raw-execution-time", Assert.Throws<ResearchException>(() =>
-            RawExecutionRun.Run([late, early], 2000m, Flat, 1m, MaxAge, MaxAge)).Code);
+            RawExecutionRun.Run([late, early], 2000m, Flat, 1m, MaxAge, MaxAge, Calendar)).Code);
     }
 
     [Fact]
@@ -126,7 +128,7 @@ public sealed class RawExecutionRunTests
     {
         var step = new RawExecutionStep(Slice(Mar20), Slice(Feb20), _ => Array.Empty<PlannedOrder>());
         Assert.Equal("raw-execution-time", Assert.Throws<ResearchException>(() =>
-            RawExecutionRun.Run([step], 2000m, Flat, 1m, MaxAge, MaxAge)).Code);
+            RawExecutionRun.Run([step], 2000m, Flat, 1m, MaxAge, MaxAge, Calendar)).Code);
     }
 
     [Theory]
@@ -135,22 +137,22 @@ public sealed class RawExecutionRunTests
     public void AnUnfundedOrEmptyRunIsRefused(int opening)
     {
         Assert.Equal("invalid-execution-run", Assert.Throws<ResearchException>(() =>
-            RawExecutionRun.Run([], opening, Flat, 1m, MaxAge, MaxAge)).Code);
+            RawExecutionRun.Run([], opening, Flat, 1m, MaxAge, MaxAge, Calendar)).Code);
         Assert.Equal("invalid-execution-run", Assert.Throws<ResearchException>(() =>
-            RawExecutionRun.Run([new RawExecutionStep(Slice(Feb20), Slice(Feb20), _ => [])], opening, Flat, 1m, MaxAge, MaxAge)).Code);
+            RawExecutionRun.Run([new RawExecutionStep(Slice(Feb20), Slice(Feb20), _ => [])], opening, Flat, 1m, MaxAge, MaxAge, Calendar)).Code);
     }
 
     [Fact]
     public void ANegativeFeeIsRefusedBeforeAnythingIsBooked()
     {
         Assert.Equal("invalid-execution-run", Assert.Throws<ResearchException>(() =>
-            RawExecutionRun.Run([new RawExecutionStep(Slice(Feb20), Slice(Feb20), _ => [])], 2000m, Flat, -1m, MaxAge, MaxAge)).Code);
+            RawExecutionRun.Run([new RawExecutionStep(Slice(Feb20), Slice(Feb20), _ => [])], 2000m, Flat, -1m, MaxAge, MaxAge, Calendar)).Code);
     }
     [Fact]
     public void AFinalBuyIsMarkedAfterItsFillAndFees()
     {
         var result = RawExecutionRun.Run([new(Slice(Jan31), Slice(Feb20), _ => [Buy(1100)])],
-            2000, Flat, 1, MaxAge, MaxAge);
+            2000, Flat, 1, MaxAge, MaxAge, Calendar);
         Assert.Equal(2000, result.Months[0].EquityGbp);
         Assert.Equal(1999, result.ClosingEquityGbp);
         Assert.Equal(Feb20, result.ClosingValuation.At);
@@ -176,7 +178,7 @@ public sealed class RawExecutionRunTests
                 return [];
             })
         };
-        var result = RawExecutionRun.Run(steps, 4000, Flat, 1, MaxAge, MaxAge);
+        var result = RawExecutionRun.Run(steps, 4000, Flat, 1, MaxAge, MaxAge, Calendar);
         Assert.Equal(4098, result.ClosingEquityGbp);
         Assert.False(Assert.Single(result.Months[1].Fills).Buy);
     }
@@ -194,7 +196,7 @@ public sealed class RawExecutionRunTests
             new(Slice(next), Slice(Feb20), _ => { calls++; return []; })
         };
         Assert.Equal("raw-execution-time", Assert.Throws<ResearchException>(() =>
-            RawExecutionRun.Run(steps, 2000, Flat, 0, MaxAge, MaxAge)).Code);
+            RawExecutionRun.Run(steps, 2000, Flat, 0, MaxAge, MaxAge, Calendar)).Code);
         Assert.Equal(0, calls);
     }
 
@@ -208,7 +210,7 @@ public sealed class RawExecutionRunTests
         steps[0] = steps[0] with { Orders = _ => [new("listing-aaa", true, 1100,
             Jan31.AddDays(decisionDays), Feb29.AddDays(deadlineDays))] };
         Assert.Equal("raw-execution-order-time", Assert.Throws<ResearchException>(() =>
-            RawExecutionRun.Run(steps, 2000, Flat, 0, MaxAge, MaxAge)).Code);
+            RawExecutionRun.Run(steps, 2000, Flat, 0, MaxAge, MaxAge, Calendar)).Code);
     }
 
     [Fact]
@@ -220,7 +222,7 @@ public sealed class RawExecutionRunTests
             new(Slice(Feb29), Slice(Mar20), _ => [new("listing-aaa", false, 1320, Feb29, Mar20)])
         };
         Assert.Equal("raw-ledger-quantity", Assert.Throws<ResearchException>(() =>
-            RawExecutionRun.Run(steps, 4000, Flat, 1, MaxAge, MaxAge)).Code);
+            RawExecutionRun.Run(steps, 4000, Flat, 1, MaxAge, MaxAge, Calendar)).Code);
     }
 
     [Fact]
@@ -237,7 +239,7 @@ public sealed class RawExecutionRunTests
                 return [new("listing-aaa", false, 12, Feb29, Mar20)];
             })
         };
-        var result = RawExecutionRun.Run(steps, 40, Flat, 1, MaxAge, MaxAge);
+        var result = RawExecutionRun.Run(steps, 40, Flat, 1, MaxAge, MaxAge, Calendar);
         Assert.Equal(39, result.ClosingEquityGbp);
         Assert.Equal(Mar20, result.ClosingValuation.At);
         Assert.Equal(39, result.ClosingValuation.CashGbp);
@@ -251,11 +253,11 @@ public sealed class RawExecutionRunTests
     public void ForeignFillUsesExecutableBookingFxWhileTheClosingMarkRetainsItsReferencePurpose()
     {
         var usd = new Denomination("USD", QuoteUnit.Major);
-        var fxAt = Feb20.AddDays(-1);
+        var fxAt = DateTimeOffset.Parse("2024-02-01T14:29:00Z");
         var executable = new FxRate("execution-fx", Ev(fxAt), "USD", "GBP", .8m, fxAt, FxPurpose.Executable);
         var reference = new FxRate("reference-fx", Ev(fxAt), "USD", "GBP", .75m, fxAt, FxPurpose.Reference);
-        var result = RawExecutionRun.Run([new(Slice(Jan31, usd), Slice(Feb20, usd, executable, reference), _ => [Buy(1100)])],
-            2000, Flat, 1, MaxAge, MaxAge, FxPurpose.Reference);
+        var result = RawExecutionRun.Run([new(Slice(Jan31, usd), Slice(Feb20, usd, executable, reference), _ => [Buy(1100) with { FxObservationId = executable.Id }])],
+            2000, Flat, 1, MaxAge, MaxAge, Calendar, FxPurpose.Reference);
         Assert.Equal(1119, result.ClosingValuation.CashGbp);
         Assert.Equal(1944, result.ClosingEquityGbp);
         Assert.Equal(FxPurpose.Reference, result.ClosingValuation.FxPurpose);
@@ -271,18 +273,21 @@ public sealed class RawExecutionRunTests
     public void AReferenceMarkCannotFundAForeignFillWithoutExecutableFx()
     {
         var usd = new Denomination("USD", QuoteUnit.Major);
-        var fxAt = Feb20.AddDays(-1);
+        var fxAt = DateTimeOffset.Parse("2024-02-01T14:29:00Z");
         var reference = new FxRate("reference-fx", Ev(fxAt), "USD", "GBP", .75m, fxAt, FxPurpose.Reference);
-        Assert.Throws<InvalidDatasetException>(() => RawExecutionRun.Run(
-            [new(Slice(Jan31, usd), Slice(Feb20, usd, reference), _ => [Buy(1100)])],
-            2000, Flat, 1, MaxAge, MaxAge, FxPurpose.Reference));
+        var result = RawExecutionRun.Run(
+            [new(Slice(Jan31, usd), Slice(Feb20, usd, reference), _ => [Buy(1100) with { FxObservationId = reference.Id }])],
+            2000, Flat, 1, MaxAge, MaxAge, Calendar, FxPurpose.Reference);
+        Assert.Empty(result.Months[0].Fills);
+        Assert.Equal(ExecutionRefusal.InvalidExecutionFx, Assert.Single(result.Months[0].Rejections).Reason);
+        Assert.Equal(2000, result.ClosingEquityGbp);
     }
 
     [Fact]
     public void UnfundedFillsAbortTheRunRatherThanReturningAReportedFill()
     {
         Assert.Equal("raw-ledger-cash", Assert.Throws<ResearchException>(() => RawExecutionRun.Run(
-            [new(Slice(Jan31), Slice(Feb20), _ => [Buy(2000)])], 2000, Flat, 1, MaxAge, MaxAge)).Code);
+            [new(Slice(Jan31), Slice(Feb20), _ => [Buy(2000)])], 2000, Flat, 1, MaxAge, MaxAge, Calendar)).Code);
     }
 
 }

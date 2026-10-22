@@ -20,7 +20,7 @@ public sealed class PointInTimeDataset
             .GroupBy(x => x.SeriesKey())
             .Select(g => g.OrderByDescending(x => x.Evidence.AvailableAt).First())
             .OrderBy(x => x.Id, StringComparer.Ordinal).ToImmutableArray();
-        return new(decisionAt, records, file.Manifest.Calendars, file.Manifest.Universes);
+        return new(decisionAt, records, file.Manifest.Calendars, file.Manifest.Universes, file.Manifest.Sources);
     }
 }
 
@@ -30,10 +30,13 @@ public sealed class DataSlice
     private readonly ImmutableArray<UniverseDefinition> universes;
     public DateTimeOffset DecisionAt { get; }
     public ImmutableArray<Observation> Observations { get; }
-    internal DataSlice(DateTimeOffset decisionAt, ImmutableArray<Observation> observations, ImmutableArray<CalendarReference> calendars, ImmutableArray<UniverseDefinition> universes)
+    public ImmutableArray<CalendarReference> Calendars => calendars;
+    public ImmutableArray<SourceSnapshot> Sources { get; }
+    internal DataSlice(DateTimeOffset decisionAt, ImmutableArray<Observation> observations, ImmutableArray<CalendarReference> calendars, ImmutableArray<UniverseDefinition> universes, ImmutableArray<SourceSnapshot> sources)
     {
         this.calendars = calendars;
         this.universes = universes;
+        Sources = sources;
         DecisionAt = decisionAt;
         Observations = observations;
     }

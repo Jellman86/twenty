@@ -1,6 +1,6 @@
-# Executable prices and sizing (`execution-v2`)
+# Executable prices and sizing (`execution-v3`)
 
-**Status: offline planner and raw settlement reference corrected 22 October 2026 (`execution-v2`, `raw-execution-v2`); registered backtest integration and report disclosure remain open.** Written to settle the approach for the last named gap in the [roadmap](roadmap.md)'s P0 changing-universe row — "executable-price handling" — and the sizing/execution contract that the [raw GBP ledger](raw-gbp-ledger.md) explicitly defers. Nothing here is a claim that any order would have filled.
+**Status: offline planner and settlement reference with bound sessions and pinned execution-time FX (`execution-v3`, `raw-execution-v3`).** The [current timing contract](execution-timing.md) requires the exact next session from the reviewed calendar and the exact foreign FX observation available by its open. Registered raw mode, terminal/action scheduling and genuine execution acceptance remain open. Earlier v1/v2 checkpoints below are historical context, not the current timing contract.
 
 ## The problem
 
@@ -18,7 +18,7 @@ Two separate questions are currently conflated into one flat cost rate.
 - Its orders fill at session *t+1*'s **open**, on the **`Raw` basis** — execution is a share transaction, not a return index — converted with an explicit `Executable`-purpose FX observation when the listing is not GBP.
 - If no *t+1* session exists before the next decision — halt, suspension, delisting, or simply never captured — **every order that would have filled there is rejected** with a recorded reason. Nothing fills at the close that was just observed.
 
-The implementation selects the first **observed** raw bar with a session close after the order decision, within its deadline and visible in the supplied fill slice. It does not have a complete exchange-session schedule to prove that bar is the actual next session. Missing earlier bars can therefore delay the modelled fill. Neither this selection nor a daily bar proves an opening-auction fill, and the final engine must validate expected sessions before calling this a next-session execution backtest.
+The v3 implementation requires the exact next session from the source-bound calendar; missing raw bars are refused rather than replaced by later observations. Foreign FX is explicitly pinned, fresh and available by the modelled open. Neither a daily bar nor an executable-purpose rate certifies an actual opening-auction fill. See the [current contract and limits](execution-timing.md).
 
 ## Sizing
 
@@ -76,7 +76,7 @@ Order books and quotes, partial fills, intraday order timing, security-level tax
 4. **Keep the notional mode**, relabelled research-notional — it is the only mode a genuine panel can run today.
 
 
-## Corrected accounting and timing contract (22 October 2026)
+## Corrected v2 accounting and timing contract (22 October 2026)
 
 Review of `4514901` reproduced three defects despite its passing suite: sell quantities were booked positive, major-currency notionals were divided by pence quotes, and closing valuation went backwards to the final decision after booking its later fills. The v2 reference fixes all three. Quantity sizing and the post-step minimum use `Denomination.ToMajor(fillPrice)`; reported fill prices remain in original quote units. Ledger quantities are signed by buy/sell direction. Decision rows remain pre-fill marks; `ClosingValuation` is a distinct post-fill mark at the final `FillMarket.DecisionAt`, with its cash, positions, purpose and time retained. `Entries` exposes immutable signed ledger receipts; `ClosingEquityGbp` equals that closing mark's equity. No trailing empty step is required.
 
@@ -84,7 +84,7 @@ Decisions must increase strictly, and each prior fill/booking slice must be no l
 
 Planner rejections return recorded reasons without ledger changes. Insufficient cash (including fees), overselling, missing executable FX and other ledger/evidence violations abort the run; no completed partial result is returned. Orders are booked in caller order, with no automatic sell-first reordering or financing. The local ledger remains inaccessible after a thrown run. This differs from a durable per-order rejection journal, which remains future integration work.
 
-The fill slice is an explicit **booking/knowledge** snapshot. Its executable FX is not evidence of a rate available at the earlier bar's open. Receipts retain that booking time and rate; a reference-purpose closing mark may use a different rate and cannot fund the fill. Source-bound execution-time FX, complete session coverage, action/payment scheduling, terminal settlement and registered replay remain open. These limitations appear in the returned result; none of this checkpoint's authored examples establishes executable historical returns.
+In v2, the fill slice was an explicit **booking/knowledge** snapshot. This paragraph describes the former FX assumption, superseded by [v3](execution-timing.md). Its executable FX is not evidence of a rate available at the earlier bar's open. Receipts retain that booking time and rate; a reference-purpose closing mark may use a different rate and cannot fund the fill. Source-bound execution-time FX, complete session coverage, action/payment scheduling, terminal settlement and registered replay remain open. These limitations appear in the returned result; none of this checkpoint's authored examples establishes executable historical returns.
 
 
 ## Publication and deployment acceptance (22 October 2026)

@@ -14,7 +14,7 @@ public sealed record RawExecutionMonth(DateTimeOffset DecisionAt, decimal Equity
     ImmutableArray<ExecutionFill> Fills, ImmutableArray<ExecutionRejection> Rejections);
 public sealed record RawExecutionResult(string Version, decimal OpeningCashGbp, decimal ClosingEquityGbp,
     ImmutableArray<RawExecutionMonth> Months, ImmutableArray<string> Limitations,
-    RawGbpValuation ClosingValuation, ImmutableArray<RawLedgerEntry> Entries);
+    RawGbpValuation ClosingValuation, ImmutableArray<RawLedgerEntry> Entries, ExecutionCalendar Calendar);
 
 /// <summary>Settles desired trades through <see cref="ExecutionPlanner"/> into a
 /// <see cref="RawGbpLedger"/>, so what a strategy wanted becomes what it could actually have done.
@@ -22,14 +22,15 @@ public sealed record RawExecutionResult(string Version, decimal OpeningCashGbp, 
 /// is never relabelled as executable. Valuation is raw closes with the caller's explicit FX purpose.</summary>
 public static class RawExecutionRun
 {
-    public const string Version = "raw-execution-v2";
+    public const string Version = "raw-execution-v3";
 
     public static RawExecutionResult Run(IReadOnlyList<RawExecutionStep> steps, decimal openingCashGbp,
-        FillPolicy policy, decimal feeGbp, TimeSpan maximumPriceAge, TimeSpan maximumFxAge,
+        FillPolicy policy, decimal feeGbp, TimeSpan maximumPriceAge, TimeSpan maximumFxAge, ExecutionCalendar calendar,
         FxPurpose purpose = FxPurpose.Executable)
     {
         ArgumentNullException.ThrowIfNull(steps);
         ArgumentNullException.ThrowIfNull(policy);
+        ArgumentNullException.ThrowIfNull(calendar);
         policy.Validate();
         if (steps.Count == 0 || openingCashGbp <= 0 || feeGbp < 0 ||
             maximumPriceAge <= TimeSpan.Zero || maximumFxAge < TimeSpan.Zero || !Enum.IsDefined(purpose))
@@ -60,12 +61,12 @@ public static class RawExecutionRun
             if (orders.Any(o => o.DecisionAt != value.At ||
                 i + 1 < steps.Count && o.NextDecisionAt > steps[i + 1].DecisionMarket.DecisionAt))
                 throw new ResearchException("raw-execution-order-time");
-            var plan = ExecutionPlanner.Plan(step.FillMarket, orders, policy);
+            var plan = ExecutionPlanner.Plan(step.FillMarket, orders, policy, calendar, maximumFxAge);
             for (var f = 0; f < plan.Fills.Length; f++)
             {
                 var fill = plan.Fills[f];
                 ledger.Fill($"raw-execution-{i}-{f}", step.FillMarket, fill.ListingId, fill.Buy ? fill.Quantity : -fill.Quantity,
-                    fill.FillPrice, PriceBasis.Raw, feeGbp, maximumFxAge);
+                    fill.FillPrice, PriceBasis.Raw, feeGbp, maximumFxAge, fill, calendar);
             }
             months.Add(new(value.At, value.EquityGbp, value.CashGbp, plan.Fills, plan.Rejections));
         }
@@ -73,11 +74,11 @@ public static class RawExecutionRun
         return new(Version, openingCashGbp, closing.EquityGbp,
             months.ToImmutable(),
             ["Equity is raw closes marked with the caller's explicit FX purpose, not a total-return index and not achievable GBP wealth.",
-             "Fills use the first observed later raw session's open; an exchange-session completeness proof is not supplied.",
-             "Booking time and executable FX come from FillMarket, not independently established opening-auction execution evidence.",
+             "Fills require the next open in the supplied complete, source-bound session table; missing session bars are refused.",
+             "Receipts distinguish modelled session open from later booking. Foreign FX is pinned and available by that open; actual execution is not certified.",
              "Partial fills, order books, intraday timing, security-level taxes and settlement cycles are not modelled.",
              "Planner refusals are returned without booking; funding or holdings violations abort the run rather than returning a partial result.",
              "Terminal settlement and corporate-action scheduling are not integrated; affected holdings fail closed.",
-             "This is an offline reference over supplied market data. It makes no claim that a real order would have filled, and no broker, venue or ISA eligibility is established."], closing, ledger.Entries);
+             "This is an offline reference over supplied market data. It makes no claim that a real order would have filled, and no broker, venue or ISA eligibility is established."], closing, ledger.Entries, calendar);
     }
 }

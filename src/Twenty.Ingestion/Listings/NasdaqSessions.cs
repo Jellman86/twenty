@@ -63,4 +63,18 @@ public static class NasdaqSessions
     }
 
     public static CalendarReference Reference(string id) => new(id, TimeZone, Version, ContentSha256);
+    public static ExecutionCalendar ExecutionCalendar(string id, DateOnly from, DateOnly through)
+    {
+        if (from > through || from.Year < FirstYear || through.Year > LastYear)
+            throw new ResearchException("execution-calendar-range");
+        var days = ImmutableArray.CreateBuilder<ExecutionDay>();
+        for (var day = from; day <= through; day = day.AddDays(1))
+        {
+            var close = CloseAt(day);
+            var local = day.ToDateTime(new TimeOnly(9, 30), DateTimeKind.Unspecified);
+            days.Add(new(day, close is null ? null : new DateTimeOffset(local, Zone.GetUtcOffset(local)), close));
+        }
+        return new(Reference(id), Venue, days.ToImmutable(), "https://listingcenter.nasdaq.com/rulebook/nasdaq/rules/nasdaq-equity-1");
+    }
+
 }
