@@ -1,0 +1,126 @@
+{
+  "record": "terminal-acceptance-smoke",
+  "date": "2026-10-22",
+  "note": "Hashes and counts only. Captures, source documents and generated datasets stay private.",
+  "inputs": {
+    "referenceBundle": "docs/terminal-outcome-references-2026-10-21.json",
+    "referenceSha256": "b7a399e052eca9859d71875299ae4696091d2b297da3963d942930fdd7ea4e05",
+    "auditReportSha256": "39d868ed685df3c54ca4f64dde5d60900796e708144acfb136ff1b6466bc4901",
+    "dispositions": "terminal-disposition-v1, extracted from the recorded 21 October audit output",
+    "dispositionReportContentSha256": "a54729c00e8b15818dcd67063db3f7c94be8012840e94b8ffa7de6510a990f8c",
+    "dispositionReportFileSha256": "a3f28bf835f8d6c4c891137deb121b978824716fc292fe6592cba0546492fed6",
+    "captures": "private offline copy of the capture store unioned with the ABST follow-up history"
+  },
+  "identity": {
+    "converter": "listing-identity-v1",
+    "datasetSha256": "444c05c05c72daeabc2a78094aa4217f08363559a3bc6e44d60d2e60ac45c433",
+    "declaredSymbols": [
+      "AAIC",
+      "AAWW",
+      "ABMD",
+      "ABST",
+      "ACB",
+      "ACC"
+    ],
+    "listings": 2,
+    "included": [
+      "ABST"
+    ],
+    "excluded": [
+      {
+        "symbol": "AAIC",
+        "reason": "venue-conflict"
+      },
+      {
+        "symbol": "ABST",
+        "reason": "historical-segment-uncorroborated"
+      },
+      {
+        "symbol": "ACC",
+        "reason": "venue-conflict"
+      }
+    ]
+  },
+  "prices": {
+    "converter": "listing-prices-v5",
+    "datasetSha256": "dcaae6caa4f6e0cb2b5c224a2ae9f5b1ca30741331812d6c70a9eac0ff94b885",
+    "synthetic": false,
+    "barsAdded": 1422,
+    "sessions": 689,
+    "actionsAdded": 12,
+    "firstSession": "2020-10-28",
+    "lastSession": "2023-07-26",
+    "reviewedFinalSessionPresent": "2023-07-26",
+    "refusedRowsAbsent": [
+      "2023-07-27"
+    ],
+    "terminalRowSkipped": 1,
+    "outsideIntervalSkipped": 0,
+    "inProgressSkipped": 0,
+    "unusedDispositions": [
+      "AAIC",
+      "AAWW",
+      "ABMD",
+      "ACB",
+      "ACC"
+    ],
+    "excluded": []
+  },
+  "actions": {
+    "converter": "terminal-actions-v1",
+    "datasetSha256": "b3a260f53ad6106c737a5d99b1c079ede95816fcae4316052529cdb7fc39ed7f",
+    "synthetic": false,
+    "actionsAdded": 1,
+    "action": {
+      "id": "listing-abst-20201028-delisting-20230726",
+      "listingId": "listing-abst-20201028",
+      "actionId": "listing-abst-20201028-delisting",
+      "action": "delisting",
+      "terminalOutcome": "cash",
+      "cashPerShare": 11.5,
+      "cashCurrency": "USD",
+      "effectiveAt": "2023-07-26T20:00:00+00:00",
+      "availableAt": "2026-10-21T19:00:03.3169687+00:00",
+      "availabilityEvidence": "conservativePolicy"
+    },
+    "omitted": [
+      {
+        "symbol": "AAIC",
+        "reason": "disposition-refused"
+      },
+      {
+        "symbol": "AAWW",
+        "reason": "listing-missing"
+      },
+      {
+        "symbol": "ABMD",
+        "reason": "disposition-refused"
+      },
+      {
+        "symbol": "ACB",
+        "reason": "disposition-refused"
+      },
+      {
+        "symbol": "ACC",
+        "reason": "disposition-refused"
+      }
+    ]
+  },
+  "panel": {
+    "refusal": "universe-panel-empty",
+    "finding": "No decision exists at which the delisting is knowable and the listing is still in the universe: the identity that establishes it is available only at capture time, by which the listing has already ended."
+  },
+  "coverageFindings": [
+    "AAIC and ACC are NYSE listings: identity refused them as venue-conflict, so neither prices nor terminal actions can cover them under the reviewed XNAS calendar.",
+    "AAIC, AAWW, ABMD and ACC histories begin 2010-01-04 and ACB's begins 2014-07-11, before the reviewed xnas-equities-2015-2026-v1 calendar. A multi-symbol conversion stops with price-conversion-calendar-range rather than extrapolating sessions.",
+    "ABST is the one symbol that completes the pipeline: its later capture widens the earlier window (2020-10-28 to 2023-07-27), so no price-conversion-vintage-narrower refusal, and its rows fall inside the reviewed calendar.",
+    "The refused rows in the 21 October dispositions are complete (counts equal list lengths), so no price-conversion-terminal-truncated refusal was raised."
+  ],
+  "limitations": [
+    "One of the four refused vendor rows is proven absent from a converted dataset (ABST 2023-07-27). The other three belong to symbols this pipeline cannot yet price, for the calendar and venue reasons above.",
+    "One of the two accepted outcomes is settled (ABST, USD 11.50 cash). AAWW is accepted but has no listing in this dataset.",
+    "Availability of the minted action is the retrieval of its cited documents (2026-10-21), not the filing's publication vintage, which the reviewed bundle does not record.",
+    "No panel or backtest realizes this terminal return yet; the wall-clock constraint recorded in listing-prices.md still applies.",
+    "Genuine captures and datasets: not committed. No model trial, holdout or broker request was involved."
+  ]
+}
