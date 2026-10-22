@@ -1,0 +1,75 @@
+# Executable prices and sizing (`execution-v1`)
+
+**Status: proposed, not implemented.** Written 22 October 2026 to settle the approach for the last named gap in the [roadmap](roadmap.md)'s P0 changing-universe row — "executable-price handling" — and the sizing/execution contract that the [raw GBP ledger](raw-gbp-ledger.md) explicitly defers. Nothing here is a claim that any order would have filled.
+
+## The problem
+
+Two separate questions are currently conflated into one flat cost rate.
+
+**What price could a trade have achieved?** `UniverseBacktest` fills at the decision-time close, and `RawGbpLedger.Fill` takes its price on trust. Both are wrong in the same way: the decision is made *after* the session closes, using that close, and the fill is then priced at that same close. That is only achievable in the closing auction, submitted before the decision was made. It is look-ahead, and the flat `HalfSpreadBps`/`SlippageBps` charge does not repair it — it prices the trade at information the trader had not yet acted on. The adjusted basis compounds the problem: `TotalReturnAdjusted` is a research series, not a quote anyone transacted at.
+
+**What size could a trade have been?** Notionals are fractional GBP with a minimum order and no share step, no volume participation and no rejection. `RawGbpLedger` records a supplied quantity and fee and says plainly that "quantity steps, minimum orders, spread, slippage and cost reserves belong to a later sizing/execution contract".
+
+## Proposed convention
+
+**Decide on the close, fill at the next session's open.**
+
+- A decision taken at the end of session *t* may use everything through *t*'s close, as today.
+- Its orders fill at session *t+1*'s **open**, on the **`Raw` basis** — execution is a share transaction, not a return index — converted with an explicit `Executable`-purpose FX observation when the listing is not GBP.
+- If no *t+1* session exists before the next decision — halt, suspension, delisting, or simply never captured — **every order that would have filled there is rejected** with a recorded reason. Nothing fills at the close that was just observed.
+
+The check is mechanical: a fill price must equal a bar open that became available *after* the decision that produced it. A test can therefore assert that filling at the decision close is impossible.
+
+## Sizing
+
+| Rule | Proposed v1 | Why |
+|---|---|---|
+| Quantity step | Integral shares (1) | A fractional fill is a broker feature, not a market fact. Explicit and testable. |
+| Minimum order | Listing-currency value, default from `ResearchCosts.MinimumOrderGbp` | Already the cost model's floor. |
+| Volume participation | At most 5% of the fill session's share volume | The bar carries raw `Volume`; a £20/month research portfolio is far under it, but the constraint must exist before larger notionals are used. |
+| Unfunded orders | Rejected | Never borrow, never scale down silently. |
+| Partial fills | Not modelled | A v1 order either fills whole or is rejected. |
+
+## Fill price and costs
+
+Spread and slippage move onto the **price**, so the executed price is explicit and comparable with the observed open:
+
+```
+buyFill  = open × (1 + halfSpreadBps + slippageBps)
+sellFill = open × (1 − halfSpreadBps − slippageBps)
+```
+
+`BuyTaxBps`, `FxBps` and `MinimumOrderGbp` stay as separately reported charges. Every receipt records the modelled fill **and** the observed open it derives from, so the distance between them is auditable rather than buried in a rate.
+
+## Refusals, never approximations
+
+| Reason | Meaning |
+|---|---|
+| `no-next-session` | No session after the decision before the next decision. |
+| `no-open` | The next bar carries no usable open. |
+| `open-not-observable` | The open is not available before the next decision (point-in-time). |
+| `below-minimum` | Order value under the minimum. |
+| `volume-participation` | Order exceeds the participation cap. |
+| `unsupported-action` | A split, merger, spinoff or delisting is effective between decision and fill; the ledger already refuses these. |
+| `insufficient-cash` | The buy cannot be funded after costs. |
+
+A rejected order leaves cash, holdings and fees unchanged — the ledger's existing atomicity rule.
+
+## Explicitly out of scope
+
+Order books and quotes, partial fills, intraday order timing, security-level taxes and fees, borrow and shorting, settlement cycles, broker rejection reasons, and any statement that a real order would have executed. A `ConservativePolicy` availability convention (next session open) is used for the fill bar; it is not evidence of the vendor's publication vintage.
+
+## Deliverables
+
+1. `ExecutionPolicy` and `ExecutionPlan` in `Twenty.Core.Research`: planned orders become `Fill | Rejected(reason)`.
+2. `RawGbpLedger.Fill` driven by the plan, so the price, quantity and fee it currently takes on trust are produced by a declared contract instead.
+3. `UniverseBacktest` gains an explicit execution mode. The existing notional mode stays, relabelled as research-notional and never called executable; the raw-fill mode refuses rather than filling at the close.
+4. Report disclosure: per-trade fill versus observed open, and rejection counts by reason.
+5. Tests: hand-verified fills at the next open, one per refusal reason, and the look-ahead regression.
+
+## Decisions wanted before implementation
+
+1. **Fill convention.** Strictly next open (recommended), or also allow a close-auction fill when the order is placed before the close? The latter needs intraday timing the dataset does not carry, so v1 cannot honour it honestly.
+2. **Quantity step.** Integral shares (recommended), or fractional to match Trading 212's ISA product?
+3. **Participation cap.** 5% of session volume (recommended), a different bound, or none in v1?
+4. **Keep the notional mode?** Recommended yes, relabelled — it is the only mode a genuine panel can run today.
