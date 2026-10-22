@@ -1,6 +1,6 @@
 # Executable prices and sizing (`execution-v1`)
 
-**Status: proposed, not implemented.** Written 22 October 2026 to settle the approach for the last named gap in the [roadmap](roadmap.md)'s P0 changing-universe row — "executable-price handling" — and the sizing/execution contract that the [raw GBP ledger](raw-gbp-ledger.md) explicitly defers. Nothing here is a claim that any order would have filled.
+**Status: planning core implemented 22 October 2026 (`ExecutionPlanner`, `FillPolicy`); backtest mode wiring and report disclosure are not.** Written to settle the approach for the last named gap in the [roadmap](roadmap.md)'s P0 changing-universe row — "executable-price handling" — and the sizing/execution contract that the [raw GBP ledger](raw-gbp-ledger.md) explicitly defers. Nothing here is a claim that any order would have filled.
 
 ## The problem
 
@@ -24,11 +24,11 @@ The check is mechanical: a fill price must equal a bar open that became availabl
 
 | Rule | Proposed v1 | Why |
 |---|---|---|
-| Quantity step | Integral shares (1) | A fractional fill is a broker feature, not a market fact. Explicit and testable. |
-| Minimum order | Listing-currency value, default from `ResearchCosts.MinimumOrderGbp` | Already the cost model's floor. |
+| Quantity step | **Fractional** (`QuantityStep` 0, the default; a positive step snaps down) | Agreed 22 October: a fractional fill is a broker product feature, and the research portfolio already sizes fractionally. The step is available for a caller who wants whole shares. |
+| Minimum order | In the **listing's own major currency**, default 1 | The planner is FX-free by design. The GBP floor stays in `ResearchCosts.MinimumOrderGbp` for the notional mode. |
 | Volume participation | At most 5% of the fill session's share volume | The bar carries raw `Volume`; a £20/month research portfolio is far under it, but the constraint must exist before larger notionals are used. |
-| Unfunded orders | Rejected | Never borrow, never scale down silently. |
-| Partial fills | Not modelled | A v1 order either fills whole or is rejected. |
+| Unfunded orders | Refused by the ledger (`raw-ledger-cash`), not here | Funding is account state; the planner decides only what market data can support. |
+| Partial fills | Not modelled | A v1 order either fills whole or is refused. |
 
 ## Fill price and costs
 
@@ -51,7 +51,9 @@ sellFill = open × (1 − halfSpreadBps − slippageBps)
 | `below-minimum` | Order value under the minimum. |
 | `volume-participation` | Order exceeds the participation cap. |
 | `unsupported-action` | A split, merger, spinoff or delisting is effective between decision and fill; the ledger already refuses these. |
-| `insufficient-cash` | The buy cannot be funded after costs. |
+| `invalid-order` | Not a trade: no listing, no positive notional, or a next decision that does not follow the decision. |
+
+Funding is deliberately **not** a planner refusal. It is account state, and `RawGbpLedger` already refuses an unfunded fill atomically (`raw-ledger-cash`), leaving cash, holdings and fees unchanged. The split keeps the planner a pure function of market data and the ledger the sole authority on what can be paid for.
 
 A rejected order leaves cash, holdings and fees unchanged — the ledger's existing atomicity rule.
 
@@ -61,15 +63,14 @@ Order books and quotes, partial fills, intraday order timing, security-level tax
 
 ## Deliverables
 
-1. `ExecutionPolicy` and `ExecutionPlan` in `Twenty.Core.Research`: planned orders become `Fill | Rejected(reason)`.
-2. `RawGbpLedger.Fill` driven by the plan, so the price, quantity and fee it currently takes on trust are produced by a declared contract instead.
+1. **Done.** `FillPolicy` and `ExecutionPlanner.Plan` in `Twenty.Core.Research`: planned orders become `Fill | Rejected(reason)`, with the modelled fill price, the observed open it derives from, and the bar id that evidences it. Eighteen authored cases cover the next-open fill on both sides, the look-ahead regression, and every refusal reason.
+2. `RawGbpLedger.Fill` driven by the plan, so the price and quantity it currently takes on trust are produced by this contract instead. The ledger is already the funding authority.
 3. `UniverseBacktest` gains an explicit execution mode. The existing notional mode stays, relabelled as research-notional and never called executable; the raw-fill mode refuses rather than filling at the close.
 4. Report disclosure: per-trade fill versus observed open, and rejection counts by reason.
-5. Tests: hand-verified fills at the next open, one per refusal reason, and the look-ahead regression.
 
-## Decisions wanted before implementation
+## Decisions recorded (22 October 2026)
 
-1. **Fill convention.** Strictly next open (recommended), or also allow a close-auction fill when the order is placed before the close? The latter needs intraday timing the dataset does not carry, so v1 cannot honour it honestly.
-2. **Quantity step.** Integral shares (recommended), or fractional to match Trading 212's ISA product?
-3. **Participation cap.** 5% of session volume (recommended), a different bound, or none in v1?
-4. **Keep the notional mode?** Recommended yes, relabelled — it is the only mode a genuine panel can run today.
+1. **Fill convention: strictly the next session's open.** A close-auction fill was rejected because it needs intraday timing the dataset does not carry.
+2. **Quantity step: fractional.** A fractional fill is a broker product feature, but the research portfolio already sizes fractionally; the step remains available.
+3. **Participation cap: 5% of the fill session's share volume.**
+4. **Keep the notional mode**, relabelled research-notional — it is the only mode a genuine panel can run today.
