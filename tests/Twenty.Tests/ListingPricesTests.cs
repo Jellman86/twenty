@@ -392,11 +392,20 @@ public sealed class ListingPricesTests
             // Weekdays except the explicitly known Labor Day closure in this authored window.
             if (day.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday) && day != new DateOnly(2024, 9, 2))
                 rows.Add((day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), 10m + ((day.DayNumber - new DateOnly(2024, 8, 1).DayNumber) % 7) * 0.25m, 0m, 1m));
+        // A second capture widens the first, so the panel can see one session at each endpoint of
+        // a period instead of one stale bar twice. Overlapping sessions keep the same closes.
+        var more = new List<(string Date, decimal Close, decimal Div, decimal Split)>(rows);
+        for (var day = new DateOnly(2024, 10, 11); day <= new DateOnly(2024, 11, 8); day = day.AddDays(1))
+            if (day.DayOfWeek is not (DayOfWeek.Saturday or DayOfWeek.Sunday))
+                more.Add((day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture), 10m + ((day.DayNumber - new DateOnly(2024, 8, 1).DayNumber) % 7) * 0.25m, 0m, 1m));
         Record(w.Store, "AAA", HistoryJson([.. rows]), DateTimeOffset.Parse("2024-10-11T12:00:00Z"));
+        Record(w.Store, "AAA", HistoryJson([.. more]), DateTimeOffset.Parse("2024-11-12T12:00:00Z"));
 
-        var result = ListingPrices.Convert(w.Store, identity.Dataset, "converted-fixture", DateTimeOffset.Parse("2024-12-01T12:00:00Z"));
+        var result = ListingPrices.Convert(w.Store, identity.Dataset, "converted-fixture", DateTimeOffset.Parse("2024-12-20T12:00:00Z"));
         Assert.Equal("NOH", Assert.Single(result.Excluded).Symbol);
-        Assert.Equal(2 * rows.Count, result.BarsAdded);
+        // Each capture emits a bar per session it carries, and the second vintage restates the
+        // sessions the first already had rather than replacing them.
+        Assert.Equal(2 * (rows.Count + more.Count), result.BarsAdded);
 
         var pit = new PointInTimeDataset(result.Dataset);
         var decisions = new[] { DateTimeOffset.Parse("2024-10-15T23:00:00Z"), DateTimeOffset.Parse("2024-11-15T23:00:00Z") };
@@ -409,12 +418,21 @@ public sealed class ListingPricesTests
         var ret = Assert.Single(period.Returns);
         Assert.Equal("listing-aaa-20150102", ret.ListingId);
         Assert.Equal(UniverseReturnStatus.Priced, ret.Status);
-        // Both endpoints resolve to the last captured bar (2024-10-10); pin its converted
-        // close so the zero return is not a flat-price artifact.
-        var lastClose = pit.AsOf(decisions[0]).Prices("listing-aaa-20150102", PriceBasis.TotalReturnAdjusted).Last().Close;
-        Assert.Equal(10m, lastClose);
-        Assert.Equal(0m, ret.Return);
+        // Both endpoints are read from the later vintage, so the period runs from the 15 October
+        // session to the last session at or before the later decision (8 November): 10.25/11.25 - 1.
+        Assert.Equal(10.25m / 11.25m - 1m, ret.Return!.Value);
         Assert.NotEmpty(pit.AsOf(decisions[0]).Prices("listing-aaa-20150102", PriceBasis.TotalReturnAdjusted));
+
+        // Nothing was captured after 8 November, so the following month contains no observed
+        // session at all: both endpoints resolve to that same bar, and the panel refuses to
+        // score it as a return rather than marking it flat.
+        var stale = ChangingUniversePanel.FromDataset(pit, ListingIdentity.UniverseId,
+            new[] { DateTimeOffset.Parse("2024-11-15T23:00:00Z"), DateTimeOffset.Parse("2024-12-15T23:00:00Z") },
+            TimeSpan.FromDays(45));
+        var staleReturn = Assert.Single(stale.Periods[0].Returns);
+        Assert.Equal(UniverseReturnStatus.NoObservedSession, staleReturn.Status);
+        Assert.Null(staleReturn.Return);
+        Assert.True(stale.HasGaps);
     }
     [Fact]
     public void ActionVintagesKeepTheirOwnRevisionChainsAndCanBeCancelled()

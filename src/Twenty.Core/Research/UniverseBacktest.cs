@@ -17,8 +17,9 @@ public sealed record UniverseBacktestReport(string EngineVersion, string PanelSh
 /// <summary>Monthly £20-style notional backtest over a changing-universe panel. Strategies are
 /// deliberately non-learned v1 baselines: equal-weight over every priced eligible listing,
 /// 12-1 momentum ranked by compounded trailing period returns, and cash. A panel with gaps
-/// (unexplained exits or missing prices) is refused outright: there is no honest way to step
-/// a portfolio through a month in which a possible holding has no return.</summary>
+/// (unexplained exits, missing prices, or a period in which no session was observed for an
+/// eligible listing) is refused outright: there is no honest way to step a portfolio through a
+/// month in which a possible holding has no return.</summary>
 public static class UniverseBacktest
 {
     public const string Version = "changing-universe-backtest-v3";

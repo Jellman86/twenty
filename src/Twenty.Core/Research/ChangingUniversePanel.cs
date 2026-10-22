@@ -7,7 +7,7 @@ using Twenty.Core.Data;
 namespace Twenty.Core.Research;
 
 // Preserve the numeric values in previously serialized reports when adding new statuses.
-public enum UniverseReturnStatus { Priced = 0, Entered = 1, TerminalZero = 2, TerminalCash = 3, ExitedUnexplained = 4, MissingPrice = 5, TerminalStock = 6 }
+public enum UniverseReturnStatus { Priced = 0, Entered = 1, TerminalZero = 2, TerminalCash = 3, ExitedUnexplained = 4, MissingPrice = 5, TerminalStock = 6, NoObservedSession = 7 }
 public sealed record UniverseMonth(DateTimeOffset DecisionAt, ImmutableArray<string> EligibleListingIds, ImmutableArray<string> UnpricedListingIds);
 public sealed record StockSettlement(string SuccessorListingId, decimal ExchangeRatio, decimal OriginalRawClose,
     decimal SuccessorRawClose);
@@ -36,9 +36,11 @@ public sealed class ChangingUniversePanel
     public ImmutableDictionary<UniverseReturnStatus, int> ReturnStatusCounts { get; }
     public string Sha256 { get; }
     /// <summary>True when any period contains an entry a simulator must not ignore:
-    /// an unexplained exit or a missing price for a previously eligible listing.</summary>
+    /// an unexplained exit, a missing price for a previously eligible listing, or a period in
+    /// which no session was observed for one.</summary>
     public bool HasGaps => ReturnStatusCounts.GetValueOrDefault(UniverseReturnStatus.ExitedUnexplained) > 0 ||
-        ReturnStatusCounts.GetValueOrDefault(UniverseReturnStatus.MissingPrice) > 0;
+        ReturnStatusCounts.GetValueOrDefault(UniverseReturnStatus.MissingPrice) > 0 ||
+        ReturnStatusCounts.GetValueOrDefault(UniverseReturnStatus.NoObservedSession) > 0;
 
     private ChangingUniversePanel(string datasetId, string universeId, bool synthetic, TimeSpan maximumPriceAge,
         ImmutableArray<UniverseMonth> months, ImmutableArray<UniversePeriod> periods)
@@ -148,6 +150,12 @@ public sealed class ChangingUniversePanel
                     if (to is null) { returns.Add(new(listing, UniverseReturnStatus.MissingPrice, null)); continue; }
                     if (to.Currency != from.Currency)
                         throw Fail("universe-panel-currency-change", "A continuing listing changed price currency; explicit FX handling is required.");
+                    // Both endpoints resolve to the same session, so nothing was observed to change
+                    // in between. Scoring that as a priced 0% would present a stale mark as an
+                    // observed return and quietly damp every volatility, hit-rate and momentum
+                    // figure built on it.
+                    if (to.SessionCloseAt == from.SessionCloseAt)
+                    { returns.Add(new(listing, UniverseReturnStatus.NoObservedSession, null)); continue; }
                     returns.Add(new(listing, UniverseReturnStatus.Priced, to.Major / from.Major - 1m));
                     continue;
                 }

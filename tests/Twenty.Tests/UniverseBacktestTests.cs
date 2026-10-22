@@ -250,6 +250,20 @@ public sealed class UniverseBacktestTests
     }
 
     [Fact]
+    public void AMonthWithNoObservedSessionIsRefusedNotAveragedAway()
+    {
+        // BBB has no bar in months 20 and 21, so both ends of period 19→20 resolve to the same
+        // session. Scoring it as a priced 0% would let the backtest average a stale mark into
+        // returns, volatility and momentum; it is a gap like any other.
+        var panel = Panel(Scenario(gapBbb: true));
+        var stale = Assert.Single(panel.Periods[19].Returns.Where(r => r.ListingId == "bbb"));
+        Assert.Equal(UniverseReturnStatus.NoObservedSession, stale.Status);
+        Assert.Null(stale.Return);
+        Assert.Equal("universe-backtest-gaps", Assert.Throws<ResearchException>(() =>
+            UniverseBacktest.Run(panel, new(), ZeroCosts)).Code);
+    }
+
+    [Fact]
     public void CostsReduceEqualWeightEquity()
     {
         var panel = Panel(Scenario());

@@ -243,6 +243,10 @@ public sealed class ChangingUniversePanelTests
     {
         // Last BBB bar is 29 February: fresh enough in March (31 days), stale by 30 April (61 days).
         var panel = Build(Scenario(bbbBarsAfterFebruary: false));
+        // February→March is the subtler case: both endpoints resolve to the same 29 February bar,
+        // so nothing was observed to change and the month is not a priced 0% return.
+        Assert.Equal(UniverseReturnStatus.NoObservedSession, Return(panel, 1, "bbb").Status);
+        Assert.Null(Return(panel, 1, "bbb").Return);
         Assert.Equal(UniverseReturnStatus.MissingPrice, Return(panel, 2, "bbb").Status);
         Assert.Contains("bbb", panel.Months[3].UnpricedListingIds);
         Assert.True(panel.HasGaps);
@@ -323,6 +327,7 @@ public sealed class ChangingUniversePanelTests
         Assert.Equal(4, (int)UniverseReturnStatus.ExitedUnexplained);
         Assert.Equal(5, (int)UniverseReturnStatus.MissingPrice);
         Assert.Equal(6, (int)UniverseReturnStatus.TerminalStock);
+        Assert.Equal(7, (int)UniverseReturnStatus.NoObservedSession);
     }
 
     [Fact]
