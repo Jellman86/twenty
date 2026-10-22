@@ -3,10 +3,10 @@ using Twenty.Core.Data;
 
 namespace Twenty.Core.Research;
 
-/// <summary>One decision point: the slice at which its fills become knowable, and the trades that
-/// decision wanted. The slice is deliberately later than the decision — a fill at the next
-/// session's open cannot be booked before that session happened.</summary>
-public sealed record RawExecutionStep(DataSlice Market, IReadOnlyList<PlannedOrder> Orders);
+/// <summary>One decision point. Valuation happens at the decision; the trades that decision wanted
+/// are priced and booked from a later slice, because a fill at the next session's open cannot be
+/// booked before that session happened.</summary>
+public sealed record RawExecutionStep(DataSlice DecisionMarket, DataSlice FillMarket, IReadOnlyList<PlannedOrder> Orders);
 
 public sealed record RawExecutionMonth(DateTimeOffset DecisionAt, decimal EquityGbp, decimal CashGbp,
     ImmutableArray<ExecutionFill> Fills, ImmutableArray<ExecutionRejection> Rejections);
@@ -33,32 +33,35 @@ public static class RawExecutionRun
             throw new ResearchException("invalid-execution-run");
         for (var i = 0; i < steps.Count; i++)
         {
-            if (steps[i] is null || steps[i].Market is null || steps[i].Orders is null)
+            if (steps[i] is null || steps[i].DecisionMarket is null || steps[i].FillMarket is null || steps[i].Orders is null)
                 throw new ResearchException("invalid-execution-run");
+            if (steps[i].FillMarket.DecisionAt < steps[i].DecisionMarket.DecisionAt)
+                throw new ResearchException("raw-execution-time");
             // A ledger is strictly ordered: a later decision cannot be booked before an earlier one.
-            if (i > 0 && steps[i].Market.DecisionAt < steps[i - 1].Market.DecisionAt)
+            if (i > 0 && steps[i].DecisionMarket.DecisionAt < steps[i - 1].DecisionMarket.DecisionAt)
                 throw new ResearchException("raw-execution-time");
         }
 
         var ledger = new RawGbpLedger();
-        ledger.Deposit("raw-execution-opening", steps[0].Market.DecisionAt, openingCashGbp);
+        ledger.Deposit("raw-execution-opening", steps[0].DecisionMarket.DecisionAt, openingCashGbp);
         var months = ImmutableArray.CreateBuilder<RawExecutionMonth>();
         for (var i = 0; i < steps.Count; i++)
         {
             var step = steps[i];
-            // Value before filling: these orders execute after the decision, so the equity this
-            // month reports is what the strategy had when it decided.
-            var value = ledger.Value(step.Market, maximumPriceAge, maximumFxAge, purpose);
-            var plan = ExecutionPlanner.Plan(step.Market, step.Orders, policy);
+            // Value at the decision, before it: the trades this decision wants are filled later,
+            // at the next session's open, so the equity it reports is what it was deciding with.
+            var value = ledger.Value(step.DecisionMarket, maximumPriceAge, maximumFxAge, purpose);
+            var plan = ExecutionPlanner.Plan(step.FillMarket, step.Orders, policy);
             for (var f = 0; f < plan.Fills.Length; f++)
             {
                 var fill = plan.Fills[f];
-                ledger.Fill($"raw-execution-{i}-{f}", step.Market, fill.ListingId, fill.Quantity,
+                ledger.Fill($"raw-execution-{i}-{f}", step.FillMarket, fill.ListingId, fill.Quantity,
                     fill.FillPrice, PriceBasis.Raw, feeGbp, maximumFxAge);
             }
             months.Add(new(value.At, value.EquityGbp, value.CashGbp, plan.Fills, plan.Rejections));
         }
-        return new(Version, openingCashGbp, ledger.Value(steps[^1].Market, maximumPriceAge, maximumFxAge, purpose).EquityGbp,
+        return new(Version, openingCashGbp,
+            ledger.Value(steps[^1].DecisionMarket, maximumPriceAge, maximumFxAge, purpose).EquityGbp,
             months.ToImmutable(),
             ["Equity is raw closes marked with the caller's explicit FX purpose, not a total-return index and not achievable GBP wealth.",
              "A fill is priced at the next session's open and booked whole or not at all; partial fills, order books, intraday timing, security-level taxes and settlement cycles are not modelled.",
