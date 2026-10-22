@@ -12,7 +12,8 @@ namespace Twenty.Ingestion.Listings;
 
 public sealed record ListingPricesExclusion(string Symbol, string Reason);
 public sealed record ListingPricesResult(DatasetFile Dataset, int BarsAdded, int ActionsAdded,
-    int OutsideIntervalSkipped, int InProgressSkipped, ImmutableArray<ListingPricesExclusion> Excluded);
+    int OutsideIntervalSkipped, int InProgressSkipped, int TerminalRowSkipped,
+    ImmutableArray<string> UnusedDispositions, ImmutableArray<ListingPricesExclusion> Excluded);
 
 /// <summary>
 /// Converts captured Tiingo daily histories into v1 PriceBar observations (raw and
@@ -27,25 +28,32 @@ public sealed record ListingPricesResult(DatasetFile Dataset, int BarsAdded, int
 /// or whose rows all fall outside its active listing interval is excluded with a recorded
 /// reason and dropped together with its identity rows. Rows outside the identity interval are
 /// counted, not converted; session closes follow the reviewed Nasdaq regular/early-close table so
-/// the session date survives DST. Conversion is a pure, deterministic function of the
-/// identity dataset and the store's captures, and re-converting an already-priced dataset
-/// is refused rather than silently revised (a rebuild supersedes by dataset id instead).</summary>
+/// the session date survives DST. An optional terminal disposition report bounds the same history
+/// with independently reviewed evidence: a vendor row the terminal audit refused as a non-session,
+/// or any row dated after an accepted subject's reviewed final session, is counted and never
+/// converted. Conversion is a pure, deterministic function of the identity dataset, the store's
+/// captures and the supplied dispositions, and re-converting an already-priced dataset is refused
+/// rather than silently revised (a rebuild supersedes by dataset id instead).</summary>
 public static class ListingPrices
 {
-    public const string Version = "listing-prices-v4";
+    public const string Version = "listing-prices-v5";
     public const string SourceId = "tiingo-history";
     public const string SourceLocation = "urn:twenty:capture:tiingo-history";
+    public const string TerminalSourceId = "terminal-disposition";
+    public const string TerminalSourceLocation = "urn:twenty:terminal-disposition";
     /// <summary>Relative tolerance between the adjustment factor implied by adjClose and the
     /// factors implied by adjOpen/adjHigh/adjLow on the same row.</summary>
     public const decimal AdjustmentTolerance = 0.000001m;
 
-    public static ListingPricesResult Convert(CaptureStore store, DatasetFile identity, string datasetId, DateTimeOffset createdAt)
+    public static ListingPricesResult Convert(CaptureStore store, DatasetFile identity, string datasetId, DateTimeOffset createdAt,
+        TerminalDispositionReport? dispositions = null)
     {
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(identity);
         if (string.IsNullOrWhiteSpace(datasetId)) throw new ResearchException("price-conversion-dataset-id");
         if (identity.Observations.OfType<PriceBar>().Any()) throw new ResearchException("price-conversion-duplicate");
-        if (identity.Manifest.Sources.Any(s => s.Id == SourceId)) throw new ResearchException("price-conversion-source-conflict");
+        if (identity.Manifest.Sources.Any(s => s.Id is SourceId or TerminalSourceId)) throw new ResearchException("price-conversion-source-conflict");
+        var terminalRules = TerminalRules(dispositions);
         var input = DatasetValidator.Validate(identity);
         if (!input.IsValid) throw new InvalidDatasetException(input);
         var calendars = identity.Manifest.Calendars.ToDictionary(c => c.Id, c => c.TimeZone, StringComparer.Ordinal);
@@ -68,11 +76,14 @@ public static class ListingPrices
         var actions = ImmutableArray.CreateBuilder<CorporateAction>();
         var usedCaptureTimes = new List<DateTimeOffset>();
         var usedCaptures = new HashSet<CaptureObservation>();
-        var outside = 0; var inProgress = 0; var barCount = 0; var actionCount = 0;
+        var outside = 0; var inProgress = 0; var terminalRows = 0; var barCount = 0; var actionCount = 0;
+        var usedDispositions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var listingId in listings.Keys.Order(StringComparer.Ordinal))
         {
             var rows = listings[listingId];
             var symbol = rows[0].Symbol;
+            var rule = ResolveTerminal(terminalRules, rows, usedDispositions);
+            var listingTerminalRows = 0;
             var ticker = rows[0].ProviderIds.FirstOrDefault(p => p.Namespace == "tiingo.ticker")?.Value ?? symbol;
             var captures = TiingoHistoryIdentity.Observations(store, ticker).OrderBy(c => c.ObservedAt).ThenBy(c => c.Id, StringComparer.Ordinal).ToArray();
             if (captures.Length == 0)
@@ -113,6 +124,10 @@ public static class ListingPrices
             var allDates = parsed.Values.SelectMany(h => h.Select(b => b.Date)).Distinct().OrderBy(d => d).ToArray();
             foreach (var date in allDates)
             {
+                // Terminal evidence outranks the identity interval: a row the audit refused as a
+                // non-session, or any row after a reviewed final session, is never a bar however
+                // the coverage-derived interval reads. Counted once per session date, like "outside".
+                if (rule is not null && rule.Refuses(date)) { terminalRows++; listingTerminalRows++; continue; }
                 if (!active.Any(iv => iv.From <= date && (iv.Until is null || date < iv.Until)))
                 { outside++; continue; }
                 // Count this row once for "outside" already handled above; emit per capture.
@@ -173,7 +188,10 @@ public static class ListingPrices
                 }
             }
             if (listingBars == 0)
-            { excluded.Add(new(symbol, "no-prices-in-interval")); excludedIds.Add(listingId); continue; }
+            {
+                excluded.Add(new(symbol, listingTerminalRows > 0 ? "terminal-rows-only" : "no-prices-in-interval"));
+                excludedIds.Add(listingId); continue;
+            }
             barCount += listingBars;
             usedCalendars.Add(rows[0].CalendarId);
         }
@@ -196,6 +214,14 @@ public static class ListingPrices
             CorporateAction a => !excludedIds.Contains(a.ListingId),
             _ => true
         });
+        var sources = manifest.Sources.Add(new SourceSnapshot(SourceId, SourceLocation,
+            "Tiingo daily price histories as captured under the configured subscription; not redistributed",
+            maxCapture, minCapture, historySha, Version, "Rebuild supersedes; prior datasets immutable"));
+        if (dispositions is not null)
+            sources = sources.Add(new SourceSnapshot(TerminalSourceId, TerminalSourceLocation,
+                "Reviewed terminal dispositions and their private source documents; not redistributed",
+                createdAt, null, TerminalReportHash(dispositions), TerminalDispositions.Version,
+                "Rebuild supersedes; prior datasets immutable"));
         var dataset = new DatasetFile(manifest with
         {
             DatasetId = datasetId,
@@ -203,13 +229,13 @@ public static class ListingPrices
             Calendars = manifest.Calendars.Select(c => usedCalendars.Contains(c.Id) ? NasdaqSessions.Reference(c.Id) : c).ToImmutableArray(),
             Features = [new FeatureDefinition("daily-prices", "v1",
                 "Captured Tiingo daily OHLC on raw and total-return bases", "Available at capture time only")],
-            Sources = manifest.Sources.Add(new SourceSnapshot(SourceId, SourceLocation,
-                "Tiingo daily price histories as captured under the configured subscription; not redistributed",
-                maxCapture, minCapture, historySha, Version, "Rebuild supersedes; prior datasets immutable"))
+            Sources = sources
         }, kept.Concat(bars.ToImmutable()).Concat(actions.ToImmutable()).ToImmutableArray());
         var validation = DatasetValidator.Validate(dataset);
         if (!validation.IsValid) throw new InvalidDatasetException(validation);
-        return new(dataset, barCount, actionCount, outside, inProgress,
+        return new(dataset, barCount, actionCount, outside, inProgress, terminalRows,
+            terminalRules.Keys.Except(usedDispositions, StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x, StringComparer.Ordinal).ToImmutableArray(),
             excluded.ToImmutable().OrderBy(x => x.Symbol, StringComparer.Ordinal).ToImmutableArray());
     }
 
@@ -224,4 +250,53 @@ public static class ListingPrices
         bool Same(decimal adjusted, decimal raw) => Math.Abs(adjusted / raw / factor - 1m) <= AdjustmentTolerance;
         return Same(bar.AdjOpen, bar.Open) && Same(bar.AdjHigh, bar.High) && Same(bar.AdjLow, bar.Low);
     }
+
+    // Terminal evidence for one symbol: the reviewed final session (accepted subjects only) and the
+    // vendor rows the terminal audit refused as non-sessions. Ticker matching is case-insensitive
+    // because symbols are compared across artifacts; an ambiguous match is refused, never guessed.
+    private sealed record TerminalRule(string Symbol, DateOnly? FinalSession, ImmutableHashSet<DateOnly> RefusedRows)
+    {
+        public bool Refuses(DateOnly date) => RefusedRows.Contains(date) || (FinalSession is { } final && date > final);
+    }
+
+    private static Dictionary<string, TerminalRule> TerminalRules(TerminalDispositionReport? dispositions)
+    {
+        var rules = new Dictionary<string, TerminalRule>(StringComparer.OrdinalIgnoreCase);
+        if (dispositions is null) return rules;
+        static bool Digest(string? value) => value is { Length: 64 } && value.All(char.IsAsciiHexDigitLower);
+        if (dispositions.Version != TerminalDispositions.Version || dispositions.Subjects.IsDefault ||
+            !Digest(dispositions.AuditReportSha256) || !Digest(dispositions.ReferenceSha256) ||
+            dispositions.Subjects.Length > 50 || dispositions.Subjects.Any(s => s is null || string.IsNullOrWhiteSpace(s.Symbol) ||
+            s.RefusedRows.IsDefault || s.Outcome is not ("accepted" or "refused") ||
+            (s.Outcome == "accepted") != (s.FinalSession is not null)))
+            throw new ResearchException("price-conversion-terminal-shape");
+        if (dispositions.Accepted != dispositions.Subjects.Count(s => s.Outcome == "accepted") ||
+            dispositions.Refused != dispositions.Subjects.Count(s => s.Outcome == "refused"))
+            throw new ResearchException("price-conversion-terminal-shape");
+        foreach (var subject in dispositions.Subjects)
+        {
+            // The audit's refused-row date list is capped, so a truncated list cannot bound history.
+            if (subject.RefusedRowCount != subject.RefusedRows.Length)
+                throw new ResearchException("price-conversion-terminal-truncated");
+            if (!rules.TryAdd(subject.Symbol, new(subject.Symbol, subject.FinalSession, subject.RefusedRows.ToImmutableHashSet())))
+                throw new ResearchException("price-conversion-terminal-conflict");
+        }
+        return rules;
+    }
+
+    private static TerminalRule? ResolveTerminal(Dictionary<string, TerminalRule> rules, ImmutableArray<Listing> rows, HashSet<string> used)
+    {
+        if (rules.Count == 0) return null;
+        var names = rows.Select(r => r.Symbol)
+            .Concat(rows.SelectMany(r => r.ProviderIds).Where(p => p is not null && p.Namespace == "tiingo.ticker").Select(p => p.Value))
+            .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var matches = rules.Where(r => names.Contains(r.Key, StringComparer.OrdinalIgnoreCase)).Select(r => r.Value).ToArray();
+        if (matches.Length > 1) throw new ResearchException("price-conversion-terminal-conflict");
+        if (matches.Length == 0) return null;
+        used.Add(matches[0].Symbol);
+        return matches[0];
+    }
+
+    private static string TerminalReportHash(TerminalDispositionReport report) =>
+        CaptureStore.Hash(JsonSerializer.SerializeToUtf8Bytes(report, DatasetJson.Options));
 }

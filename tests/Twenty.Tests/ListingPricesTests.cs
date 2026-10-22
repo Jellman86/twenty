@@ -526,4 +526,167 @@ public sealed class ListingPricesTests
         Assert.Equal("price-conversion-calendar", error.Code);
     }
 
+    // --- Terminal dispositions bound the converted history (V1-03) ---
+
+    private static readonly DateOnly Jan2 = new(2026, 1, 2), Jan5 = new(2026, 1, 5), Jan6 = new(2026, 1, 6);
+
+    private static TerminalDispositionReport Dispositions(
+        params (string Symbol, string Outcome, DateOnly? Final, DateOnly[] Refused)[] subjects) =>
+        new(TerminalDispositions.Version, new string('d', 64), TerminalHistoryAudit.Version, new string('e', 64),
+            subjects.Select(s => new TerminalDisposition(s.Symbol, s.Outcome, s.Final, [],
+                s.Refused.Length, [.. s.Refused], [])).ToImmutableArray(),
+            subjects.Count(s => s.Outcome == "accepted"), subjects.Count(s => s.Outcome == "refused"),
+            ["Authored fixture; no market data"]);
+
+    [Fact]
+    public void ConversionWithoutDispositionsIsUnchanged()
+    {
+        using var w = new Workspace();
+        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
+        Record(w.Store, "OLD", HistoryJson(OldBars), CaptureAt);
+
+        var result = ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "no-terminal", Created);
+
+        Assert.Equal(0, result.TerminalRowSkipped);
+        Assert.Empty(result.UnusedDispositions);
+        Assert.DoesNotContain(result.Dataset.Manifest.Sources, s => s.Id == ListingPrices.TerminalSourceId);
+        Assert.Equal(2 * (AaaBars.Length + OldBars.Length), result.BarsAdded);
+        Assert.True(DatasetValidator.Validate(result.Dataset).IsValid);
+    }
+
+    [Fact]
+    public void AnAcceptedFinalSessionBoundsConvertedHistory()
+    {
+        using var w = new Workspace();
+        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
+        Record(w.Store, "OLD", HistoryJson(OldBars), CaptureAt);
+        // AAA's reviewed final session is 2026-01-05 and 2026-01-06 is separately a refused
+        // non-session row, so it is refused twice over while counting once.
+        var report = Dispositions(("AAA", "accepted", Jan5, [Jan6]));
+
+        var result = ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "terminal-bounded", Created, report);
+
+        Assert.Equal(4, result.TerminalRowSkipped);
+        Assert.Equal(0, result.OutsideIntervalSkipped);
+        Assert.Equal(2 * (2 + OldBars.Length), result.BarsAdded);
+        var dates = result.Dataset.Observations.OfType<PriceBar>().Where(b => b.Basis == PriceBasis.Raw)
+            .Select(b => b.SessionDate).ToImmutableHashSet();
+        Assert.Contains(Jan2, dates);
+        Assert.Contains(Jan5, dates);
+        Assert.DoesNotContain(Jan6, dates);
+        Assert.DoesNotContain(new DateOnly(2026, 1, 7), dates);
+        Assert.DoesNotContain(new DateOnly(2026, 7, 2), dates);
+        // The evidence that bounded the history is bound into the dataset in turn.
+        var source = Assert.Single(result.Dataset.Manifest.Sources.Where(s => s.Id == ListingPrices.TerminalSourceId));
+        Assert.Equal(Created, source.RetrievedAt);
+        Assert.Equal(TerminalDispositions.Version, source.ParserVersion);
+        Assert.True(DatasetValidator.Validate(result.Dataset).IsValid);
+    }
+
+    [Fact]
+    public void RefusedNonSessionRowsAreNeverConvertedEvenForARefusedSubject()
+    {
+        using var w = new Workspace();
+        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
+        Record(w.Store, "OLD", HistoryJson(OldBars), CaptureAt);
+        // A refused subject has no reviewed final session, so only the cited non-session rows go
+        // and the rest of its captured history still converts. The rows stay in the capture.
+        var report = Dispositions(("AAA", "refused", null, [Jan6]));
+
+        var result = ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "refused-rows", Created, report);
+
+        Assert.Equal(1, result.TerminalRowSkipped);
+        Assert.Equal(2 * (AaaBars.Length - 1 + OldBars.Length), result.BarsAdded);
+        Assert.DoesNotContain(result.Dataset.Observations.OfType<PriceBar>(), b => b.SessionDate == Jan6);
+        Assert.Empty(result.UnusedDispositions);
+        Assert.True(DatasetValidator.Validate(result.Dataset).IsValid);
+    }
+
+    [Fact]
+    public void DispositionsThatMatchNoListingAreReportedNotSilentlyIgnored()
+    {
+        using var w = new Workspace();
+        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
+        Record(w.Store, "OLD", HistoryJson(OldBars), CaptureAt);
+        var report = Dispositions(("AAA", "accepted", Jan5, []), ("ZZZ", "accepted", new DateOnly(2020, 1, 2), []));
+
+        var result = ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "unused-dispositions", Created, report);
+
+        Assert.Equal(new[] { "ZZZ" }, result.UnusedDispositions.ToArray());
+        Assert.Equal(2 * (2 + OldBars.Length), result.BarsAdded);
+    }
+
+    [Fact]
+    public void ATruncatedRefusedRowListCannotBoundHistory()
+    {
+        using var w = new Workspace();
+        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
+        // The audit caps its recorded refused-row dates, so a subject reporting more refusals
+        // than dates cannot be used to bound history: unlisted rows would still convert.
+        var report = Dispositions(("AAA", "accepted", Jan5, []));
+        var truncated = report with { Subjects = [report.Subjects[0] with { RefusedRowCount = 100 }] };
+
+        var error = Assert.Throws<ResearchException>(() =>
+            ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "truncated", Created, truncated));
+        Assert.Equal("price-conversion-terminal-truncated", error.Code);
+    }
+
+    [Theory]
+    [InlineData("version")]
+    [InlineData("outcome")]
+    [InlineData("missing-final-session")]
+    [InlineData("counts")]
+    [InlineData("digest")]
+    public void AMalformedDispositionReportIsRefused(string kind)
+    {
+        using var w = new Workspace();
+        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
+        var subject = new TerminalDisposition("AAA", "accepted", Jan5, [], 0, [], []);
+        var report = Dispositions(("AAA", "accepted", Jan5, []));
+        var shaped = kind switch
+        {
+            "version" => report with { Version = "terminal-disposition-v0" },
+            "outcome" => report with { Subjects = [subject with { Outcome = "maybe" }] },
+            "missing-final-session" => report with { Subjects = [subject with { FinalSession = null }] },
+            "counts" => report with { Refused = 9 },
+            _ => report with { AuditReportSha256 = "not-a-content-digest" }
+        };
+
+        var error = Assert.Throws<ResearchException>(() =>
+            ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "malformed", Created, shaped));
+        Assert.Equal("price-conversion-terminal-shape", error.Code);
+    }
+
+    [Fact]
+    public void DuplicateDispositionSymbolsAreRefused()
+    {
+        using var w = new Workspace();
+        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
+        var subject = new TerminalDisposition("AAA", "accepted", Jan5, [], 0, [], []);
+        var report = Dispositions(("AAA", "accepted", Jan5, [])) with { Subjects = [subject, subject], Accepted = 2 };
+
+        var error = Assert.Throws<ResearchException>(() =>
+            ListingPrices.Convert(w.Store, BaseIdentity().Dataset, "duplicate-subject", Created, report));
+        Assert.Equal("price-conversion-terminal-conflict", error.Code);
+    }
+
+    [Fact]
+    public void OneListingMatchingTwoDispositionSymbolsIsRefused()
+    {
+        using var w = new Workspace();
+        Record(w.Store, "AAA", HistoryJson(AaaBars), CaptureAt);
+        Record(w.Store, "OLD", HistoryJson(OldBars), CaptureAt);
+        // AAA's producer identifier names another vintage of the same listing, so two disposition
+        // subjects both reach it. Which one governs is not guessable, so the run fails closed.
+        var identity = BaseIdentity().Dataset;
+        identity = identity with { Observations = identity.Observations.Select(o => o is Listing l && l.ListingId == "listing-aaa-20150102"
+            ? l with { ProviderIds = l.ProviderIds.Select(p => p.Namespace == "tiingo.ticker" ? p with { Value = "AAX" } : p).ToImmutableArray() }
+            : o).ToImmutableArray() };
+        var report = Dispositions(("AAA", "accepted", Jan5, []), ("AAX", "refused", null, []));
+
+        var error = Assert.Throws<ResearchException>(() =>
+            ListingPrices.Convert(w.Store, identity, "ambiguous-terminal", Created, report));
+        Assert.Equal("price-conversion-terminal-conflict", error.Code);
+    }
+
 }
