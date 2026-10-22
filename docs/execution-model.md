@@ -1,6 +1,6 @@
 # Executable prices and sizing (`execution-v1`)
 
-**Status: planning core implemented 22 October 2026 (`ExecutionPlanner`, `FillPolicy`); backtest mode wiring and report disclosure are not.** Written to settle the approach for the last named gap in the [roadmap](roadmap.md)'s P0 changing-universe row — "executable-price handling" — and the sizing/execution contract that the [raw GBP ledger](raw-gbp-ledger.md) explicitly defers. Nothing here is a claim that any order would have filled.
+**Status: planner and raw settlement run implemented 22 October 2026 (`ExecutionPlanner`, `FillPolicy`, `RawExecutionRun`); backtest mode exposure and report disclosure are not.** Written to settle the approach for the last named gap in the [roadmap](roadmap.md)'s P0 changing-universe row — "executable-price handling" — and the sizing/execution contract that the [raw GBP ledger](raw-gbp-ledger.md) explicitly defers. Nothing here is a claim that any order would have filled.
 
 ## The problem
 
@@ -63,9 +63,9 @@ Order books and quotes, partial fills, intraday order timing, security-level tax
 
 ## Deliverables
 
-1. **Done.** `FillPolicy` and `ExecutionPlanner.Plan` in `Twenty.Core.Research`: planned orders become `Fill | Rejected(reason)`, with the modelled fill price, the observed open it derives from, and the bar id that evidences it. Eighteen authored cases cover the next-open fill on both sides, the look-ahead regression, and every refusal reason.
-2. `RawGbpLedger.Fill` driven by the plan, so the price and quantity it currently takes on trust are produced by this contract instead. The ledger is already the funding authority.
-3. `UniverseBacktest` gains an explicit execution mode. The existing notional mode stays, relabelled as research-notional and never called executable; the raw-fill mode refuses rather than filling at the close.
+1. **Done.** `FillPolicy` and `ExecutionPlanner.Plan` in `Twenty.Core.Research`: planned orders become `Fill | Rejected(reason)`, with the modelled fill price, the observed open it derives from, and the bar id that evidences it.
+2. **Done.** `RawExecutionRun` settles a sequence of decision points through the planner into a `RawGbpLedger`, so the price and quantity the ledger takes on trust are produced by this contract instead. Valuation is raw closes with the caller's explicit FX purpose, taken **before** each month's fills because those fills happen after the decision. It is deliberately separate from the notional engine, which is never relabelled as executable.
+3. `UniverseBacktest` exposes the raw run beside the research-notional mode rather than only alongside it.
 4. Report disclosure: per-trade fill versus observed open, and rejection counts by reason.
 
 ## Decisions recorded (22 October 2026)
