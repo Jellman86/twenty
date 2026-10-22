@@ -3,10 +3,12 @@ using Twenty.Core.Data;
 
 namespace Twenty.Core.Research;
 
-/// <summary>One decision point. Valuation happens at the decision; the trades that decision wanted
+/// <summary>One decision point. Valuation happens at the decision; the trades that decision wants
 /// are priced and booked from a later slice, because a fill at the next session's open cannot be
-/// booked before that session happened.</summary>
-public sealed record RawExecutionStep(DataSlice DecisionMarket, DataSlice FillMarket, IReadOnlyList<PlannedOrder> Orders);
+/// booked before that session happened. Orders are derived from the valuation at that decision, so
+/// a rebalance can size itself against what the portfolio actually holds.</summary>
+public sealed record RawExecutionStep(DataSlice DecisionMarket, DataSlice FillMarket,
+    Func<RawGbpValuation, IReadOnlyList<PlannedOrder>> Orders);
 
 public sealed record RawExecutionMonth(DateTimeOffset DecisionAt, decimal EquityGbp, decimal CashGbp,
     ImmutableArray<ExecutionFill> Fills, ImmutableArray<ExecutionRejection> Rejections);
@@ -51,7 +53,8 @@ public static class RawExecutionRun
             // Value at the decision, before it: the trades this decision wants are filled later,
             // at the next session's open, so the equity it reports is what it was deciding with.
             var value = ledger.Value(step.DecisionMarket, maximumPriceAge, maximumFxAge, purpose);
-            var plan = ExecutionPlanner.Plan(step.FillMarket, step.Orders, policy);
+            var orders = step.Orders(value) ?? [];
+            var plan = ExecutionPlanner.Plan(step.FillMarket, orders, policy);
             for (var f = 0; f < plan.Fills.Length; f++)
             {
                 var fill = plan.Fills[f];

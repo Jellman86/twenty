@@ -51,9 +51,9 @@ public sealed class RawExecutionRunTests
     /// <summary>Three decisions: one buys at the next open, the next two only revalue.</summary>
     private static RawExecutionStep[] Stepped() =>
     [
-        new(Slice(Jan31), Slice(Feb20), [Buy(1100m)]),
-        new(Slice(Feb29), Slice(Mar20), Array.Empty<PlannedOrder>()),
-        new(Slice(Mar20), Slice(Mar20), Array.Empty<PlannedOrder>())
+        new(Slice(Jan31), Slice(Feb20), _ => [Buy(1100m)]),
+        new(Slice(Feb29), Slice(Mar20), _ => Array.Empty<PlannedOrder>()),
+        new(Slice(Mar20), Slice(Mar20), _ => Array.Empty<PlannedOrder>())
     ];
 
     [Fact]
@@ -86,7 +86,7 @@ public sealed class RawExecutionRunTests
     public void ARefusedOrderLeavesCashAndHoldingsExactlyAsTheyWere()
     {
         // 5% of the 15 February session's 100,000 shares is 5,000; this wants about 9,091.
-        var steps = new[] { new RawExecutionStep(Slice(Jan31), Slice(Feb20), [Buy(1000000m)]) };
+        var steps = new[] { new RawExecutionStep(Slice(Jan31), Slice(Feb20), _ => [Buy(1000000m)]) };
         var result = RawExecutionRun.Run(steps, 2000m, Flat with { MaximumParticipation = 0.05m }, 1m, MaxAge, MaxAge);
 
         Assert.Empty(result.Months[0].Fills);
@@ -108,8 +108,8 @@ public sealed class RawExecutionRunTests
     [Fact]
     public void StepsMustArriveInTimeOrder()
     {
-        var late = new RawExecutionStep(Slice(Mar20), Slice(Mar20), Array.Empty<PlannedOrder>());
-        var early = new RawExecutionStep(Slice(Feb20), Slice(Feb20), Array.Empty<PlannedOrder>());
+        var late = new RawExecutionStep(Slice(Mar20), Slice(Mar20), _ => Array.Empty<PlannedOrder>());
+        var early = new RawExecutionStep(Slice(Feb20), Slice(Feb20), _ => Array.Empty<PlannedOrder>());
         Assert.Equal("raw-execution-time", Assert.Throws<ResearchException>(() =>
             RawExecutionRun.Run([late, early], 2000m, Flat, 1m, MaxAge, MaxAge)).Code);
     }
@@ -117,7 +117,7 @@ public sealed class RawExecutionRunTests
     [Fact]
     public void AFillSliceCannotPredateItsOwnDecision()
     {
-        var step = new RawExecutionStep(Slice(Mar20), Slice(Feb20), Array.Empty<PlannedOrder>());
+        var step = new RawExecutionStep(Slice(Mar20), Slice(Feb20), _ => Array.Empty<PlannedOrder>());
         Assert.Equal("raw-execution-time", Assert.Throws<ResearchException>(() =>
             RawExecutionRun.Run([step], 2000m, Flat, 1m, MaxAge, MaxAge)).Code);
     }
@@ -130,13 +130,13 @@ public sealed class RawExecutionRunTests
         Assert.Equal("invalid-execution-run", Assert.Throws<ResearchException>(() =>
             RawExecutionRun.Run([], opening, Flat, 1m, MaxAge, MaxAge)).Code);
         Assert.Equal("invalid-execution-run", Assert.Throws<ResearchException>(() =>
-            RawExecutionRun.Run([new RawExecutionStep(Slice(Feb20), Slice(Feb20), [])], opening, Flat, 1m, MaxAge, MaxAge)).Code);
+            RawExecutionRun.Run([new RawExecutionStep(Slice(Feb20), Slice(Feb20), _ => [])], opening, Flat, 1m, MaxAge, MaxAge)).Code);
     }
 
     [Fact]
     public void ANegativeFeeIsRefusedBeforeAnythingIsBooked()
     {
         Assert.Equal("invalid-execution-run", Assert.Throws<ResearchException>(() =>
-            RawExecutionRun.Run([new RawExecutionStep(Slice(Feb20), Slice(Feb20), [])], 2000m, Flat, -1m, MaxAge, MaxAge)).Code);
+            RawExecutionRun.Run([new RawExecutionStep(Slice(Feb20), Slice(Feb20), _ => [])], 2000m, Flat, -1m, MaxAge, MaxAge)).Code);
     }
 }
