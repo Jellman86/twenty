@@ -51,3 +51,7 @@ A fresh authored compatibility clone under the final assemblies also preserves t
 ## Source-bound modelled fills (22 October 2026)
 
 The [v3 execution path](execution-timing.md) can attach a verified plan/calendar to a fill. The ledger rechecks the exact raw session, source snapshots/hashes and pinned FX as of the modelled open, retains that evidence separately from booking time, and opens the holding at the modelled execution instant. Backdated receipts cannot spend later funds or omit an intervening economic action. Existing calls without this evidence retain the explicit supplied-price/booking-FX reference contract. This is offline accounting validation, with no broker route or actual-fill certification.
+
+## Independent arithmetic parity
+
+[Six shared authored scenarios](raw-accounting-parity.md) now exercise the real ledger and a separate Python decimal reference against original checkpoint answers. This covers bounded arithmetic examples, including pence, split quantities, withholding and post-retirement dividends; it does not establish genuine execution, source validity or complete raw-strategy integration.
