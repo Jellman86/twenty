@@ -2,6 +2,8 @@
 
 `ValueWithDividendReceivables` extends the offline [dividend reference](raw-dividend-accounting.md) with a separately labelled estimate of unpaid income. It has no web/broker/study route. The existing `Value` method still refuses unpaid claims, and existing report types and dataset schemas are unchanged. This is a reference accounting dependency, not completed changing-universe backtest integration or investment evidence.
 
+The later [complete claim mark and explicit replay](raw-claim-replay.md) includes pending terminal cash/stock consideration alongside dividends. This dividend-only method retains its pending-terminal refusal.
+
 ## Every pending claim and every assumption
 
 The caller supplies exactly one `RawDividendMarkAssumption` for each unpaid entitlement, keyed by listing/action identity. Missing, duplicate, unknown, already-paid or null entries fail closed. There is no zero-tax/zero-fee default. Each assumption names the original cash currency, expected withholding in local major units, expected GBP fee, availability time, source reference and SHA-256. Currency must match, withholding must lie within gross, fees must be non-negative and the source/assumption must already be available at the mark time. Hash shape validation does not authenticate its source contents.
