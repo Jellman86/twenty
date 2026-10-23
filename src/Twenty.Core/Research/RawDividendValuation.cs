@@ -16,7 +16,19 @@ public sealed partial class RawGbpLedger
         FxPurpose purpose, ImmutableArray<RawDividendMarkAssumption> assumptions)
     {
         ArgumentNullException.ThrowIfNull(market);
-        var pending = DividendEntitlements.Where(d => d.PaidAt is null).ToArray();
+        var pending = ValidateDividendMarks(market, assumptions, DividendEntitlements);
+        // Preserve this API's settled-terminal contract. Only the complete wrapper
+        // may mark pending terminal claims alongside dividends.
+        var portfolio = ValueCore(market, maximumPriceAge, maximumFxAge, purpose, requireSettledDividends: false);
+        var values = MarkDividends(market, maximumFxAge, purpose, pending);
+        var income = values.Sum(v => v.ExpectedValueGbp);
+        return new(portfolio, values, income, portfolio.EquityGbp + income);
+    }
+
+    private static ImmutableArray<(RawDividendEntitlement Claim, RawDividendMarkAssumption Assumption)> ValidateDividendMarks(
+        DataSlice market, ImmutableArray<RawDividendMarkAssumption> assumptions, ImmutableArray<RawDividendEntitlement> entitlements)
+    {
+        var pending = entitlements.Where(d => d.PaidAt is null).ToArray();
         if (assumptions.IsDefault || assumptions.Length != pending.Length || assumptions.Any(a => a is null) ||
             assumptions.Select(a => (a.ListingId, a.ActionId)).Distinct().Count() != assumptions.Length)
             throw new ResearchException("raw-ledger-dividend-valuation");
@@ -29,13 +41,15 @@ public sealed partial class RawGbpLedger
                 !LedgerSource(assumption.SourceReference, assumption.ContentSha256))
                 throw new ResearchException("raw-ledger-dividend-valuation");
         }
-        // The ordinary valuation keeps its settled-only contract. This explicit wrapper
-        // accounts for every pending claim rather than dropping it from portfolio equity.
-        var portfolio = ValueCore(market, maximumPriceAge, maximumFxAge, purpose, requireSettledDividends: false);
+        return pending.Select(claim => (claim, byAction[(claim.ListingId, claim.ActionId)])).ToImmutableArray();
+    }
+
+    private static ImmutableArray<RawDividendReceivableValue> MarkDividends(DataSlice market, TimeSpan maximumFxAge,
+        FxPurpose purpose, ImmutableArray<(RawDividendEntitlement Claim, RawDividendMarkAssumption Assumption)> pending)
+    {
         var values = ImmutableArray.CreateBuilder<RawDividendReceivableValue>();
-        foreach (var claim in pending)
+        foreach (var (claim, assumption) in pending)
         {
-            var assumption = byAction[(claim.ListingId, claim.ActionId)];
             var net = claim.GrossLocal - assumption.ExpectedWithheldLocal;
             decimal? rate = null; string? fxId = null;
             if (net > 0)
@@ -45,7 +59,6 @@ public sealed partial class RawGbpLedger
             }
             values.Add(new(claim, assumption, fxId, rate, net, net * (rate ?? 0) - assumption.ExpectedFeeGbp));
         }
-        var income = values.Sum(v => v.ExpectedValueGbp);
-        return new(portfolio, values.ToImmutable(), income, portfolio.EquityGbp + income);
+        return values.ToImmutable();
     }
 }

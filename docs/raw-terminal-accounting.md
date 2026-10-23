@@ -14,7 +14,7 @@ A confirmed zero outcome writes off the shares without creating cash, fees or FX
 
 ## Pending claims are not spendable holdings
 
-Cash and stock claims remain pending until explicitly settled. Neither cash nor successor shares are credited on capture. Ordinary valuation and the dividend-receivable wrapper refuse `raw-ledger-terminal-unsettled` rather than omit the pending value. Other purchases can spend existing cash only. Terminal receivable valuation, event scheduling and portfolio returns across unresolved settlement lags remain unimplemented; retirement does not make the claim economically worthless.
+Cash and stock claims remain pending until explicitly settled. Neither cash nor successor shares are credited on capture. Ordinary valuation and the dividend-receivable wrapper refuse `raw-ledger-terminal-unsettled` rather than omit the pending value. Other purchases can spend existing cash only. The explicit [complete claim valuation and replay reference](raw-claim-replay.md) now estimates both terminal and dividend receivables together. Automatic event scheduling and registered portfolio returns across unresolved settlement lags remain unimplemented; retirement does not make the claim economically worthless.
 
 ## One exact settlement
 

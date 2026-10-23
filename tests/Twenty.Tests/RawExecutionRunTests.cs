@@ -290,4 +290,46 @@ public sealed class RawExecutionRunTests
             [new(Slice(Jan31), Slice(Feb20), _ => [Buy(2000)])], 2000, Flat, 1, MaxAge, MaxAge, Calendar)).Code);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ExplicitReplayRevalidatesModelledFillAndCannotSpendLaterDeposits(bool laterDeposit)
+    {
+        var booking = Slice(Feb20);
+        var fill = Assert.Single(ExecutionPlanner.Plan(booking, [Buy(1100)], Flat, Calendar, MaxAge).Fills);
+        var events = new List<RawReplayItem>
+        {
+            new("opening", 0, Slice(Jan31), new RawReplayDeposit(laterDeposit ? 100 : 2000))
+        };
+        if (laterDeposit) events.Add(new("late-deposit", 1, Slice(Feb20.AddHours(-1)), new RawReplayDeposit(1900)));
+        events.Add(new("fill", events.Count, booking, new RawReplayModelledFill(Buy(1100), Flat, fill, 1, Calendar)));
+        events.Add(new("closing", events.Count, booking, new RawReplayMark([], [])));
+        if (laterDeposit)
+            Assert.Equal("raw-replay-execution-time", Assert.Throws<ResearchException>(() => RawEventReplay.Run(events, MaxAge, MaxAge, FxPurpose.Executable)).Code);
+        else
+        {
+            var result = RawEventReplay.Run(events, MaxAge, MaxAge, FxPurpose.Executable);
+            Assert.Equal(1999, result.Marks[0].Valuation.ExpectedEquityGbp);
+            Assert.Equal(899, result.CashGbp); Assert.Equal(fill, result.Entries[1].ModelledExecution);
+            events[1] = events[1] with { Operation = new RawReplayModelledFill(Buy(1100), Flat, fill with { FillPrice = 1 }, 1, Calendar) };
+            Assert.Throws<ResearchException>(() => RawEventReplay.Run(events, MaxAge, MaxAge, FxPurpose.Executable));
+        }
+    }
+
+    [Fact]
+    public void ReplayCannotBackdateAModelledFillAcrossAnAlreadyRecordedValuation()
+    {
+        var booking = Slice(Feb20);
+        var fill = Assert.Single(ExecutionPlanner.Plan(booking, [Buy(1100)], Flat, Calendar, MaxAge).Fills);
+        RawReplayItem[] events =
+        [
+            new("opening", 0, Slice(Jan31), new RawReplayDeposit(2000)),
+            new("intermediate", 1, Slice(Feb20.AddHours(-1)), new RawReplayMark([], [])),
+            new("fill", 2, booking, new RawReplayModelledFill(Buy(1100), Flat, fill, 1, Calendar)),
+            new("closing", 3, booking, new RawReplayMark([], []))
+        ];
+        Assert.Equal("raw-replay-execution-time", Assert.Throws<ResearchException>(() =>
+            RawEventReplay.Run(events, MaxAge, MaxAge, FxPurpose.Executable)).Code);
+    }
+
 }

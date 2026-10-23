@@ -181,13 +181,13 @@ public sealed partial class RawGbpLedger
     }
     public RawGbpValuation Value(DataSlice market, TimeSpan maximumPriceAge, TimeSpan maximumFxAge, FxPurpose purpose) =>
         ValueCore(market, maximumPriceAge, maximumFxAge, purpose, requireSettledDividends: true);
-    private RawGbpValuation ValueCore(DataSlice market, TimeSpan maximumPriceAge, TimeSpan maximumFxAge, FxPurpose purpose, bool requireSettledDividends)
+    private RawGbpValuation ValueCore(DataSlice market, TimeSpan maximumPriceAge, TimeSpan maximumFxAge, FxPurpose purpose, bool requireSettledDividends, bool requireSettledTerminals = true)
     {
         ArgumentNullException.ThrowIfNull(market);
         CheckTime(market.DecisionAt); CheckAge(maximumPriceAge); CheckAge(maximumFxAge);
         if (!Enum.IsDefined(purpose)) throw new ResearchException("raw-ledger-fx-purpose");
         CheckHoldings(market);
-        if (terminals.Values.Any(t => t.SettledAt is null)) throw new ResearchException("raw-ledger-terminal-unsettled");
+        if (requireSettledTerminals && terminals.Values.Any(t => t.SettledAt is null)) throw new ResearchException("raw-ledger-terminal-unsettled");
         if (requireSettledDividends && dividends.Values.Any(d => d.PaidAt is null)) throw new ResearchException("raw-ledger-dividend-unpaid");
         var values = ImmutableArray.CreateBuilder<RawPositionValue>();
         foreach (var (id, position) in holdings.OrderBy(x => x.Key, StringComparer.Ordinal))
