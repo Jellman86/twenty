@@ -88,6 +88,6 @@ public static class RawEventReplay
              "Assumed fills remain caller assertions; modelled fills retain the separate execution/calendar/FX validation contract.",
              "Marks include explicit estimated receivables, which never fund trades or become delivered shares before settlement.",
              "Booking times and explicit sequence order govern replay; no implicit sorting, action scheduling or retroactive restatement occurs.",
-             "No durable restart, registered strategy, achievable return, ISA eligibility, broker execution or training is provided."]);
+             "This engine has no persistence; the separate verified archive can re-execute a complete replay. No registered strategy, achievable return, ISA eligibility, broker execution or training is provided."]);
     }
 }

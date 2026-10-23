@@ -332,4 +332,46 @@ public sealed class RawExecutionRunTests
             RawEventReplay.Run(events, MaxAge, MaxAge, FxPurpose.Executable)).Code);
     }
 
+    [Theory]
+    [InlineData("valid")]
+    [InlineData("calendar-hash")]
+    [InlineData("price")]
+    [InlineData("ignored-rate")]
+    public void DurableModelledReplayRoundTripsAndRevalidatesCalendarPolicyAndPrice(string kind)
+    {
+        var booking = Slice(Feb20); var fill = Assert.Single(ExecutionPlanner.Plan(booking, [Buy(1100)], Flat, Calendar, MaxAge).Fills);
+        var manifest = new DatasetManifest(DatasetValidator.SchemaVersion, "durable-execution", Mar20.AddDays(30), "features.v1",
+            [new FeatureDefinition("execution", "v1", "Authored fixture", "Available at capture time")], booking.Sources,
+            booking.Calendars, [new UniverseDefinition("research-universe", UniverseKind.Research, "Authored fixture")], true);
+        var dataset = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new DatasetFile(manifest, booking.Observations), DatasetJson.Options);
+        var hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(dataset));
+        var receipt = kind == "price" ? fill with { FillPrice = 1 } : fill;
+        var document = new RawReplayDocument(RawReplayArchive.Version, RawEventReplay.Version, RawReplayBuildIdentity.Current,
+            MaxAge.Ticks, MaxAge.Ticks, FxPurpose.Executable,
+            [new("opening", 0, Jan31, hash, new RawReplayDeposit(2000)),
+             new("fill", 1, Feb20, hash, new RawReplayModelledFill(Buy(1100), Flat, receipt, 1, Calendar)),
+             new("closing", 2, Feb20, hash, new RawReplayMark([], []))]);
+        var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(document, RawReplayJson.Options);
+        var text = System.Text.Encoding.UTF8.GetString(bytes);
+        if (kind == "calendar-hash")
+        {
+            text = text.Replace("\"sha256\": \"" + Calendar.Sha256 + "\"", "\"sha256\": \"" + new string('0', 64) + "\"");
+            Assert.NotEqual(System.Text.Encoding.UTF8.GetString(bytes), text);
+            Assert.Equal("raw-replay-calendar-hash", Assert.Throws<ResearchException>(() => RawReplayArchive.Execute(System.Text.Encoding.UTF8.GetBytes(text), _ => dataset)).Code);
+        }
+        else if (kind == "ignored-rate")
+        {
+            text = text.Replace("\"halfSpreadBps\":", "\"rate\":999,\"halfSpreadBps\":");
+            Assert.Throws<System.Text.Json.JsonException>(() => RawReplayArchive.Execute(System.Text.Encoding.UTF8.GetBytes(text), _ => dataset));
+        }
+        else if (kind == "price") Assert.Equal("raw-replay-execution", Assert.Throws<ResearchException>(() => RawReplayArchive.Execute(bytes, _ => dataset)).Code);
+        else
+        {
+            var stored = RawReplayArchive.Execute(bytes, _ => dataset);
+            var result = System.Text.Json.JsonSerializer.Deserialize<RawEventReplayResult>(Convert.FromBase64String(stored.ResultBase64), RawReplayJson.Options)!;
+            Assert.Equal(899, result.CashGbp); Assert.Equal(1999, result.Marks[0].Valuation.ExpectedEquityGbp);
+            Assert.Equal(fill, result.Entries[1].ModelledExecution);
+        }
+    }
+
 }

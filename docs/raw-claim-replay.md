@@ -2,6 +2,8 @@
 
 `RawGbpLedger.ValueWithReceivables` now marks pending terminal cash/stock consideration and unpaid dividends together. `RawEventReplay` runs an explicitly ordered sequence of deposits, fills, splits, entitlement captures, payments, deliveries and complete valuation marks into a new private ledger. Both are offline decimal references. They are not a registered raw backtest, automatic action scheduler or durable recovery format.
 
+The later [verified offline archive](raw-replay-archive.md) now binds request/dataset bytes and re-executes a complete document during recovery. It does not add automatic scheduling or registered strategy integration.
+
 ## Complete estimated equity
 
 Every unpaid dividend needs its existing `RawDividendMarkAssumption`. Every pending terminal claim needs one `RawTerminalMarkAssumption`, keyed by original listing/action. Missing, duplicate, null, unknown, settled or default assumption arrays are refused. Each terminal assumption states expected local withholding, expected GBP fee, availability time and source reference/hash; cash currency must match. Withholding lies within gross, fees are non-negative and evidence must be available at the valuation time. Stock marks require null cash currency and zero cash withholding. No tax, fee or cash-in-lieu default is inferred. Hash shape validation is a source assertion, not authentication.
