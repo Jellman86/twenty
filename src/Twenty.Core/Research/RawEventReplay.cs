@@ -19,7 +19,7 @@ public sealed record RawReplayMark(ImmutableArray<RawDividendMarkAssumption> Div
 public sealed record RawReplayItem(string Id, int Sequence, DataSlice Market, RawReplayOperation Operation);
 public sealed record RawReplayValuation(string Id, int Sequence, RawGbpClaimValuation Valuation);
 public sealed record RawEventReplayResult(string Version, ImmutableArray<RawLedgerEntry> Entries,
-    ImmutableArray<RawReplayValuation> Marks, ImmutableDictionary<string, RawQuantityPosition> Holdings,
+    ImmutableArray<RawReplayValuation> Marks, ImmutableSortedDictionary<string, RawQuantityPosition> Holdings,
     ImmutableArray<RawDividendEntitlement> DividendEntitlements, ImmutableArray<RawTerminalEntitlement> TerminalEntitlements,
     decimal CashGbp, decimal ContributionsGbp, decimal FeesGbp, ImmutableArray<string> Limitations);
 
@@ -82,7 +82,7 @@ public static class RawEventReplay
                 default: throw new ResearchException("raw-replay-operation");
             }
         }
-        return new(Version, ledger.Entries, marks.ToImmutable(), ledger.Holdings, ledger.DividendEntitlements,
+        return new(Version, ledger.Entries, marks.ToImmutable(), ledger.Holdings.ToImmutableSortedDictionary(StringComparer.Ordinal), ledger.DividendEntitlements,
             ledger.TerminalEntitlements, ledger.CashGbp, ledger.ContributionsGbp, ledger.FeesGbp,
             ["Offline replay of supplied events; event completeness, source authenticity and legal entitlement are not established.",
              "Assumed fills remain caller assertions; modelled fills retain the separate execution/calendar/FX validation contract.",

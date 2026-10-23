@@ -165,4 +165,20 @@ public sealed partial class RawGbpLedgerTests
         }
     }
 
+    [Fact]
+    public void ReplayEmitsFinalHoldingsInOrdinalIdentityOrder()
+    {
+        var market = TerminalMarket(BuyAt, Terminal());
+        RawReplayItem[] events =
+        [
+            new("cash", 0, market, new RawReplayDeposit(300)),
+            new("z-first", 1, market, new RawReplayAssumedFill("successor", 1, 80, PriceBasis.Raw, 0)),
+            new("a-second", 2, market, new RawReplayAssumedFill("listing-a", 1, 100, PriceBasis.Raw, 0)),
+            new("mark", 3, market, new RawReplayMark([], []))
+        ];
+        var result = RawEventReplay.Run(events, Age, Age, FxPurpose.Executable);
+        Assert.Equal(new[] { "listing-a", "successor" }, result.Holdings.Select(h => h.Key));
+        Assert.Equal(300, result.Marks[0].Valuation.ExpectedEquityGbp);
+    }
+
 }
