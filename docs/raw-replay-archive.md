@@ -2,6 +2,8 @@
 
 `RawReplayArchive` adds a versioned file contract around the [explicit event replay](raw-claim-replay.md). It binds exact request and dataset bytes, reconstructs as-of slices, executes a new ledger and stores a request/result receipt. Recovery re-executes the request and requires byte-identical output. Saved balances never initialize a ledger. This is an offline accounting tool, not a registered strategy or a background worker that resumes half-completed work.
 
+The later [evidence-directed schedule compiler](raw-event-schedule.md) can embed an original plan in `RawReplayDocument.Schedule`. When present, execution and recovery recompile and verify the derived instructions before accounting. Manual documents retain a null binding.
+
 ## Bound inputs and execution identity
 
 A `RawReplayDocument` declares archive version, engine version, `RawReplayBuildIdentity`, maximum raw-price and FX ages in ticks, explicit FX purpose and ordered `RawReplayEventSpec` rows. Each event gives its identifier, contiguous sequence, booking/as-of instant, dataset SHA-256 and typed operation. Market slices are reconstructed from the original validated dataset at that instant. The reader verifies exact dataset bytes before parsing; it does not accept serialized `DataSlice` state or a caller-supplied cash balance. Request bytes are copied before resolver callbacks and dataset bytes are copied before use.

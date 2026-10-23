@@ -82,7 +82,8 @@ public sealed partial class RawGbpLedger
             // This slice establishes what was known when booked; freshness is relative to payment time.
             var fx = market.Observations.OfType<FxRate>().SingleOrDefault(f => f.Id == payment.FxObservationId);
             if (fx is null || fx.BaseCurrency != payment.Currency || fx.QuoteCurrency != "GBP" || fx.Purpose != FxPurpose.Executable ||
-                fx.ObservedAt > payment.PaidAt || payment.PaidAt - fx.ObservedAt > maximumFxAge)
+                fx.ObservedAt > payment.PaidAt || fx.Evidence.AvailableAt is not { } available || available > payment.PaidAt ||
+                payment.PaidAt - fx.ObservedAt > maximumFxAge)
                 throw new ResearchException("raw-ledger-dividend-fx");
             rate = fx.QuoteUnitsPerBase; fxId = fx.Id;
         }

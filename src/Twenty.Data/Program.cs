@@ -17,13 +17,14 @@ try
         return 0;
     }
     if (args.Length == 8 && args[0] == "raw-replay" && args[4] == "--datasets" && args[6] == "--archive" &&
-        (args[1] == "run" && args[2] == "--request" || args[1] == "verify" && args[2] == "--request-sha"))
+        (args[1] == "run" && args[2] == "--request" || args[1] == "verify" && args[2] == "--request-sha" ||
+         args[1] == "schedule" && args[2] == "--plan"))
     {
         var datasetRoot = Path.GetFullPath(args[5]); var archiveRoot = Path.GetFullPath(args[7]);
         byte[] ReadDataset(string hash) => DatasetArchive.ReadBounded(Path.Combine(datasetRoot, "datasets", DatasetValidator.SchemaVersion, hash + ".json"));
-        var requestHash = args[1] == "run"
-            ? Path.GetFileNameWithoutExtension(RawReplayArchive.Store(archiveRoot, RawReplayArchive.ReadRequest(args[3]), ReadDataset))
-            : args[3];
+        var requestHash = args[1] == "verify" ? args[3] : Path.GetFileNameWithoutExtension(RawReplayArchive.Store(archiveRoot,
+            args[1] == "schedule" ? RawEventSchedule.Compile(RawReplayArchive.ReadRequest(args[3]), ReadDataset)
+                : RawReplayArchive.ReadRequest(args[3]), ReadDataset));
         var receipt = RawReplayArchive.Load(archiveRoot, requestHash, ReadDataset);
         Console.WriteLine(JsonSerializer.Serialize(new { valid = true, offline = true, registeredStudy = false,
             receipt.Version, receipt.RequestSha256, receipt.ResultSha256 }, RawReplayJson.Options));
@@ -390,7 +391,7 @@ try
     }
     if (args.Length is not (2 or 4) || args[0] != "validate" || (args.Length == 4 && args[2] != "--archive"))
     {
-        Console.Error.WriteLine("Usage: Twenty.Data raw-replay identity | raw-replay run --request <request.json> --datasets <private-root> --archive <private-root> | raw-replay verify --request-sha <sha256> --datasets <private-root> --archive <private-root>\nTwenty.Data terminal-history-audit --archive <private-captures> --reference <assertions.json> --sources <private-source-documents> [--dispositions <dispositions.json>]\n" +
+        Console.Error.WriteLine("Usage: Twenty.Data raw-replay schedule --plan <plan.json> --datasets <private-root> --archive <private-root> | raw-replay identity | raw-replay run --request <request.json> --datasets <private-root> --archive <private-root> | raw-replay verify --request-sha <sha256> --datasets <private-root> --archive <private-root>\nTwenty.Data terminal-history-audit --archive <private-captures> --reference <assertions.json> --sources <private-source-documents> [--dispositions <dispositions.json>]\n" +
             "       Twenty.Data terminal-actions --dataset <input.json> --reference <assertions.json> --dispositions <report.json> --dataset-archive <output> --created-at <iso8601-offset> [--dataset-id <id>]\n" +
             "       Twenty.Data corporate-action-audit --archive <private-captures> --reference <assertions.json> --sources <private-source-documents>\n" +
             "       Twenty.Data french-panel --archive <captures> --from yyyy-mm-dd --to yyyy-mm-dd --output <private-inbox> [--portfolios industry|size-value25]\n" +

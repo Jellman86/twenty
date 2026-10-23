@@ -280,4 +280,17 @@ public sealed partial class RawGbpLedgerTests
         Assert.Equal(4, ledger.DividendEntitlements[0].Quantity); Assert.Equal(8, ledger.DividendEntitlements[0].GrossLocal);
     }
 
+    [Fact]
+    public void LateDividendBookingCannotUseFxThatWasUnavailableAtActualPayment()
+    {
+        var ledger = DividendBook(); var action = Dividend();
+        ledger.CaptureDividend("capture", Market(action.EffectiveAt, actions: [action]), "listing-a", action.ActionId, EntitlementEvidence(action));
+        var paid = BuyAt.AddDays(1); var booked = paid.AddDays(2);
+        var late = new FxRate("late-publication", Known(booked.AddMinutes(-1)), "USD", "GBP", .75m, paid.AddMinutes(-1), FxPurpose.Executable);
+        var market = Market(booked, actions: [action], fxRates: [late]); var entries = ledger.Entries;
+        Assert.Equal("raw-ledger-dividend-fx", Assert.Throws<ResearchException>(() => ledger.PayDividend("payment", market,
+            "listing-a", action.ActionId, Payment(paid) with { FxObservationId = late.Id }, Age)).Code);
+        Assert.Equal(entries, ledger.Entries); Assert.Equal(140, ledger.CashGbp); Assert.Null(ledger.DividendEntitlements[0].PaidAt);
+    }
+
 }

@@ -26,6 +26,13 @@ public static class RawReplayJson
                     (typeof(RawReplayMark), "mark")
                 }) info.PolymorphismOptions.DerivedTypes.Add(new(type, name));
             }
+            if (info.Type == typeof(RawActionSchedule))
+            {
+                info.PolymorphismOptions = new() { TypeDiscriminatorPropertyName = "kind" };
+                info.PolymorphismOptions.DerivedTypes.Add(new(typeof(RawSplitSchedule), "split"));
+                info.PolymorphismOptions.DerivedTypes.Add(new(typeof(RawDividendSchedule), "dividend"));
+                info.PolymorphismOptions.DerivedTypes.Add(new(typeof(RawTerminalSchedule), "terminal"));
+            }
             // Derived display values have no setter/constructor binding. Exclude them from
             // this wire format so a supplied value cannot be silently ignored on read.
             if (info.Type == typeof(FillPolicy) || info.Type == typeof(ExecutionFill))

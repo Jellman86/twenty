@@ -14,7 +14,10 @@ public sealed record RawReplayBuildIdentity(string Scheme, string CoreSha256, st
 }
 public sealed record RawReplayEventSpec(string Id, int Sequence, DateTimeOffset At, string DatasetSha256, RawReplayOperation Operation);
 public sealed record RawReplayDocument(string Version, string EngineVersion, RawReplayBuildIdentity Build,
-    long MaximumPriceAgeTicks, long MaximumFxAgeTicks, FxPurpose FxPurpose, ImmutableArray<RawReplayEventSpec> Events);
+    long MaximumPriceAgeTicks, long MaximumFxAgeTicks, FxPurpose FxPurpose, ImmutableArray<RawReplayEventSpec> Events)
+{
+    public RawReplayScheduleBinding? Schedule { get; init; }
+}
 public sealed record RawReplayReceipt(string Version, string RequestSha256, string RequestBase64, string ResultSha256, string ResultBase64);
 
 /// <summary>Content-bound offline replay. Recovery verifies inputs and re-executes a fresh ledger;
@@ -56,6 +59,7 @@ public static class RawReplayArchive
         if (request.Events[^1].Operation is not RawReplayMark) throw new ResearchException("raw-replay-final-mark");
         if (request.Events.Select(e => e.DatasetSha256).Distinct(StringComparer.Ordinal).Count() > MaximumDatasets)
             throw new ResearchException("raw-replay-datasets");
+        if (request.Schedule is { } binding) RawEventSchedule.VerifyBinding(request, binding, readDataset);
         var datasets = new Dictionary<string, PointInTimeDataset>(StringComparer.Ordinal);
         var slices = new Dictionary<(string, DateTimeOffset), DataSlice>();
         var events = new List<RawReplayItem>(); long totalBytes = 0, totalObservations = 0, observationWork = 0;

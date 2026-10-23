@@ -10,6 +10,8 @@ The current position must predate the cutoff. Intervening fills or later effecti
 
 Unpaid income cannot fund purchases. `Value` refuses `raw-ledger-dividend-unpaid` while any claim is pending, including after selling all shares. It does not omit a receivable from purported total equity or invent its after-tax/FX value. The subsequent [explicit receivable valuation method](raw-dividend-valuation.md) can include pending income under separately declared assumptions; ordinary `Value` retains this settled-only refusal.
 
+The [evidence-directed scheduler](raw-event-schedule.md) can now derive booking times from explicit proofs. Foreign payment FX must be both observed **and available** by actual payment, including when the receipt is booked later; a rate first published afterward is refused.
+
 ## Payment and conversion
 
 `PayDividend` requires the original claim and a separate `RawDividendPayment`: a unique source payment ID, source reference/hash, actual paid time, availability time, original-currency gross and withholding, GBP fee and exact executable FX observation ID when money is converted. These are supplied accounting assumptions/source bindings. Hash shape validation does not read or authenticate a statement; retained artifact verification and broker mapping remain separate integration work.
