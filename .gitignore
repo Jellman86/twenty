@@ -21,3 +21,6 @@ src/Twenty.Api/wwwroot/
 !src/Twenty.Core/Data/*.cs
 !fixtures/data/
 !fixtures/data/*.json
+
+# Private, generated raw replay requests/results belong outside Git.
+raw-replays/
