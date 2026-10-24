@@ -62,3 +62,13 @@ The corrected worker-recovery test also passed five bounded repeat runs (both co
 A final failing no-op regression pins omitted holdings whose marked value rounds to zero: they must still produce an explicit share-exit intention, allowing execution minimums to refuse it visibly rather than silently retaining an untargeted position.
 
 The final exit-preservation build passes **1,136 .NET tests**. Its fresh-process CLI receipts and decision-plan snapshot are retained under `/mnt/apps/developer/jellman86/artifacts/twenty/raw-rebalance-20261024/final`; earlier build receipts are retained unchanged in the parent directory. The final scientific compatibility clone is the `rebalance-exit-final` path above.
+
+## Final publication and deployment acceptance (24 October 2026)
+
+Final source `28aa0d64354074ee4015c65158f6d4f9f56cd6c3` passed [CI 40112574250](https://github.com/Jellman86/twenty/actions/runs/40112574250), including all 1,136 .NET tests, Python/web/security gates and image smoke/publication. The preceding quota-fix checkpoint also passed CI after the initial worker-test failure. The final source includes the explicit-exit no-op regression and correction.
+
+Fresh checks found unchanged production registers and no active research work. The commit-specific registry digest and Git-backed compose were verified before Dockhand deployment. Live metadata reports the exact final source and one running healthy container. Eight collections, 58 byte-identical report responses, four diagnostics and their register, study-plan bytes and seven paper accounts were preserved. Counts remain 61 model trials and zero universe trials; no production research trial, training or genuine final evaluation was opened. Broker connection and automatic purchases remain disabled.
+
+Read-only shared-browser verification passed at desktop and 390px widths without page errors, research/execution writes or mobile overflow. Native preview was attempted first and explicitly reported missing host libraries; the documented shared-browser fallback required no host package or permission changes. Final deployment/state/browser proof is retained under `/mnt/apps/developer/jellman86/artifacts/twenty/deploy-raw-rebalance-final-20261024`; the earlier accepted quota checkpoint remains separately retained. The London sessions used in the authored arithmetic fixture are caller assertions, not a newly reviewed XLON adapter.
+
+A documentation-only commit records this receipt. The tested/deployed application source remains the SHA above. This accepts the bounded planning/execution reference and state preservation; it does not claim registered binding of original weights/ledger, genuine data acceptance, live trading or initial-v1 completion.
