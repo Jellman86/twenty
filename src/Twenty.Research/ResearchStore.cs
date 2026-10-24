@@ -226,10 +226,23 @@ public sealed partial class ResearchStore : IDisposable
     }
     private void EnsureArtifactCapacity(byte[] bytes)
     {
-        if (bytes.Length > 8 * 1024 * 1024 || Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories)
-            .Where(p => !p.EndsWith(".app.lock", StringComparison.Ordinal)).Sum(p => new FileInfo(p).Length) + bytes.Length > 256L * 1024 * 1024)
+        if (bytes.Length > 8 * 1024 * 1024 || ArtifactBytes(Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories)
+            .Where(p => !p.EndsWith(".app.lock", StringComparison.Ordinal))) + bytes.Length > 256L * 1024 * 1024)
             throw new ResearchException("artifact-capacity");
     }
+    private static long ArtifactBytes(IEnumerable<string> paths)
+    {
+        long bytes = 0;
+        foreach (var path in paths)
+        {
+            try { bytes = checked(bytes + new FileInfo(path).Length); }
+            // SQLite sidecars and completed temporary writes can disappear after
+            // enumeration. Missing files consume no quota; other I/O errors still fail.
+            catch (FileNotFoundException) { }
+        }
+        return bytes;
+    }
+
     private static void ImmutableWrite(string path, byte[] bytes)
     {
         if (File.Exists(path))

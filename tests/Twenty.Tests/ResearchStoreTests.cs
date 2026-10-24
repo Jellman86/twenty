@@ -96,4 +96,40 @@ public class ResearchStoreTests
         var first=store.ListRuns().Last();store.Cancel(first.Id);Assert.Equal("cancelled",store.Find(first.Id)!.Status);
         store.Enqueue(new(Guid.NewGuid().ToString("D"),d.Id,new(),new()),"test");Assert.Equal(11,store.ListRuns().Count);
     }
+    [Fact]
+    public void DisappearingArtifactsDoNotFailQuotaAccounting()
+    {
+        using var w = new Workspace(); Directory.CreateDirectory(w.Root);
+        var stable = Path.Combine(w.Root, "stable.json"); var transient = Path.Combine(w.Root, "transient.tmp");
+        File.WriteAllBytes(stable, new byte[17]); File.WriteAllBytes(transient, new byte[31]);
+        var listed = Directory.GetFiles(w.Root); File.Delete(transient);
+        var method = typeof(ResearchStore).GetMethod("ArtifactBytes", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        Assert.Equal(17L, (long)method.Invoke(null, [listed])!);
+    }
+
+    [Fact]
+    public void QuotaScanStillCountsExistingFilesAndPropagatesEnumerationFailures()
+    {
+        using var w = new Workspace(); Directory.CreateDirectory(w.Root);
+        var stable = Path.Combine(w.Root, "stable.json"); File.WriteAllBytes(stable, new byte[17]);
+        var method = typeof(ResearchStore).GetMethod("ArtifactBytes", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+        Assert.Equal(17L, (long)method.Invoke(null, [new[] { stable }])!);
+        IEnumerable<string> FailedEnumeration() { yield return stable; throw new IOException("Authored enumeration failure"); }
+        var error = Assert.Throws<System.Reflection.TargetInvocationException>(() => method.Invoke(null, [FailedEnumeration()]));
+        Assert.IsType<IOException>(error.InnerException);
+    }
+
+    [Fact]
+    public void ExistingArtifactQuotaAndPerFileLimitRemainEnforced()
+    {
+        using var w = new Workspace(); using var store = new ResearchStore(w.Root);
+        using (var sparse = File.Create(Path.Combine(w.Root, "quota-fixture.bin"))) sparse.SetLength(256L * 1024 * 1024);
+        var method = typeof(ResearchStore).GetMethod("EnsureArtifactCapacity", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
+        var error = Assert.Throws<System.Reflection.TargetInvocationException>(() => method.Invoke(store, [new byte[1]]));
+        Assert.Equal("artifact-capacity", Assert.IsType<ResearchException>(error.InnerException).Code);
+        File.Delete(Path.Combine(w.Root, "quota-fixture.bin"));
+        error = Assert.Throws<System.Reflection.TargetInvocationException>(() => method.Invoke(store, [new byte[8 * 1024 * 1024 + 1]]));
+        Assert.Equal("artifact-capacity", Assert.IsType<ResearchException>(error.InnerException).Code);
+    }
+
 }

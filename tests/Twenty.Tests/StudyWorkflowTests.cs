@@ -188,7 +188,9 @@ public sealed class StudyWorkflowTests
         for (var i = 0; i < 500 && f.Store.Find(good.Id)!.Status != "succeeded"; i++) await Task.Delay(10);
         using var shutdown = new CancellationTokenSource(TimeSpan.FromSeconds(5)); await worker.StopAsync(shutdown.Token);
         Assert.Equal("failed", f.Store.Find(bad.Id)!.Status); Assert.NotNull(f.Store.Find(bad.Id)!.ErrorCode);
-        Assert.Equal("succeeded", f.Store.Find(good.Id)!.Status); Assert.Equal(2, f.Store.ListRuns().Count);
+        var completed = f.Store.Find(good.Id)!;
+        Assert.True(completed.Status == "succeeded", $"Good run finished as {completed.Status}; safe error code: {completed.ErrorCode ?? "none"}");
+        Assert.Equal(2, f.Store.ListRuns().Count);
     }
     [Fact]
     public void CancellingTheFinalPairKeepsTheClaimAndItsOriginalIds()
