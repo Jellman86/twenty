@@ -12,7 +12,8 @@ public sealed partial class RawGbpLedger
         var bar = market.Prices(listing.ListingId, PriceBasis.Raw).SingleOrDefault(p => p.Id == fill.PriceId);
         if (calendar is null || session?.OpenAt is not { } open || session.CloseAt is not { } close || open >= close || close > market.DecisionAt ||
             fill.ListingId != listing.ListingId || fill.Buy != (signedQuantity > 0) || fill.Quantity != Math.Abs(signedQuantity) ||
-            fill.FillPrice != rawPrice || fill.Denomination != listing.Denomination || fill.FillSessionCloseAt != close ||
+            fill.FillPrice != rawPrice || (fill.RequestedQuantity is { } requested && (requested <= 0 || fill.Quantity > requested)) ||
+            fill.Denomination != listing.Denomination || fill.FillSessionCloseAt != close ||
             timing!.Venue != listing.Venue || timing.Venue != calendar.Venue || timing.Calendar != calendar.Reference ||
             timing.ScheduleSha256 != calendar.Sha256 || timing.SourceReference != calendar.SourceReference ||
             calendar.Days.SingleOrDefault(d => d.Date == session.Date) != session ||

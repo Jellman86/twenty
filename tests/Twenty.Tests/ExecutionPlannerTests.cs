@@ -287,4 +287,68 @@ public sealed class ExecutionPlannerTests
         Assert.NotEqual(plan.Fills[0].Timing.Session.Date, plan.Fills[1].Timing.Session.Date);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void QuantityOrdersKeepRequestedSharesAtTheLaterOpeningPrice(bool buy)
+    {
+        var order = new PlannedOrder("listing-aaa", buy, 0, Jan31, Feb29) { Quantity = 2 };
+        var fill = Assert.Single(Plan(Slice(Mar20), [order], Loose).Fills);
+        Assert.Equal(2, fill.Quantity); Assert.Equal(buy, fill.Buy);
+        Assert.Equal(buy ? 110.22m : 109.78m, fill.FillPrice);
+    }
+
+    [Fact]
+    public void QuantitySizingScalesPencePricesOnceAndPreservesStepAndMinimumGuards()
+    {
+        var order = new PlannedOrder("listing-aaa", false, 0, Jan31, Feb29) { Quantity = 2.9m };
+        var market = SliceWithUnits(Mar20, new("GBP", QuoteUnit.Pence));
+        var policy = new FillPolicy(0, 0, 1, 1, 1);
+        Assert.Equal(2, Assert.Single(Plan(market, [order], policy).Fills).Quantity);
+        Assert.Equal(ExecutionRefusal.BelowMinimum, Assert.Single(Plan(market, [order], policy with { MinimumOrderValue = 2.21m }).Rejections).Reason);
+    }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(0, -1)]
+    [InlineData(100, 1)]
+    [InlineData(-1, 1)]
+    public void AmbiguousOrNonpositiveQuantitySizingIsRefusedWithItsOriginalQuantity(decimal notional, decimal quantity)
+    {
+        var order = new PlannedOrder("listing-aaa", false, notional, Jan31, Feb29) { Quantity = quantity };
+        var result = Plan(Slice(Mar20), [order], Loose);
+        Assert.Empty(result.Fills); var refusal = Assert.Single(result.Rejections);
+        Assert.Equal(ExecutionRefusal.InvalidOrder, refusal.Reason); Assert.Equal(quantity, refusal.RequestedQuantity);
+    }
+
+    [Fact]
+    public void QuantityAndNotionalOrdersShareTheSameGrossParticipationBudget()
+    {
+        var market = Slice(Mar20); var policy = new FillPolicy(0, 0, 1, .01m);
+        var result = Plan(market, [new("listing-aaa", true, 5500, Jan31, Feb29),
+            new PlannedOrder("listing-aaa", false, 0, Jan31, Feb29) { Quantity = 1 }], policy);
+        Assert.Equal(50, Assert.Single(result.Fills).Quantity);
+        var rejection = Assert.Single(result.Rejections); Assert.Equal(ExecutionRefusal.VolumeParticipation, rejection.Reason);
+        Assert.Equal(1, rejection.RequestedQuantity);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void TinyQuantityStepsCannotOverflowOtherwiseOrdinarySizing(bool shares)
+    {
+        var order = new PlannedOrder("listing-aaa", true, shares ? 0 : 11000, Jan31, Feb29) { Quantity = shares ? 100 : null };
+        var result = Plan(Slice(Mar20), [order], new FillPolicy(0, 0, 1, 1, .0000000000000000000000000001m));
+        Assert.Empty(result.Rejections); Assert.Equal(100, Assert.Single(result.Fills).Quantity);
+    }
+
+    [Fact]
+    public void UnrepresentableShareNotionalIsAReportedRefusalRatherThanAnArithmeticCrash()
+    {
+        var order = new PlannedOrder("listing-aaa", true, 0, Jan31, Feb29) { Quantity = decimal.MaxValue };
+        var result = Plan(Slice(Mar20), [order], Loose);
+        Assert.Empty(result.Fills); Assert.Equal(ExecutionRefusal.InvalidOrder, Assert.Single(result.Rejections).Reason);
+        Assert.Equal(decimal.MaxValue, result.Rejections[0].RequestedQuantity);
+    }
+
 }

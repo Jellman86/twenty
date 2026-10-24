@@ -1,6 +1,6 @@
-# Bound session timing and pinned FX (`execution-v4`)
+# Bound session timing and pinned FX (`execution-v5`)
 
-The [v4 participation contract](execution-participation.md) adds bound session-wide gross quantities and ordered consecutive replay fills. The timing rules below remain applicable.
+The [v4 participation contract](execution-participation.md) adds bound session-wide gross quantities and ordered consecutive replay fills. The [v5 quantity/rebalance contract](raw-rebalance-planner.md) adds explicit share intentions and decision-known FX pins. The timing rules below remain applicable.
 
 This offline checkpoint replaces the v2 planner's first-observed-session and booking-FX assumptions. It does not expose a registered raw backtest, submit orders, authenticate vendor claims or complete terminal/action scheduling.
 

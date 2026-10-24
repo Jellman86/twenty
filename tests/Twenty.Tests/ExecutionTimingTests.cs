@@ -492,4 +492,18 @@ public sealed class ExecutionTimingTests
         Assert.Equal(2, ledger.Entries.Length);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(.5)]
+    public void LedgerCannotBookMoreSharesThanAReceiptSaysWereRequested(decimal requested)
+    {
+        var market = Market(); var order = new PlannedOrder("aaa", true, 100, Decision, Booked);
+        var fill = Assert.Single(ExecutionPlanner.Plan(market, [order], Flat, Calendar, TimeSpan.Zero).Fills) with { RequestedQuantity = requested };
+        var ledger = new RawGbpLedger(); ledger.Deposit("cash", Decision, 1000);
+        Assert.Equal("raw-ledger-execution-evidence", Assert.Throws<ResearchException>(() =>
+            ledger.Fill("forged", market, "aaa", 1, 100, PriceBasis.Raw, 0, TimeSpan.Zero, fill, Calendar)).Code);
+        Assert.Single(ledger.Entries); Assert.Empty(ledger.Holdings); Assert.Equal(1000, ledger.CashGbp);
+    }
+
 }
