@@ -312,4 +312,17 @@ public sealed partial class RawGbpLedgerTests
             JsonSerializer.Serialize(Rebalance(f.Ledger, dataset.AsOf(f.Decision.ToOffset(TimeSpan.FromHours(3))), weights)));
     }
 
+    [Fact]
+    public void AnOmittedHoldingCannotBecomeANoOpJustBecauseItsDecimalMarkIsZero()
+    {
+        var tiny = .0000000000000000000000000001m;
+        var market = RebalanceMarket(Market(BuyAt, new("GBP", QuoteUnit.Major), tiny));
+        var ledger = new RawGbpLedger(); ledger.Deposit("cash", BuyAt, 100);
+        ledger.Fill("tiny-holding", market, "listing-a", tiny, tiny, PriceBasis.Raw, 0, Age);
+        Assert.Equal(0, Assert.Single(ledger.Value(market, Age, Age, FxPurpose.Executable).Positions).ValueGbp);
+        var plan = Rebalance(ledger, market, new Dictionary<string, decimal>());
+        var exit = Assert.Single(plan.Orders); Assert.False(exit.Buy); Assert.Equal(tiny, exit.Quantity);
+        Assert.Equal(0, Assert.Single(plan.Targets).TargetQuantity);
+    }
+
 }

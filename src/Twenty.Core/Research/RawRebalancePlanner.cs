@@ -51,7 +51,8 @@ public static class RawRebalancePlanner
             var beforeFees = value.EquityGbp - cashReserveGbp;
             if (beforeFees < 0) throw new ResearchException("raw-rebalance-reserve");
             // Reserving fees must not manufacture a sale when no trade was needed.
-            var unchanged = subjects.All(id => beforeFees * frozen.GetValueOrDefault(id) == (positions.GetValueOrDefault(id)?.ValueGbp ?? 0));
+            var unchanged = subjects.All(id => (!positions.ContainsKey(id) || frozen.ContainsKey(id)) &&
+                beforeFees * frozen.GetValueOrDefault(id) == (positions.GetValueOrDefault(id)?.ValueGbp ?? 0));
             var feeBudget = unchanged ? 0 : subjects.Length * feePerFillGbp;
             var investable = beforeFees - feeBudget;
             if (investable < 0) throw new ResearchException("raw-rebalance-reserve");
