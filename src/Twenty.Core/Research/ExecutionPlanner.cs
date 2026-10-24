@@ -33,10 +33,13 @@ public sealed record PlannedOrder(string ListingId, bool Buy, decimal NotionalMa
     public string? FxObservationId { get; init; }
 }
 
+public sealed record ExecutionParticipationEvidence(decimal MaximumParticipation, decimal SessionVolume);
+
 public sealed record ExecutionFill(string ListingId, bool Buy, decimal Quantity, decimal FillPrice,
     decimal ObservedOpen, Denomination Denomination, string PriceId, DateTimeOffset FillSessionCloseAt)
 {
     public required ExecutionSessionEvidence Timing { get; init; }
+    public ExecutionParticipationEvidence? Participation { get; init; }
     public FxRate? ExecutionFx { get; init; }
     public required SourceSnapshot PriceSource { get; init; }
     public required Evidence PriceEvidence { get; init; }
@@ -56,7 +59,8 @@ public sealed record ExecutionPlan(ImmutableArray<ExecutionFill> Fills, Immutabl
 /// here: it is the ledger's job, and it refuses an unfunded fill atomically.</summary>
 public static class ExecutionPlanner
 {
-    public const string Version = "execution-v3";
+    public const string Version = "execution-v4";
+    public const int MaximumOrders = 10000;
 
     public static ExecutionPlan Plan(DataSlice market, IEnumerable<PlannedOrder> orders, FillPolicy policy, ExecutionCalendar calendar, TimeSpan maximumFxAge)
     {
@@ -66,11 +70,13 @@ public static class ExecutionPlanner
         policy.Validate();
         ArgumentNullException.ThrowIfNull(calendar);
         if (maximumFxAge < TimeSpan.Zero) throw new ResearchException("raw-ledger-age");
+        var input = orders.Take(MaximumOrders + 1).ToArray();
+        if (input.Length > MaximumOrders || input.Any(o => o is null)) throw new ResearchException("invalid-execution-orders");
+        var participation = new Dictionary<(string Listing, DateOnly Session), decimal>();
         var fills = ImmutableArray.CreateBuilder<ExecutionFill>();
         var rejections = ImmutableArray.CreateBuilder<ExecutionRejection>();
-        foreach (var order in orders)
+        foreach (var order in input)
         {
-            if (order is null) continue;
             if (string.IsNullOrWhiteSpace(order.ListingId) || order.NotionalMajor <= 0 ||
                 order.DecisionAt == default || order.NextDecisionAt <= order.DecisionAt)
             { rejections.Add(new(order.ListingId ?? "", order.Buy, ExecutionRefusal.InvalidOrder, order.NotionalMajor)); continue; }
@@ -106,11 +112,15 @@ public static class ExecutionPlanner
             var gross = quantity * majorPrice;
             if (quantity <= 0 || gross < policy.MinimumOrderValue)
             { rejections.Add(new(order.ListingId, order.Buy, ExecutionRefusal.BelowMinimum, order.NotionalMajor)); continue; }
-            if (bar.Volume <= 0 || quantity > policy.MaximumParticipation * bar.Volume)
+            var key = (order.ListingId, session.Date);
+            var used = participation.GetValueOrDefault(key);
+            if (bar.Volume <= 0 || quantity > policy.MaximumParticipation * bar.Volume - used)
             { rejections.Add(new(order.ListingId, order.Buy, ExecutionRefusal.VolumeParticipation, order.NotionalMajor)); continue; }
 
+            participation[key] = used + quantity;
             fills.Add(new(order.ListingId, order.Buy, quantity, fillPrice, bar.Open, bar.Denomination, bar.Id, bar.SessionCloseAt)
             {
+                Participation = new(policy.MaximumParticipation, bar.Volume),
                 Timing = new(calendar.Reference, calendar.Venue, calendar.SourceReference, calendar.Sha256, session!),
                 ExecutionFx = fx, PriceEvidence = bar.Evidence,
                 PriceSource = market.Sources.Single(s => s.Id == bar.Evidence.SourceId),

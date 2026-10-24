@@ -22,7 +22,7 @@ public sealed record RawExecutionResult(string Version, decimal OpeningCashGbp, 
 /// is never relabelled as executable. Valuation is raw closes with the caller's explicit FX purpose.</summary>
 public static class RawExecutionRun
 {
-    public const string Version = "raw-execution-v3";
+    public const string Version = "raw-execution-v4";
 
     public static RawExecutionResult Run(IReadOnlyList<RawExecutionStep> steps, decimal openingCashGbp,
         FillPolicy policy, decimal feeGbp, TimeSpan maximumPriceAge, TimeSpan maximumFxAge, ExecutionCalendar calendar,

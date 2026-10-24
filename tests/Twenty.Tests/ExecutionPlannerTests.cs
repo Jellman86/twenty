@@ -236,4 +236,55 @@ public sealed class ExecutionPlannerTests
             policy with { MaximumParticipation = .001m }).Rejections).Reason);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void SplitOrdersShareOneGrossSessionParticipationBudget(bool sameDirection)
+    {
+        var order = new PlannedOrder("listing-aaa", true, 33000, Jan31, Feb29);
+        var plan = Plan(Slice(Mar20), [order, order with { Buy = sameDirection }],
+            new FillPolicy(0, 0, 1, .1m));
+        Assert.Single(plan.Fills); // 300 shares accepted against a 500-share session budget.
+        Assert.Equal(ExecutionRefusal.VolumeParticipation, Assert.Single(plan.Rejections).Reason);
+    }
+
+    [Fact]
+    public void ParticipationBoundaryUsesExecutedRoundedQuantityAndRejectedOrdersConsumeNothing()
+    {
+        var order = new PlannedOrder("listing-aaa", true, 33055, Jan31, Feb29);
+        var plan = Plan(Slice(Mar20), [order, order, order with { NotionalMajor = 22055 }], new FillPolicy(0, 0, 1, .1m, 1));
+        Assert.Equal(new[] { 300m, 200m }, plan.Fills.Select(f => f.Quantity));
+        Assert.Single(plan.Rejections);
+    }
+
+    [Fact]
+    public void NullOrdersAreRefusedInsteadOfSilentlyDropped()
+    {
+        Assert.Equal("invalid-execution-orders", Assert.Throws<ResearchException>(() =>
+            Plan(Slice(Mar20), [null!], Loose)).Code);
+    }
+
+    [Fact]
+    public void InfiniteOrderStreamsAreBoundedBeforeMarketWorkAndAreDisposed()
+    {
+        var yielded = 0; var disposed = false;
+        IEnumerable<PlannedOrder> Orders()
+        {
+            try { while (true) { yielded++; yield return new("listing-aaa", true, 1, Jan31, Feb29); } }
+            finally { disposed = true; }
+        }
+        Assert.Equal("invalid-execution-orders", Assert.Throws<ResearchException>(() => Plan(Slice(Mar20), Orders(), Loose)).Code);
+        Assert.Equal(ExecutionPlanner.MaximumOrders + 1, yielded); Assert.True(disposed);
+    }
+
+    [Fact]
+    public void ANewSessionHasAnIndependentParticipationBudget()
+    {
+        var first = new PlannedOrder("listing-aaa", true, 55000, Jan31, Feb29); // 500 of 5,000 shares.
+        var next = new PlannedOrder("listing-aaa", true, 13000, Feb29, Mar20); // 100 of 1,000 shares.
+        var plan = Plan(Slice(Mar20), [first, next], new FillPolicy(0, 0, 1, .1m));
+        Assert.Equal(2, plan.Fills.Length); Assert.Empty(plan.Rejections);
+        Assert.NotEqual(plan.Fills[0].Timing.Session.Date, plan.Fills[1].Timing.Session.Date);
+    }
+
 }

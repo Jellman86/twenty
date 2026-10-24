@@ -1,4 +1,6 @@
-# Bound session timing and pinned FX (`execution-v3`)
+# Bound session timing and pinned FX (`execution-v4`)
+
+The [v4 participation contract](execution-participation.md) adds bound session-wide gross quantities and ordered consecutive replay fills. The timing rules below remain applicable.
 
 This offline checkpoint replaces the v2 planner's first-observed-session and booking-FX assumptions. It does not expose a registered raw backtest, submit orders, authenticate vendor claims or complete terminal/action scheduling.
 
@@ -24,7 +26,7 @@ The pin is realized execution evidence, not a prediction or an invitation to cho
 
 `RawExecutionRun` passes the plan's evidence into the ledger. `RawLedgerEntry.At` remains booking/knowledge time; `ModelledExecution.Timing.Session.OpenAt` records the distinct modelled execution instant. Receipts retain session and schedule hashes, the bar identifier and availability evidence, price/FX source snapshots and original content hashes, plus the exact FX observation/rate. The ledger rechecks these against the supplied dataset and calendar before changing cash. Legacy `Fill` calls without execution evidence retain their original explicit-price/booking-FX assumption contract; they are not automatically upgraded into execution evidence.
 
-A newly opened holding uses the modelled execution instant. Retroactive fills cannot spend later deposits or pass later existing ledger events; same-open fills may be booked in the caller's order. An unresolved action between execution and booking refuses the late receipt, so a later booking cannot silently erase an intervening dividend or terminal event. Full event-time replay and action/payment scheduling remain future work. Funding/holdings failures still abort the run rather than creating a completed partial result.
+A newly opened holding uses the modelled execution instant. Retroactive fills cannot spend later deposits or pass later existing ledger events; same-open fills may be booked in the caller's order. An unresolved action between execution and booking refuses the late receipt, so a later booking cannot silently erase an intervening dividend or terminal event. The separate [explicit replay](raw-claim-replay.md) and [declared-exposure scheduler](raw-event-schedule.md) support offline action/payment events; source-wide discovery and registered raw-strategy integration remain open. Funding/holdings failures still abort the run rather than creating a completed partial result.
 
 ## Validation and remaining work
 

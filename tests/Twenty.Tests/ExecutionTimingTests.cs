@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Twenty.Core.Data;
 using Twenty.Core.Research;
 using Twenty.Ingestion.Listings;
@@ -301,6 +302,194 @@ public sealed class ExecutionTimingTests
         Assert.Equal("raw-ledger-execution-action", Assert.Throws<ResearchException>(() =>
             ledger.Fill("fill", market, "aaa", 1, 100, PriceBasis.Raw, 1, TimeSpan.FromDays(1), fill, Calendar)).Code);
         Assert.Equal(1000, ledger.CashGbp); Assert.Empty(ledger.Holdings);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void SeparatePlannerCallsCannotResetTheLedgerSessionParticipationBudget(bool sameDirection)
+    {
+        var market = Market(); var policy = Flat with { MaximumParticipation = .1m };
+        var buy = new PlannedOrder("aaa", true, 6000, Decision, Booked);
+        ExecutionFill Receipt(PlannedOrder order) => Assert.Single(ExecutionPlanner.Plan(market, [order], policy, Calendar, TimeSpan.Zero).Fills);
+        var first = Receipt(buy); var second = Receipt(buy with { Buy = sameDirection });
+        var ledger = new RawGbpLedger(); ledger.Deposit("cash", Decision, 20000);
+        ledger.Fill("first", market, "aaa", 60, 100, PriceBasis.Raw, 0, TimeSpan.Zero, first, Calendar);
+        var before = ledger.Entries;
+        Assert.Equal("raw-ledger-execution-participation", Assert.Throws<ResearchException>(() =>
+            ledger.Fill("second", market, "aaa", sameDirection ? 60 : -60, 100, PriceBasis.Raw, 0, TimeSpan.Zero, second, Calendar)).Code);
+        Assert.Equal(before, ledger.Entries); Assert.Equal(14000, ledger.CashGbp); Assert.Equal(60, ledger.Holdings["aaa"].Quantity);
+    }
+
+    [Theory]
+    [InlineData("missing")]
+    [InlineData("zero")]
+    [InlineData("over-one")]
+    [InlineData("volume")]
+    public void LedgerRefusesMissingOrInconsistentParticipationEvidenceAtomically(string problem)
+    {
+        var market = Market(); var receipt = Assert.Single(ExecutionPlanner.Plan(market,
+            [new("aaa", true, 100, Decision, Booked)], Flat, Calendar, TimeSpan.Zero).Fills);
+        receipt = receipt with { Participation = problem switch
+        {
+            "missing" => null,
+            "zero" => new(0, 1000),
+            "over-one" => new(1.1m, 1000),
+            _ => new(1, 2000)
+        } };
+        var ledger = new RawGbpLedger(); ledger.Deposit("cash", Decision, 1000);
+        Assert.Equal("raw-ledger-execution-participation", Assert.Throws<ResearchException>(() =>
+            ledger.Fill("fill", market, "aaa", 1, 100, PriceBasis.Raw, 0, TimeSpan.Zero, receipt, Calendar)).Code);
+        Assert.Single(ledger.Entries); Assert.Empty(ledger.Holdings); Assert.Equal(1000, ledger.CashGbp);
+    }
+
+    [Fact]
+    public void LedgerRetainsTheSameSessionBudgetAcrossPolicyChangesAndRevisedVolumes()
+    {
+        var market = Market(); var order = new PlannedOrder("aaa", true, 6000, Decision, Booked);
+        var first = Assert.Single(ExecutionPlanner.Plan(market, [order], Flat with { MaximumParticipation = .1m }, Calendar, TimeSpan.Zero).Fills);
+        var ledger = new RawGbpLedger(); ledger.Deposit("cash", Decision, 30000);
+        ledger.Fill("first", market, "aaa", 60, 100, PriceBasis.Raw, 0, TimeSpan.Zero, first, Calendar);
+        var relaxed = Assert.Single(ExecutionPlanner.Plan(market, [order], Flat, Calendar, TimeSpan.Zero).Fills);
+        Assert.Equal("raw-ledger-execution-participation", Assert.Throws<ResearchException>(() =>
+            ledger.Fill("relaxed", market, "aaa", 60, 100, PriceBasis.Raw, 0, TimeSpan.Zero, relaxed, Calendar)).Code);
+        var file = DatasetJson.Read(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(
+            new DatasetFile(new(DatasetValidator.SchemaVersion, "revised", Booked, "features.v1",
+                [new("test", "v1", "Authored", "Declared")], market.Sources, market.Calendars,
+                [new("test", UniverseKind.Research, "Authored")], true),
+                market.Observations.Select(o => o is PriceBar p && p.Id == "first" ? p with { Volume = 2000 } : o).ToImmutableArray()), DatasetJson.Options));
+        var changed = new PointInTimeDataset(file).AsOf(Booked);
+        var revised = Assert.Single(ExecutionPlanner.Plan(changed, [order], Flat with { MaximumParticipation = .1m }, Calendar, TimeSpan.Zero).Fills);
+        Assert.Equal("raw-ledger-execution-participation", Assert.Throws<ResearchException>(() =>
+            ledger.Fill("revised", changed, "aaa", 60, 100, PriceBasis.Raw, 0, TimeSpan.Zero, revised, Calendar)).Code);
+        Assert.Equal(2, ledger.Entries.Length);
+        // A rejected attempt consumes neither cash nor capacity. Exactly 40 more shares fit.
+        var final = Assert.Single(ExecutionPlanner.Plan(market, [order with { NotionalMajor = 4000 }], Flat with { MaximumParticipation = .1m }, Calendar, TimeSpan.Zero).Fills);
+        ledger.Fill("boundary", market, "aaa", 40, 100, PriceBasis.Raw, 0, TimeSpan.Zero, final, Calendar);
+        Assert.Equal(100, ledger.Holdings["aaa"].Quantity); Assert.Equal(20000, ledger.CashGbp);
+    }
+
+    [Fact]
+    public void ReplayCannotReplanEachFillIndividuallyToBypassParticipation()
+    {
+        var dataset = Dataset(); var market = dataset.AsOf(Booked); var policy = Flat with { MaximumParticipation = .1m };
+        var order = new PlannedOrder("aaa", true, 6000, Decision, Booked);
+        var receipt = Assert.Single(ExecutionPlanner.Plan(market, [order], policy, Calendar, TimeSpan.Zero).Fills);
+        RawReplayItem[] events =
+        [new("cash", 0, dataset.AsOf(Decision), new RawReplayDeposit(20000)),
+         new("first", 1, market, new RawReplayModelledFill(order, policy, receipt, 0, Calendar)),
+         new("second", 2, market, new RawReplayModelledFill(order, policy, receipt, 0, Calendar)),
+         new("mark", 3, market, new RawReplayMark([], []))];
+        Assert.Equal("raw-ledger-execution-participation", Assert.Throws<ResearchException>(() =>
+            RawEventReplay.Run(events, TimeSpan.FromDays(1), TimeSpan.Zero, FxPurpose.Executable)).Code);
+    }
+
+    [Fact]
+    public void ConsecutiveReplayFillsAtOneOpenSucceedWithinTheSharedBudget()
+    {
+        var dataset = Dataset(); var market = dataset.AsOf(Booked); var policy = Flat with { MaximumParticipation = .1m };
+        var order = new PlannedOrder("aaa", true, 5000, Decision, Booked);
+        var receipt = Assert.Single(ExecutionPlanner.Plan(market, [order], policy, Calendar, TimeSpan.Zero).Fills);
+        RawReplayItem[] events =
+        [new("cash", 0, dataset.AsOf(Decision), new RawReplayDeposit(20000)),
+         new("first", 1, market, new RawReplayModelledFill(order, policy, receipt, 0, Calendar)),
+         new("second", 2, market, new RawReplayModelledFill(order, policy, receipt, 0, Calendar)),
+         new("mark", 3, market, new RawReplayMark([], []))];
+        var result = RawEventReplay.Run(events, TimeSpan.FromDays(1), TimeSpan.Zero, FxPurpose.Executable);
+        Assert.Equal(100, result.Holdings["aaa"].Quantity); Assert.Equal(10000, result.CashGbp);
+        Assert.Equal(30000, Assert.Single(result.Marks).Valuation.ExpectedEquityGbp);
+        Assert.Equal(3, result.Entries.Length);
+        var file = new DatasetFile(new(DatasetValidator.SchemaVersion, "archive-participation", Booked, "features.v1",
+            [new("test", "v1", "Authored", "Declared")], market.Sources, market.Calendars,
+            [new("test", UniverseKind.Research, "Authored")], true), market.Observations);
+        var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(file, DatasetJson.Options);
+        var hash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes));
+        var request = new RawReplayDocument(RawReplayArchive.Version, RawEventReplay.Version, RawReplayBuildIdentity.Current,
+            TimeSpan.FromDays(1).Ticks, 0, FxPurpose.Executable,
+            events.Select(e => new RawReplayEventSpec(e.Id, e.Sequence, e.Market.DecisionAt, hash, e.Operation)).ToImmutableArray());
+        var archived = RawReplayArchive.Execute(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(request, RawReplayJson.Options), _ => bytes);
+        Assert.Equal(Convert.ToBase64String(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(result, RawReplayJson.Options)), archived.ResultBase64);
+        Assert.Equal(archived, RawReplayArchive.Verify(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(archived, RawReplayJson.Options), _ => bytes));
+        var schedule = new RawSchedulePlan(RawEventSchedule.Version, RawEventReplay.Version, RawReplayBuildIdentity.Current,
+            TimeSpan.FromDays(1).Ticks, 0, FxPurpose.Executable,
+            events.Select(e => new RawScheduleEvent(new(e.Id, e.Sequence, hash), e.Market.DecisionAt, e.Operation)).ToImmutableArray(), []);
+        var compiled = RawEventSchedule.Compile(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(schedule, RawReplayJson.Options), _ => bytes);
+        Assert.Equal(archived.ResultBase64, RawReplayArchive.Execute(compiled, _ => bytes).ResultBase64);
+    }
+
+    [Theory]
+    [InlineData("mark")]
+    [InlineData("deposit")]
+    [InlineData("assumed-fill")]
+    public void AReplayFillStillCannotCrossAnInterveningBookedEvent(string kind)
+    {
+        var dataset = Dataset(); var market = dataset.AsOf(Booked); var order = new PlannedOrder("aaa", true, 100, Decision, Booked);
+        var receipt = Assert.Single(ExecutionPlanner.Plan(market, [order], Flat, Calendar, TimeSpan.Zero).Fills);
+        RawReplayOperation middle = kind switch
+        {
+            "mark" => new RawReplayMark([], []),
+            "deposit" => new RawReplayDeposit(1),
+            _ => new RawReplayAssumedFill("aaa", 1, 200, PriceBasis.Raw, 0)
+        };
+        RawReplayItem[] events =
+        [new("cash", 0, dataset.AsOf(Decision), new RawReplayDeposit(20000)),
+         new("first", 1, market, new RawReplayModelledFill(order, Flat, receipt, 0, Calendar)),
+         new("middle", 2, market, middle),
+         new("second", 3, market, new RawReplayModelledFill(order, Flat, receipt, 0, Calendar)),
+         new("mark", 4, market, new RawReplayMark([], []))];
+        Assert.Equal("raw-replay-execution-time", Assert.Throws<ResearchException>(() =>
+            RawEventReplay.Run(events, TimeSpan.FromDays(1), TimeSpan.Zero, FxPurpose.Executable)).Code);
+    }
+
+    [Fact]
+    public void DifferentSessionOpensRemainOrderedAndReceiveSeparateLedgerBudgets()
+    {
+        var market = Market(); var policy = Flat with { MaximumParticipation = .1m };
+        var earlier = new PlannedOrder("aaa", true, 10000, Decision, Booked); // 100 shares at first open.
+        var later = new PlannedOrder("aaa", true, 20000, Open.AddDays(1), Booked); // 100 shares at February 5 open.
+        var first = Assert.Single(ExecutionPlanner.Plan(market, [earlier], policy, Calendar, TimeSpan.Zero).Fills);
+        var next = Assert.Single(ExecutionPlanner.Plan(market, [later], policy, Calendar, TimeSpan.Zero).Fills);
+        var ledger = new RawGbpLedger(); ledger.Deposit("cash", Decision, 50000);
+        ledger.Fill("first", market, "aaa", 100, 100, PriceBasis.Raw, 0, TimeSpan.Zero, first, Calendar);
+        ledger.Fill("later", market, "aaa", 100, 200, PriceBasis.Raw, 0, TimeSpan.Zero, next, Calendar);
+        Assert.Equal(200, ledger.Holdings["aaa"].Quantity); Assert.Equal(20000, ledger.CashGbp);
+        var reversed = new RawGbpLedger(); reversed.Deposit("cash", Decision, 50000);
+        reversed.Fill("later", market, "aaa", 100, 200, PriceBasis.Raw, 0, TimeSpan.Zero, next, Calendar);
+        Assert.Equal("raw-ledger-execution-time", Assert.Throws<ResearchException>(() =>
+            reversed.Fill("backdated", market, "aaa", 100, 100, PriceBasis.Raw, 0, TimeSpan.Zero, first, Calendar)).Code);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void ReplayReplanningRejectsForgedParticipationProof(bool changeCap)
+    {
+        var dataset = Dataset(); var market = dataset.AsOf(Booked); var policy = Flat with { MaximumParticipation = .1m };
+        var order = new PlannedOrder("aaa", true, 100, Decision, Booked);
+        var receipt = Assert.Single(ExecutionPlanner.Plan(market, [order], policy, Calendar, TimeSpan.Zero).Fills);
+        receipt = receipt with { Participation = changeCap ? new(1, 1000) : new(.1m, 2000) };
+        Assert.Equal("raw-replay-execution", Assert.Throws<ResearchException>(() => RawEventReplay.Run(
+            [new("cash", 0, dataset.AsOf(Decision), new RawReplayDeposit(1000)),
+             new("fill", 1, market, new RawReplayModelledFill(order, policy, receipt, 0, Calendar)),
+             new("mark", 2, market, new RawReplayMark([], []))],
+            TimeSpan.FromDays(1), TimeSpan.Zero, FxPurpose.Executable)).Code);
+    }
+
+    [Fact]
+    public void AChangedCalendarOpeningCannotResetTheSameLocalSessionBudget()
+    {
+        var market = Market(); var policy = Flat with { MaximumParticipation = .1m };
+        var order = new PlannedOrder("aaa", true, 6000, Decision, Booked);
+        var original = Assert.Single(ExecutionPlanner.Plan(market, [order], policy, Calendar, TimeSpan.Zero).Fills);
+        var changedCalendar = new ExecutionCalendar(Calendar.Reference, Calendar.Venue,
+            Calendar.Days.Select(d => d.Date == new DateOnly(2024, 2, 1) ? d with { OpenAt = d.OpenAt!.Value.AddMinutes(1) } : d).ToImmutableArray(), Calendar.SourceReference);
+        var changed = Assert.Single(ExecutionPlanner.Plan(market, [order], policy, changedCalendar, TimeSpan.Zero).Fills);
+        Assert.NotEqual(original.Timing.Session.OpenAt, changed.Timing.Session.OpenAt);
+        var ledger = new RawGbpLedger(); ledger.Deposit("cash", Decision, 20000);
+        ledger.Fill("original", market, "aaa", 60, 100, PriceBasis.Raw, 0, TimeSpan.Zero, original, Calendar);
+        Assert.Equal("raw-ledger-execution-participation", Assert.Throws<ResearchException>(() =>
+            ledger.Fill("changed", market, "aaa", 60, 100, PriceBasis.Raw, 0, TimeSpan.Zero, changed, changedCalendar)).Code);
+        Assert.Equal(2, ledger.Entries.Length);
     }
 
 }

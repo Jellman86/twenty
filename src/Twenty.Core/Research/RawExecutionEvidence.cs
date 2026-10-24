@@ -23,6 +23,21 @@ public sealed partial class RawGbpLedger
             bar.Denomination != fill.Denomination || fill.PriceEvidence != bar.Evidence ||
             fill.PriceSource != market.Sources.SingleOrDefault(s => s.Id == bar.Evidence.SourceId))
             throw new ResearchException("raw-ledger-execution-evidence");
+        var participation = fill.Participation;
+        if (participation is null || participation.MaximumParticipation is <= 0 or > 1 ||
+            participation.SessionVolume <= 0 || participation.SessionVolume != bar.Volume)
+            throw new ResearchException("raw-ledger-execution-participation");
+        decimal used = 0;
+        foreach (var prior in Entries.Select(e => e.ModelledExecution).Where(f => f is not null &&
+            f.ListingId == listing.ListingId && f.Timing.Session.Date == session.Date))
+        {
+            // A fresh planner call, reversed direction or revised capture cannot reset
+            // the same session's already committed gross-volume budget.
+            if (prior!.Participation != participation) throw new ResearchException("raw-ledger-execution-participation");
+            used += prior.Quantity;
+        }
+        if (fill.Quantity <= 0 || fill.Quantity > participation.MaximumParticipation * participation.SessionVolume - used)
+            throw new ResearchException("raw-ledger-execution-participation");
         if (Entries.Any(e => (e.ModelledExecution?.Timing.Session.OpenAt ?? e.At) > open))
             throw new ResearchException("raw-ledger-execution-time");
         if (!ExecutionFx.TrySelect(market, listing.Denomination.Currency, fill.ExecutionFx?.Id, open, maximumFxAge, out var fx) ||

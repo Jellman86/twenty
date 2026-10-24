@@ -62,8 +62,16 @@ public static class RawEventReplay
                     if (plan.Fills.Length != 1 || plan.Rejections.Length != 0 || plan.Fills[0] != modelled.Fill)
                         throw new ResearchException("raw-replay-execution");
                     var execution = modelled.Fill;
-                    if (item.Sequence > 0 && input[item.Sequence - 1].Market.DecisionAt > execution.Timing.Session.OpenAt)
-                        throw new ResearchException("raw-replay-execution-time");
+                    if (item.Sequence > 0)
+                    {
+                        var previous = input[item.Sequence - 1];
+                        // Consecutive fills retain execution order, rather than treating
+                        // the prior receipt's later booking as an intervening cash event.
+                        // Marks and every non-modelled operation still impose booking time.
+                        var previousAt = previous.Operation is RawReplayModelledFill prior
+                            ? prior.Fill.Timing.Session.OpenAt : previous.Market.DecisionAt;
+                        if (previousAt > execution.Timing.Session.OpenAt) throw new ResearchException("raw-replay-execution-time");
+                    }
                     ledger.Fill(item.Id, item.Market, execution.ListingId, execution.Buy ? execution.Quantity : -execution.Quantity,
                         execution.FillPrice, PriceBasis.Raw, modelled.FeeGbp, maximumFxAge, execution, modelled.Calendar); break;
                 case RawReplaySplit split:

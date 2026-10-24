@@ -1,6 +1,6 @@
-# Executable prices and sizing (`execution-v3`)
+# Executable prices and sizing (`execution-v4`)
 
-**Status: offline planner and settlement reference with bound sessions and pinned execution-time FX (`execution-v3`, `raw-execution-v3`).** The [current timing contract](execution-timing.md) requires the exact next session from the reviewed calendar and the exact foreign FX observation available by its open. Registered raw mode, terminal/action scheduling and genuine execution acceptance remain open. Earlier v1/v2 checkpoints below are historical context, not the current timing contract.
+**Status: offline planner and settlement reference with bound sessions, pinned execution-time FX and [gross session participation](execution-participation.md) (`execution-v4`, `raw-execution-v4`).** The [current timing contract](execution-timing.md) requires the exact next session from the reviewed calendar and the exact foreign FX observation available by its open. Registered raw mode, terminal/action scheduling and genuine execution acceptance remain open. Earlier v1/v2 checkpoints below are historical context, not the current timing contract.
 
 ## The problem
 
