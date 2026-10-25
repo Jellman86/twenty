@@ -1,5 +1,7 @@
 # Atomic raw-study admission and shared reservations
 
+This records the admission checkpoint. The subsequent [explicit development worker](raw-study-development.md) adds start/report endpoints and changes execution availability to true; final evaluation remains unavailable.
+
 The [frozen raw-study declaration](raw-universe-study-declaration.md) now has a separate durable admission path. One SQLite transaction retains its canonical original plan, complete prior model/universe/raw trial disclosure, all eight unstarted development entries, their request bindings and the registration event. No raw calculation or final evaluation starts. The raw runner, selection/report workflow and final spending endpoint remain unavailable.
 
 ## Original-input admission

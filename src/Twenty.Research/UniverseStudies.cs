@@ -55,7 +55,7 @@ public sealed partial class ResearchStore
             Overlap(start, end, UtcDate(s.Plan.ReservedStart), UtcDate(s.Plan.ReservedEnd)))) throw new ResearchException("study-reserved-window-conflict");
         if (UniverseStudies().Any(s => !s.Plan.Synthetic && s.Id != ownStudy && (s.Status is "development" or "candidate-frozen" or "final-evaluation") &&
             Overlap(start, end, s.Plan.ReservedStart, s.Plan.ReservedEnd))) throw new ResearchException("study-reserved-window-conflict");
-        if (RawStudies().Any(s => !s.Plan.Synthetic && s.Id != ownStudy && s.Status == "registered" &&
+        if (RawStudies().Any(s => !s.Plan.Synthetic && s.Id != ownStudy && RawReservationActive(s) &&
             Overlap(start, end, s.Plan.ReservedStart, s.Plan.ReservedEnd))) throw new ResearchException("study-reserved-window-conflict");
     }
     private void GuardPriorReservedExposure(DateTimeOffset start, DateTimeOffset end, string? ownStudy = null)
@@ -402,7 +402,8 @@ public sealed partial class ResearchStore
             {
                 AdvanceUniverseStudies(); entry = ListUniverseRuns().LastOrDefault(r => r.StudyId is not null && r.Status == "planned");
                 if (entry is null) return false;
-                // Preserve admission order across the two worker queues.
+                if (ListRawTrials().Any(r => r.Status == "planned" && r.QueuedAt is not null && r.QueuedAt < entry.CreatedAt)) return false;
+                // Preserve admission/start order across worker queues.
                 if (ListRuns().Any(r => (r.Status is "queued" or "planned") && r.CreatedAt <= entry.CreatedAt)) return false;
                 try
                 {

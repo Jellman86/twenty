@@ -225,7 +225,7 @@ public sealed class RawStudyAdmissionTests : IDisposable
             using var stats = JsonDocument.Parse(await client.GetByteArrayAsync("/api/research/trials"));
             Assert.Equal(8, stats.RootElement.GetProperty("total").GetInt32()); Assert.Equal(8, stats.RootElement.GetProperty("rawTrials").GetInt32());
             using var history = JsonDocument.Parse(await client.GetByteArrayAsync("/api/research/raw-studies"));
-            Assert.False(history.RootElement.GetProperty("executionAvailable").GetBoolean());
+            Assert.True(history.RootElement.GetProperty("executionAvailable").GetBoolean());
             Assert.False(history.RootElement.GetProperty("finalEvaluationAvailable").GetBoolean());
         }
         finally { await app.StopAsync(); }

@@ -17,6 +17,10 @@ public sealed record RawReplayDocument(string Version, string EngineVersion, Raw
     long MaximumPriceAgeTicks, long MaximumFxAgeTicks, FxPurpose FxPurpose, ImmutableArray<RawReplayEventSpec> Events)
 {
     public RawReplayScheduleBinding? Schedule { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public ImmutableArray<ExecutionCalendar> Calendars { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public RawReplayStudyBinding? Study { get; init; }
 }
 public sealed record RawReplayReceipt(string Version, string RequestSha256, string RequestBase64, string ResultSha256, string ResultBase64);
 
@@ -35,7 +39,22 @@ public static class RawReplayArchive
     private static bool Hash(string? value) => value is { Length: 64 } && value.All(c => c is >= '0' and <= '9' or >= 'a' and <= 'f');
     private static string Digest(ReadOnlySpan<byte> bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
 
-    public static RawReplayReceipt Execute(ReadOnlySpan<byte> requestBytes, Func<string, byte[]> readDataset)
+    private static RawReplayDocument ResolveCalendars(RawReplayDocument request)
+    {
+        var tables = request.Calendars.IsDefault ? ImmutableArray<ExecutionCalendar>.Empty : request.Calendars;
+        if (tables.Length > 16 || tables.Any(c => c is null) || tables.Select(c => c.Sha256).Distinct(StringComparer.Ordinal).Count() != tables.Length)
+            throw new ResearchException("raw-replay-calendar-table");
+        var byHash = tables.ToDictionary(c => c.Sha256, StringComparer.Ordinal);
+        return request with { Events = request.Events.Select(e =>
+        {
+            if (e.Operation is not RawReplayModelledFill f || f.CalendarSha256 is null) return e;
+            if (f.Calendar is not null || !Hash(f.CalendarSha256) || !byHash.TryGetValue(f.CalendarSha256, out var calendar))
+                throw new ResearchException("raw-replay-calendar-table");
+            return e with { Operation = f with { Calendar = calendar } };
+        }).ToImmutableArray() };
+    }
+
+    public static RawReplayReceipt Execute(ReadOnlySpan<byte> requestBytes, Func<string, byte[]> readDataset, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(readDataset);
         if (requestBytes.IsEmpty || requestBytes.Length > MaximumRequestBytes) throw new ResearchException("raw-replay-size");
@@ -59,14 +78,17 @@ public static class RawReplayArchive
         if (request.Events[^1].Operation is not RawReplayMark) throw new ResearchException("raw-replay-final-mark");
         if (request.Events.Select(e => e.DatasetSha256).Distinct(StringComparer.Ordinal).Count() > MaximumDatasets)
             throw new ResearchException("raw-replay-datasets");
+        var executable = ResolveCalendars(request);
+        if (request.Study is { } studyBinding) RawStudyDevelopmentRun.VerifyBinding(executable, studyBinding, readDataset, ct);
         if (request.Schedule is { } binding) RawEventSchedule.VerifyBinding(request, binding, readDataset);
         var datasets = new Dictionary<string, PointInTimeDataset>(StringComparer.Ordinal);
         var slices = new Dictionary<(string, DateTimeOffset), DataSlice>();
         var events = new List<RawReplayItem>();
         var universeAllocations = new Dictionary<string, RawUniverseAllocation>(StringComparer.Ordinal);
         long totalBytes = 0, totalObservations = 0, observationWork = 0;
-        foreach (var item in request.Events)
+        foreach (var item in executable.Events)
         {
+            ct.ThrowIfCancellationRequested();
             if (!datasets.TryGetValue(item.DatasetSha256, out var dataset))
             {
                 var bytes = readDataset(item.DatasetSha256);
@@ -117,12 +139,12 @@ public static class RawReplayArchive
             events.Add(new(item.Id, item.Sequence, market, item.Operation));
         }
         var result = RawEventReplay.RunWithUniverse(events, TimeSpan.FromTicks(request.MaximumPriceAgeTicks),
-            TimeSpan.FromTicks(request.MaximumFxAgeTicks), request.FxPurpose, universeAllocations);
+            TimeSpan.FromTicks(request.MaximumFxAgeTicks), request.FxPurpose, universeAllocations, ct);
         var resultBytes = RawReplayJson.Write(result, MaximumResultBytes);
         return new(Version, Digest(requestBytes), Convert.ToBase64String(requestBytes), Digest(resultBytes), Convert.ToBase64String(resultBytes));
     }
 
-    public static RawReplayReceipt Verify(ReadOnlySpan<byte> receiptBytes, Func<string, byte[]> readDataset)
+    public static RawReplayReceipt Verify(ReadOnlySpan<byte> receiptBytes, Func<string, byte[]> readDataset, CancellationToken ct = default)
     {
         var receipt = RawReplayJson.Read<RawReplayReceipt>(receiptBytes, MaximumReceiptBytes);
         if (receipt.Version != Version) throw new ResearchException("raw-replay-version");
@@ -131,7 +153,7 @@ public static class RawReplayArchive
         if (!Hash(receipt.RequestSha256) || !Hash(receipt.ResultSha256) ||
             Digest(request) != receipt.RequestSha256 || Digest(result) != receipt.ResultSha256)
             throw new ResearchException("raw-replay-receipt-hash");
-        var replay = Execute(request, readDataset);
+        var replay = Execute(request, readDataset, ct);
         if (replay.ResultBase64 != receipt.ResultBase64) throw new ResearchException("raw-replay-result-mismatch");
         return replay;
     }

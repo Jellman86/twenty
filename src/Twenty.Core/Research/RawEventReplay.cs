@@ -13,9 +13,11 @@ public sealed record RawReplayRebalanceDecision(RawRebalancePlan Plan) : RawRepl
 {
     public RawUniverseStrategyBinding? UniverseStrategy { get; init; }
 }
-public sealed record RawReplayModelledFill(PlannedOrder Order, FillPolicy Policy, ExecutionFill Fill, decimal FeeGbp, ExecutionCalendar Calendar) : RawReplayOperation
+public sealed record RawReplayModelledFill(PlannedOrder Order, FillPolicy Policy, ExecutionFill Fill, decimal FeeGbp, ExecutionCalendar? Calendar) : RawReplayOperation
 {
     public RawRebalanceOrderReference? Rebalance { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? CalendarSha256 { get; init; }
 }
 public sealed record RawReplaySplit(string ListingId, string ActionId) : RawReplayOperation;
 public sealed record RawReplayDividendCapture(string ListingId, string ActionId, RawDividendEvidence Evidence) : RawReplayOperation;
@@ -42,7 +44,7 @@ public static class RawEventReplay
         TimeSpan maximumFxAge, FxPurpose purpose) => RunWithUniverse(events, maximumPriceAge, maximumFxAge, purpose, null);
 
     internal static RawEventReplayResult RunWithUniverse(IReadOnlyList<RawReplayItem> events, TimeSpan maximumPriceAge,
-        TimeSpan maximumFxAge, FxPurpose purpose, IReadOnlyDictionary<string, RawUniverseAllocation>? universeAllocations)
+        TimeSpan maximumFxAge, FxPurpose purpose, IReadOnlyDictionary<string, RawUniverseAllocation>? universeAllocations, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(events);
         if (events.Count is 0 or > 10000 || maximumPriceAge < TimeSpan.Zero || maximumFxAge < TimeSpan.Zero || !Enum.IsDefined(purpose))
@@ -63,6 +65,7 @@ public static class RawEventReplay
         RawRebalancePlan? pending = null; string? decisionId = null; var nextOrder = 0;
         foreach (var item in input)
         {
+            ct.ThrowIfCancellationRequested();
             // A bound batch is deliberately all-or-refuse. Intervening deposits,
             // actions and skipped/reordered fills cannot change its funding premise.
             if (pending is not null || item.Operation is RawReplayModelledFill { Rebalance: not null })

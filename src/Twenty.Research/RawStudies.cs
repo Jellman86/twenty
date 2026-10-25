@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Data.Sqlite;
 using Twenty.Core.Data;
 using Twenty.Core.Research;
@@ -13,12 +14,25 @@ public sealed record RawStudyInboxRequest(string RequestId, string Name, string 
 public sealed record RawStudyTrialRequest(string StudyId, string PlanSha256, string TrialId, string Stage);
 public sealed record RawStudyTrialEntry(string Id, string StudyId, string TrialId, string CandidateId, string CostScenario,
     string Status, DateTimeOffset CreatedAt, string DatasetSha256, bool Synthetic, string ResearchSha256,
-    string RequestSha256, DateTimeOffset InformationStartAt, DateTimeOffset InformationEndAt);
+    string RequestSha256, DateTimeOffset InformationStartAt, DateTimeOffset InformationEndAt)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? QueuedAt { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? StartedAt { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? FinishedAt { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? WorkerCommit { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ErrorCode { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ReportSha256 { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public bool CancelRequested { get; init; }
+}
 public sealed record RawStudyOriginal(string Kind, string PinSha256, string OriginalSha256, int Bytes);
 public sealed record RawResearchStudy(string Id, string RequestId, string RequestSha256, string Name, string Status,
     DateTimeOffset CreatedAt, string CodeCommit, RawUniverseStudyPlan Plan, string PlanSha256, string PlanBase64,
     ImmutableArray<PriorStudyTrial> PriorTrials, ImmutableArray<UniverseRunEntry> PriorUniverseTrials,
-    ImmutableArray<RawStudyTrialEntry> PriorRawTrials, ImmutableArray<string> DevelopmentTrialIds, ImmutableArray<RawStudyOriginal> Originals);
+    ImmutableArray<RawStudyTrialEntry> PriorRawTrials, ImmutableArray<string> DevelopmentTrialIds, ImmutableArray<RawStudyOriginal> Originals)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? StartRequestId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? StartRequestedAt { get; init; }
+}
 
 public sealed partial class ResearchStore
 {
@@ -29,7 +43,7 @@ public sealed partial class ResearchStore
     private int RawReservedStudySlots()
     {
         _ = ListRawTrials(); // Missing/corrupt admitted rows cannot silently free budget.
-        return RawStudies().Count(s => s.Status == "registered") * 2;
+        return RawStudies().Count(s => RawReservationActive(s)) * 2;
     }
     private static string RawHash(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
     private static byte[] RawBytes<T>(T value) => JsonSerializer.SerializeToUtf8Bytes(value, RawReplayJson.Options);
@@ -38,7 +52,7 @@ public sealed partial class ResearchStore
         var bytes = Encoding.UTF8.GetBytes(json);
         if (bytes.Length > MaximumStudyPayload || RawHash(bytes) != sha) throw new ResearchException("raw-study-integrity");
         var study = JsonSerializer.Deserialize<RawResearchStudy>(bytes, RawReplayJson.Options) ?? throw new ResearchException("raw-study-integrity");
-        if (!Guid.TryParseExact(study.Id, "N", out _) || study.Status is not ("registered" or "cancelled") ||
+        if (!Guid.TryParseExact(study.Id, "N", out _) || study.Status is not ("registered" or "development" or "development-complete" or "failed" or "cancelled") ||
             study.Originals.IsDefault || study.DevelopmentTrialIds.IsDefault || study.Originals.Any(i => i is null || i.Kind is not ("dataset" or "calendar" or "actions") ||
                 !IsSha256(i.OriginalSha256) || !IsSha256(i.PinSha256) || i.Bytes < 0)) throw new ResearchException("raw-study-integrity");
         byte[] plan;
@@ -75,8 +89,7 @@ public sealed partial class ResearchStore
                 if (!studies.TryGetValue(row.StudyId, out var study)) throw new ResearchException("raw-trial-integrity");
                 var role = study.Plan.DevelopmentTrials.SingleOrDefault(t => t.Id == row.TrialId);
                 var window = RawDevelopmentWindow(study.Plan);
-                if (!Guid.TryParseExact(row.Id, "N", out _) || row.Status != reader.GetString(1) || row.Status is not ("planned" or "cancelled") ||
-                    (study.Status == "cancelled") != (row.Status == "cancelled") || role is null ||
+                if (!Guid.TryParseExact(row.Id, "N", out _) || row.Status != reader.GetString(1) || !RawTrialStateValid(study, row) || role is null ||
                     row.CandidateId != role.CandidateId || row.CostScenario != role.CostScenario ||
                     row.DatasetSha256 != study.Plan.DatasetSha256 || row.Synthetic != study.Plan.Synthetic || row.ResearchSha256 != study.Plan.CodeSha256 ||
                     row.InformationStartAt != window.Start || row.InformationEndAt != window.End || row.CreatedAt != study.CreatedAt ||
@@ -109,19 +122,10 @@ public sealed partial class ResearchStore
             var study = RawStudies().SingleOrDefault(s => s.Id == id) ?? throw new ResearchException("study-not-found");
             if (study.Status == "cancelled") return study;
             var trials = ListRawTrials().Where(t => t.StudyId == id).ToArray();
-            study = study with { Status = "cancelled" }; var bytes = RawBytes(study);
-            using var db = Open(); using var tx = db.BeginTransaction();
-            foreach (var trial in trials)
-            {
-                using var update = db.CreateCommand(); update.Transaction = tx; update.CommandText = "UPDATE raw_trials SET json=$json,status='cancelled' WHERE id=$id";
-                update.Parameters.AddWithValue("$json", Encoding.UTF8.GetString(RawBytes(trial with { Status = "cancelled" })));
-                update.Parameters.AddWithValue("$id", trial.Id); update.ExecuteNonQuery();
-            }
-            using var cmd = db.CreateCommand(); cmd.Transaction = tx; cmd.CommandText = "UPDATE raw_studies SET json=$json,sha256=$sha WHERE id=$id";
-            cmd.Parameters.AddWithValue("$json", Encoding.UTF8.GetString(bytes)); cmd.Parameters.AddWithValue("$sha", RawHash(bytes)); cmd.Parameters.AddWithValue("$id", id); cmd.ExecuteNonQuery();
-            cmd.Parameters.Clear(); cmd.CommandText = "INSERT INTO raw_study_events(study_id,at,kind) VALUES($id,$at,'cancelled-no-replacement')";
-            cmd.Parameters.AddWithValue("$id", id); cmd.Parameters.AddWithValue("$at", clock.GetUtcNow().ToString("O")); cmd.ExecuteNonQuery();
-            tx.Commit(); return study;
+            study = study with { Status = "cancelled" };
+            SaveRawFamily(study, trials.Select(t => t.Status == "planned" ? t with { Status = "cancelled", FinishedAt = clock.GetUtcNow() } :
+                t.Status == "started" ? t with { CancelRequested = true } : t), "cancelled-no-replacement");
+            return study;
         }
     }
     private string RawOriginalPath(string kind, string sha) => Path.Combine(Root, "raw-study-inputs", kind, sha + ".json");

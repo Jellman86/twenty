@@ -10,6 +10,12 @@ public sealed class ExperimentWorker(ResearchStore store, ILogger<ExperimentWork
     {
         while (!stoppingToken.IsCancellationRequested)
         {
+            try { if (store.ProcessNextRawStudyRun(Environment.GetEnvironmentVariable("TWENTY_COMMIT") ?? "local", stoppingToken)) continue; }
+            catch (Exception error) when (error is ResearchException or IOException or InvalidDataException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException or System.Text.Json.JsonException)
+            {
+                logger.LogWarning("Raw study work unavailable: {Code}", error is ResearchException re ? re.Code : "research-register-unavailable");
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken); continue;
+            }
             try { if (store.ProcessNextUniverseStudyRun(Environment.GetEnvironmentVariable("TWENTY_COMMIT") ?? "local", stoppingToken)) continue; }
             catch (Exception error) when (error is ResearchException or IOException or InvalidDataException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException or System.Text.Json.JsonException)
             {
