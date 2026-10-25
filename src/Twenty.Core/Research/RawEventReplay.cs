@@ -8,7 +8,12 @@ public sealed record RawReplayDeposit(decimal AmountGbp) : RawReplayOperation;
 // The name deliberately preserves the weaker evidence contract of a caller-supplied fill.
 public sealed record RawReplayAssumedFill(string ListingId, decimal SignedQuantity, decimal RawPrice,
     PriceBasis Basis, decimal FeeGbp) : RawReplayOperation;
-public sealed record RawReplayModelledFill(PlannedOrder Order, FillPolicy Policy, ExecutionFill Fill, decimal FeeGbp, ExecutionCalendar Calendar) : RawReplayOperation;
+public sealed record RawRebalanceOrderReference(string DecisionId, int OrderIndex);
+public sealed record RawReplayRebalanceDecision(RawRebalancePlan Plan) : RawReplayOperation;
+public sealed record RawReplayModelledFill(PlannedOrder Order, FillPolicy Policy, ExecutionFill Fill, decimal FeeGbp, ExecutionCalendar Calendar) : RawReplayOperation
+{
+    public RawRebalanceOrderReference? Rebalance { get; init; }
+}
 public sealed record RawReplaySplit(string ListingId, string ActionId) : RawReplayOperation;
 public sealed record RawReplayDividendCapture(string ListingId, string ActionId, RawDividendEvidence Evidence) : RawReplayOperation;
 public sealed record RawReplayDividendPayment(string ListingId, string ActionId, RawDividendPayment Payment) : RawReplayOperation;
@@ -25,10 +30,11 @@ public sealed record RawEventReplayResult(string Version, ImmutableArray<RawLedg
 
 /// <summary>Bounded offline replay of explicit, caller-ordered events into a new private ledger.
 /// Sequence is contiguous from zero and orders ties; markets retain their own booking/as-of times.
-/// This does not discover, schedule, authenticate or persist events, nor generate orders.</summary>
+/// Bound rebalance decisions rederive supplied intentions; this does not select strategies,
+/// discover actions, schedule, authenticate or persist events.</summary>
 public static class RawEventReplay
 {
-    public const string Version = "raw-event-replay-v1";
+    public const string Version = "raw-event-replay-v2";
     public static RawEventReplayResult Run(IReadOnlyList<RawReplayItem> events, TimeSpan maximumPriceAge,
         TimeSpan maximumFxAge, FxPurpose purpose)
     {
@@ -48,10 +54,33 @@ public static class RawEventReplay
         }
         if (input[^1].Operation is not RawReplayMark) throw new ResearchException("raw-replay-final-mark");
         var ledger = new RawGbpLedger(); var marks = ImmutableArray.CreateBuilder<RawReplayValuation>();
+        RawRebalancePlan? pending = null; string? decisionId = null; var nextOrder = 0;
         foreach (var item in input)
         {
+            // A bound batch is deliberately all-or-refuse. Intervening deposits,
+            // actions and skipped/reordered fills cannot change its funding premise.
+            if (pending is not null || item.Operation is RawReplayModelledFill { Rebalance: not null })
+            {
+                if (pending is null || item.Operation is not RawReplayModelledFill linked ||
+                    linked.Rebalance is not { } reference || reference.DecisionId != decisionId || reference.OrderIndex != nextOrder ||
+                    linked.Order != pending.Orders[nextOrder] || linked.FeeGbp != pending.FeePerFillGbp)
+                    throw new ResearchException("raw-replay-rebalance-order");
+            }
             switch (item.Operation)
             {
+                case RawReplayRebalanceDecision decision:
+                    var supplied = decision.Plan;
+                    if (supplied is null || supplied.Weights is null || supplied.Orders.IsDefault || supplied.Targets.IsDefault ||
+                        supplied.MaximumPriceAgeTicks < 0 || supplied.MaximumFxAgeTicks < 0)
+                        throw new ResearchException("raw-replay-rebalance-plan");
+                    var recomputed = RawRebalancePlanner.Plan(ledger, item.Market, supplied.UniverseId, supplied.Weights,
+                        supplied.NextDecisionAt, supplied.CashReserveGbp, supplied.FeePerFillGbp,
+                        TimeSpan.FromTicks(supplied.MaximumPriceAgeTicks), TimeSpan.FromTicks(supplied.MaximumFxAgeTicks));
+                    if (!RawReplayJson.Write(supplied, RawReplayArchive.MaximumRequestBytes).AsSpan()
+                        .SequenceEqual(RawReplayJson.Write(recomputed, RawReplayArchive.MaximumRequestBytes)))
+                        throw new ResearchException("raw-replay-rebalance-plan");
+                    if (supplied.Orders.Length > 0) { pending = supplied; decisionId = item.Id; nextOrder = 0; }
+                    break;
                 case RawReplayDeposit deposit:
                     ledger.Deposit(item.Id, item.Market.DecisionAt, deposit.AmountGbp); break;
                 case RawReplayAssumedFill fill:
@@ -89,6 +118,8 @@ public static class RawEventReplay
                         maximumPriceAge, maximumFxAge, purpose, mark.Dividends, mark.Terminals))); break;
                 default: throw new ResearchException("raw-replay-operation");
             }
+            if (item.Operation is RawReplayModelledFill { Rebalance: not null } && pending is not null && ++nextOrder == pending.Orders.Length)
+                pending = null;
         }
         return new(Version, ledger.Entries, marks.ToImmutable(), ledger.Holdings.ToImmutableSortedDictionary(StringComparer.Ordinal), ledger.DividendEntitlements,
             ledger.TerminalEntitlements, ledger.CashGbp, ledger.ContributionsGbp, ledger.FeesGbp,
@@ -96,6 +127,7 @@ public static class RawEventReplay
              "Assumed fills remain caller assertions; modelled fills retain the separate execution/calendar/FX validation contract.",
              "Marks include explicit estimated receivables, which never fund trades or become delivered shares before settlement.",
              "Booking times and explicit sequence order govern replay; no implicit sorting, action scheduling or retroactive restatement occurs.",
+             "Bound rebalance decisions recompute supplied weights against the replayed ledger; every resulting order must execute once in sequence without intervening operations. Starting assumed fills and weights remain caller assertions.",
              "This engine has no persistence; the separate verified archive can re-execute a complete replay. No registered strategy, achievable return, ISA eligibility, broker execution or training is provided."]);
     }
 }

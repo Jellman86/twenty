@@ -53,7 +53,7 @@ public static class RawEventSchedule
         var points = new List<RawSchedulePoint>(); var subjects = new HashSet<(string, string)>();
         foreach (var item in plan.Timeline)
         {
-            if (item is null || item.At == default || item.Operation is not (RawReplayDeposit or RawReplayAssumedFill or RawReplayModelledFill or RawReplayMark))
+            if (item is null || item.At == default || item.Operation is not (RawReplayDeposit or RawReplayAssumedFill or RawReplayModelledFill or RawReplayMark or RawReplayRebalanceDecision))
                 throw new ResearchException("raw-schedule-timeline");
             points.Add(item.Point);
         }

@@ -23,7 +23,7 @@ public static class RawReplayJson
                     (typeof(RawReplayModelledFill), "modelledFill"), (typeof(RawReplaySplit), "split"),
                     (typeof(RawReplayDividendCapture), "dividendCapture"), (typeof(RawReplayDividendPayment), "dividendPayment"),
                     (typeof(RawReplayTerminalCapture), "terminalCapture"), (typeof(RawReplayTerminalSettlement), "terminalSettlement"),
-                    (typeof(RawReplayMark), "mark")
+                    (typeof(RawReplayMark), "mark"), (typeof(RawReplayRebalanceDecision), "rebalanceDecision")
                 }) info.PolymorphismOptions.DerivedTypes.Add(new(type, name));
             }
             if (info.Type == typeof(RawActionSchedule))

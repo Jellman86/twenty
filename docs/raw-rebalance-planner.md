@@ -1,5 +1,7 @@
 # Decision-time raw rebalance planning and quantity orders
 
+The later [recomputed decision replay](raw-rebalance-replay.md) now binds original weights and the reconstructed ledger to an uninterrupted offline fill batch. The historical acceptance below describes the earlier planning-only checkpoint; registered-study/report/paper integration remains open.
+
 24 October 2026. `RawRebalancePlanner` (`raw-rebalance-v1`) now converts **supplied** positive target weights into explicit share orders. `execution-v5` / `raw-execution-v5` accept these orders without inferring a sale's share count from the later opening price. This is an offline bridge toward raw-strategy integration, not a registered candidate-selection workflow, broker adapter or investable backtest.
 
 ## Two explicit order sizing modes

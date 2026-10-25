@@ -1,5 +1,7 @@
 # Verified offline replay archive
 
+The later [recomputed rebalance decision](raw-rebalance-replay.md) extends the operation catalog under engine v2 and verifies original weights against the reconstructed ledger before accepting linked fills. Existing archives retain their exact original engine/build requirements.
+
 `RawReplayArchive` adds a versioned file contract around the [explicit event replay](raw-claim-replay.md). It binds exact request and dataset bytes, reconstructs as-of slices, executes a new ledger and stores a request/result receipt. Recovery re-executes the request and requires byte-identical output. Saved balances never initialize a ledger. This is an offline accounting tool, not a registered strategy or a background worker that resumes half-completed work.
 
 The later [evidence-directed schedule compiler](raw-event-schedule.md) can embed an original plan in `RawReplayDocument.Schedule`. When present, execution and recovery recompile and verify the derived instructions before accounting. Manual documents retain a null binding.
