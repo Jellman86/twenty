@@ -1,5 +1,7 @@
 # Registered changing-universe studies
 
+The separate [decision-time raw strategy adapter](raw-universe-decisions.md) now derives the same baseline family without a future return period and verifies its weights in raw archive replay. It is not a new registered raw study and does not change this workflow's adjusted-notional unit contract.
+
 Implemented on `dev`, 21 October 2026, extending the 20 October chronological declaration foundation. This is a research workflow over the existing changing-universe momentum baseline, equal weight and cash. Results use local-currency adjusted-return ratios in GBP-labelled notionals; they do not establish achievable GBP wealth, raw share execution or an investment nomination. [Initial-v1 acceptance](initial-v1-acceptance.md) retains those separate requirements.
 
 ## Declaration and chronological contract

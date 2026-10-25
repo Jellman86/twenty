@@ -62,7 +62,9 @@ public static class RawReplayArchive
         if (request.Schedule is { } binding) RawEventSchedule.VerifyBinding(request, binding, readDataset);
         var datasets = new Dictionary<string, PointInTimeDataset>(StringComparer.Ordinal);
         var slices = new Dictionary<(string, DateTimeOffset), DataSlice>();
-        var events = new List<RawReplayItem>(); long totalBytes = 0, totalObservations = 0, observationWork = 0;
+        var events = new List<RawReplayItem>();
+        var universeAllocations = new Dictionary<string, RawUniverseAllocation>(StringComparer.Ordinal);
+        long totalBytes = 0, totalObservations = 0, observationWork = 0;
         foreach (var item in request.Events)
         {
             if (!datasets.TryGetValue(item.DatasetSha256, out var dataset))
@@ -87,10 +89,35 @@ public static class RawReplayArchive
             // number of position/claim marks to be materialized before output limits.
             if ((observationWork += market.Observations.Length) > MaximumEventObservationWork)
                 throw new ResearchException("raw-replay-work");
+            if (item.Operation is RawReplayRebalanceDecision { UniverseStrategy: { } strategyBinding })
+            {
+                RawUniverseDecision.Validate(strategyBinding.Spec);
+                if (strategyBinding.Spec.Decisions[^1] != item.At) throw new ResearchException("raw-replay-universe-binding");
+                // Charge every historical slice, including repeated cached inputs,
+                // before constructing the period-vintage signal panel.
+                foreach (var at in strategyBinding.Spec.Decisions)
+                {
+                    var historicalKey = (item.DatasetSha256, at);
+                    if (!slices.TryGetValue(historicalKey, out var historical))
+                    {
+                        historical = dataset.AsOf(at);
+                        if ((totalObservations += historical.Observations.Length) > MaximumSliceObservations)
+                            throw new ResearchException("raw-replay-slices");
+                        slices.Add(historicalKey, historical);
+                    }
+                    if ((observationWork += historical.Observations.Length) > MaximumEventObservationWork)
+                        throw new ResearchException("raw-replay-work");
+                }
+                var allocation = RawUniverseDecision.Allocate(dataset, strategyBinding.Spec);
+                if (!RawReplayJson.Write(allocation, MaximumRequestBytes).AsSpan()
+                    .SequenceEqual(RawReplayJson.Write(strategyBinding.Allocation, MaximumRequestBytes)))
+                    throw new ResearchException("raw-replay-universe-binding");
+                universeAllocations.Add(item.Id, allocation);
+            }
             events.Add(new(item.Id, item.Sequence, market, item.Operation));
         }
-        var result = RawEventReplay.Run(events, TimeSpan.FromTicks(request.MaximumPriceAgeTicks),
-            TimeSpan.FromTicks(request.MaximumFxAgeTicks), request.FxPurpose);
+        var result = RawEventReplay.RunWithUniverse(events, TimeSpan.FromTicks(request.MaximumPriceAgeTicks),
+            TimeSpan.FromTicks(request.MaximumFxAgeTicks), request.FxPurpose, universeAllocations);
         var resultBytes = RawReplayJson.Write(result, MaximumResultBytes);
         return new(Version, Digest(requestBytes), Convert.ToBase64String(requestBytes), Digest(resultBytes), Convert.ToBase64String(resultBytes));
     }

@@ -1,5 +1,7 @@
 # Recomputed rebalance decisions in offline replay
 
+The later [universe strategy binding](raw-universe-decisions.md) extends this offline path under engine v3. The v2 acceptance below remains an immutable historical checkpoint.
+
 25 October 2026. `raw-event-replay-v2` adds `RawReplayRebalanceDecision` to the existing bounded schedule/archive path. This closes the offline link between supplied weights, the reconstructed starting ledger and the resulting share intentions. It does not register a strategy or integrate raw execution into study selection, reports or paper accounts.
 
 A decision event carries the complete original `RawRebalancePlan`. At that event's dataset/as-of instant, replay reruns `RawRebalancePlanner` against its own ledger, using the recorded universe, weights, deadline, fee, reserve and decision freshness limits. The complete serialized plan must match: valuation, quotes, source snapshots, FX pins, targets, ordered intentions, derived cash/fee amounts and limitations. Replay never injects a saved starting balance. Earlier deposits and assumed fills remain explicit caller assertions, retained in the archived request.

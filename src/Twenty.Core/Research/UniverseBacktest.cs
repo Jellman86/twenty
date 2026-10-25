@@ -108,7 +108,7 @@ public static class UniverseBacktest
 
     // Compounded return over the MomentumPeriods periods ending one period before p.
     // Any non-priced entry (entered, terminal, missing) in the window makes the score unavailable.
-    private static double? TrailingMomentum(ChangingUniversePanel panel, int p, string listing)
+    internal static double? TrailingMomentum(ChangingUniversePanel panel, int p, string listing)
     {
         var compounded = 1m;
         for (var q = p - MomentumPeriods - 1; q < p - 1; q++)
@@ -120,5 +120,5 @@ public static class UniverseBacktest
         return (double)(compounded - 1m);
     }
 
-    private static decimal EqualFraction(int count) => decimal.Truncate(1m / count * 1000000000000000000000000m) / 1000000000000000000000000m;
+    internal static decimal EqualFraction(int count) => decimal.Truncate(1m / count * 1000000000000000000000000m) / 1000000000000000000000000m;
 }

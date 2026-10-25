@@ -9,7 +9,10 @@ public sealed record RawReplayDeposit(decimal AmountGbp) : RawReplayOperation;
 public sealed record RawReplayAssumedFill(string ListingId, decimal SignedQuantity, decimal RawPrice,
     PriceBasis Basis, decimal FeeGbp) : RawReplayOperation;
 public sealed record RawRebalanceOrderReference(string DecisionId, int OrderIndex);
-public sealed record RawReplayRebalanceDecision(RawRebalancePlan Plan) : RawReplayOperation;
+public sealed record RawReplayRebalanceDecision(RawRebalancePlan Plan) : RawReplayOperation
+{
+    public RawUniverseStrategyBinding? UniverseStrategy { get; init; }
+}
 public sealed record RawReplayModelledFill(PlannedOrder Order, FillPolicy Policy, ExecutionFill Fill, decimal FeeGbp, ExecutionCalendar Calendar) : RawReplayOperation
 {
     public RawRebalanceOrderReference? Rebalance { get; init; }
@@ -34,9 +37,12 @@ public sealed record RawEventReplayResult(string Version, ImmutableArray<RawLedg
 /// discover actions, schedule, authenticate or persist events.</summary>
 public static class RawEventReplay
 {
-    public const string Version = "raw-event-replay-v2";
+    public const string Version = "raw-event-replay-v3";
     public static RawEventReplayResult Run(IReadOnlyList<RawReplayItem> events, TimeSpan maximumPriceAge,
-        TimeSpan maximumFxAge, FxPurpose purpose)
+        TimeSpan maximumFxAge, FxPurpose purpose) => RunWithUniverse(events, maximumPriceAge, maximumFxAge, purpose, null);
+
+    internal static RawEventReplayResult RunWithUniverse(IReadOnlyList<RawReplayItem> events, TimeSpan maximumPriceAge,
+        TimeSpan maximumFxAge, FxPurpose purpose, IReadOnlyDictionary<string, RawUniverseAllocation>? universeAllocations)
     {
         ArgumentNullException.ThrowIfNull(events);
         if (events.Count is 0 or > 10000 || maximumPriceAge < TimeSpan.Zero || maximumFxAge < TimeSpan.Zero || !Enum.IsDefined(purpose))
@@ -73,6 +79,16 @@ public static class RawEventReplay
                     if (supplied is null || supplied.Weights is null || supplied.Orders.IsDefault || supplied.Targets.IsDefault ||
                         supplied.MaximumPriceAgeTicks < 0 || supplied.MaximumFxAgeTicks < 0)
                         throw new ResearchException("raw-replay-rebalance-plan");
+                    if (decision.UniverseStrategy is { } strategy)
+                    {
+                        // Only the archive has the original dataset needed to rebuild
+                        // historical vintages. Direct slice-only replay must refuse.
+                        if (universeAllocations is null || !universeAllocations.TryGetValue(item.Id, out var allocation))
+                            throw new ResearchException("raw-replay-universe-context");
+                        if (allocation.DecisionAt != item.Market.DecisionAt || strategy.Spec.UniverseId != supplied.UniverseId ||
+                            !allocation.Weights.SequenceEqual(supplied.Weights))
+                            throw new ResearchException("raw-replay-universe-binding");
+                    }
                     var recomputed = RawRebalancePlanner.Plan(ledger, item.Market, supplied.UniverseId, supplied.Weights,
                         supplied.NextDecisionAt, supplied.CashReserveGbp, supplied.FeePerFillGbp,
                         TimeSpan.FromTicks(supplied.MaximumPriceAgeTicks), TimeSpan.FromTicks(supplied.MaximumFxAgeTicks));

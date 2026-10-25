@@ -1,0 +1,33 @@
+# Decision-time universe strategies bound to raw replay
+
+25 October 2026. `raw-universe-decision-v1` bridges the existing momentum, equal-weight and cash baselines to the raw-share planner. `raw-event-replay-v3` can verify their original strategy inputs, derived allocation and share orders from an archived dataset. This is a prerequisite for a separately registered raw-execution study; it does not change or upgrade the meaning of existing adjusted-notional studies.
+
+## Causal decision contract
+
+`RawUniverseStrategySpec` declares universe, exactly thirteen consecutive monthly decision instants, price-age days, the existing `UniverseBacktestConfig` and one named baseline. The final instant is the current decision. The builder reconstructs a historical prefix using the existing point-in-time panel rules. No return period begins at the current decision, so later winners, terminal outcomes, eligible counts and realized execution coverage cannot enter the buyability gate.
+
+Momentum compounds eleven historical period returns and skips the latest completed period, reusing the existing baseline's arithmetic. Each historical period uses the price vintage available at its own endpoint; a correction first available later is not back-propagated into that earlier period. Historical membership is selected as known at each past decision. This is the existing period-vintage convention, not a new claim that a vendor supplies authentic point-in-time adjusted history.
+
+Current eligibility and observable adjusted prices define holdable listings. Missing historical coverage, unexplained exits and periods with no observed session refuse the whole decision rather than selectively dropping the failed name. Entrants without a complete priced window retain an explicit null score. Current unpriced names are retained separately; a continuing name's missing current price may also cause the stricter historical-gap refusal. At most 1,000 current eligible listings are accepted by this adapter. The raw planner retains its separate 100-target/200-subject bounds; an oversized equal-weight target can therefore refuse downstream.
+
+Momentum uses the existing ordinal score tie-break and maximum-weight cap; sparse histories leave unallocated cash rather than renormalising capped weights. Equal weight uses the existing conservative decimal fraction; cash has no positive weights. These are local-currency adjusted-return signals. GBP conversion, raw prices and actual fee/funding arithmetic belong to the raw ledger, not the ranking. `MonthlyGbp` is retained candidate metadata; this decision-only adapter neither deposits it nor certifies a contribution schedule.
+
+The returned allocation records the historical panel hash, UTC decision instant, holdable/unpriced names, every holdable name's score or unavailable history, frozen positive weights and limitations. This is not a fitted model or a new hyperparameter search. The motivation and limitations of the existing momentum baseline remain in [the evidence review](literature-review.md#p05--jegadeesh--titman-1993); this implementation does not replicate the published long-short portfolios or establish an investable edge.
+
+## Original strategy and order binding
+
+`RawReplayRebalanceDecision.UniverseStrategy` optionally carries the original specification and full derived allocation. Archive execution verifies the dataset hash, requires the history to end exactly at the decision event, rebuilds the historical allocation and compares all recorded evidence. Its weights and universe must match the original `RawRebalancePlan`, which is then independently recomputed against the replay's reconstructed holdings and cash. The [existing bound-batch contract](raw-rebalance-replay.md) still enforces exact ordered intentions, fees, complete batches and independent modelled-fill evidence.
+
+The archive charges every historical slice against its existing observation-work bound, including repeated cached strategy calculations. Slice-only `RawEventReplay.Run` refuses a strategy binding because it has no original historical dataset with which to verify it. Manually supplied weights without a strategy binding retain their weaker, explicitly declared contract. Removing the binding creates a different request; unsigned local hashes do not authenticate its author or admission history.
+
+Dataset import/validation still reads the full supplied file. Causal calculation does not prove that nobody inspected the future, that source availability is authentic, or that other searches were disclosed. No final evaluation or genuine financial data is opened to verify this plumbing.
+
+## Authored acceptance and remaining integration
+
+An authored fixture ranks AAA first from the original thirteen-decision history, freezes weight one and sizes GBP 289 after a GBP 10 reserve and GBP 1 fee allowance. At USD 100 and decision FX GBP 0.8/USD this requests 3.6125 shares. The next declared opening is USD 90: execution leaves GBP 38.90 cash, 3.6125 shares and GBP 1 actual fees. Marked equity is GBP 299. This is synthetic arithmetic, not historical performance.
+
+Regressions cover skipped-month returns, altered future prices/eligibility/terminal outcomes, later historical revisions, entrant scores, ordinal ties, sparse capped exposure, comparator weights, UTC-equivalent grids, historical gaps, changed strategy/configuration/scores/panel/weights/time, unverified slice-only replay, archive recovery and repeated-history work limits. A temporary archive comparison bypass must be caught before the restored full suite is accepted.
+
+Registered raw-trial admission, upfront execution/cost-family declaration, monthly contribution enforcement, candidate selection, permanent final claims, raw reports and paper-account consumption remain open. Existing study plans and completed notional reports remain immutable. No API/database/UI workflow, broker connection, automatic purchase, training or accelerator is added by this adapter.
+
+Local acceptance passes all 1,176 .NET tests, 45 Python tests, Ruff, zero-error/warning Svelte checks, the web build, scientific-boundary and sensitive-path/secret guards. Altered score/panel evidence caught a temporary disabled comparison; it was restored before the full passing suite. A completed-study clone preserved its original plan and ten request/report pairs; the original final UUID still replays and a replacement final request is refused. A fresh CLI process verified the authored strategy-bound schedule/archive. Private proof is retained under `/mnt/apps/developer/jellman86/artifacts/twenty/raw-universe-decisions-20261025` and `universe-study-cross-version-raw-universe-20261025`.
