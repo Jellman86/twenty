@@ -1,5 +1,7 @@
 # Decision-time universe strategies bound to raw replay
 
+The subsequent [raw-study declaration contract](raw-universe-study-declaration.md) now freezes the family, deposit schedule and execution assumptions without reading market values. Atomic admission and trial/final-evaluation state remain separate work.
+
 25 October 2026. `raw-universe-decision-v1` bridges the existing momentum, equal-weight and cash baselines to the raw-share planner. `raw-event-replay-v3` can verify their original strategy inputs, derived allocation and share orders from an archived dataset. This is a prerequisite for a separately registered raw-execution study; it does not change or upgrade the meaning of existing adjusted-notional studies.
 
 ## Causal decision contract
