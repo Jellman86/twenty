@@ -8,18 +8,20 @@ public sealed partial class ResearchStore
 {
     // All research admission and state transitions hold this gate. Take both registers
     // together so an analysis cannot disclose a snapshot assembled across admissions.
-    internal (DateTimeOffset At, ImmutableArray<RunEntry> Models, ImmutableArray<UniverseRunEntry> Universes) DiagnosticSnapshot()
+    internal (DateTimeOffset At, ImmutableArray<RunEntry> Models, ImmutableArray<UniverseRunEntry> Universes, ImmutableArray<RawStudyTrialEntry> Raw) DiagnosticSnapshot()
     {
         lock (gate)
         {
             var models = ListRuns().ToImmutableArray(); var universes = ListUniverseRuns().ToImmutableArray();
-            return (clock.GetUtcNow(), models, universes);
+            return (clock.GetUtcNow(), models, universes, ListRawTrials().ToImmutableArray());
         }
     }
 }
 
 public sealed partial class DiagnosticStore
 {
+    private static DiagnosticTrial RawTrial(RawStudyTrialEntry run) =>
+        new(run.Id, run.DatasetSha256, run.Status, run.RequestSha256, null, run.ResearchSha256, false, "different-research-engine") { ResearchEngine = "raw-universe" };
     private static DiagnosticTrial UniverseTrial(UniverseRunEntry run, string reason) =>
         new(run.Id, run.DatasetId, run.Status, run.RequestSha256, run.ReportSha256, run.ResearchSha256,
             reason == "included", reason) { ResearchEngine = "changing-universe" };
@@ -35,7 +37,7 @@ public sealed partial class DiagnosticStore
     }
 
     private async Task<DiagnosticAttempt> AnalyseUniverse(DiagnosticAttempt attempt, UniverseRunEntry anchor,
-        ImmutableArray<RunEntry> models, ImmutableArray<UniverseRunEntry> universe, CancellationToken ct)
+        ImmutableArray<RunEntry> models, ImmutableArray<UniverseRunEntry> universe, ImmutableArray<RawStudyTrialEntry> raw, CancellationToken ct)
     {
         attempt = attempt with { DatasetId = anchor.DatasetId, Synthetic = anchor.Synthetic, FamilyEngine = "changing-universe" };
         Save(attempt);
@@ -46,6 +48,7 @@ public sealed partial class DiagnosticStore
         var trials = ImmutableArray.CreateBuilder<DiagnosticTrial>();
         trials.AddRange(models.Select(run => new DiagnosticTrial(run.Id, run.DatasetId, run.Status, run.ConfigSha256,
             run.ReportSha256, run.EngineSha256, false, "different-research-engine")));
+        trials.AddRange(raw.Select(RawTrial));
         var requests = new Dictionary<string, UniverseRunRequest>(StringComparer.Ordinal);
         foreach (var run in universe)
         {

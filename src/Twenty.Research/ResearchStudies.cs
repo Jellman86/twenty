@@ -19,6 +19,8 @@ public sealed record ResearchStudy(string Id, string RequestId, string RequestSh
     string? FinalStressRunId = null, string? FinalBaseReportSha256 = null, string? FinalStressReportSha256 = null,
     decimal? FinalWorstMarginGbp = null, bool? FinalPassed = null)
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public ImmutableArray<RawStudyTrialEntry> PriorRawTrials { get; init; }
     public ImmutableArray<UniverseRunEntry> PriorUniverseTrials { get; init; } = [];
 }
 
@@ -71,7 +73,7 @@ public sealed partial class ResearchStore
         while (reader.Read()) result.Add(new { sequence = reader.GetInt64(0), at = reader.GetString(1), kind = reader.GetString(2) }); return result;
     }
     private int ReservedStudySlots() => (Studies().Count(s => s.Status is "development" or "candidate-frozen") +
-        UniverseStudies().Count(s => s.Status is "development" or "candidate-frozen")) * 2;
+        UniverseStudies().Count(s => s.Status is "development" or "candidate-frozen")) * 2 + RawReservedStudySlots();
     private void WriteStudy(SqliteConnection db, SqliteTransaction tx, ResearchStudy study, string kind, bool insert = false)
     {
         var json = JsonSerializer.Serialize(study, Json);
@@ -134,7 +136,7 @@ public sealed partial class ResearchStore
             var previous = Studies().SingleOrDefault(s => s.RequestId == request.RequestId);
             if (previous is not null)
             { if (previous.RequestSha256 != requestHash) throw new ResearchException("request-id-conflict"); return previous; }
-            if (Studies().Count + UniverseStudies().Count >= MaximumStudies) throw new ResearchException("study-capacity");
+            if (Studies().Count + UniverseStudies().Count + RawStudies().Count >= MaximumStudies) throw new ResearchException("study-capacity");
             var panel = Panel(request.DatasetId);
             var identity = ResearchIdentity.Current;
             var plan = StudyProtocol.Declare(panel, request.MonthlyGbp, request.Costs, request.Purpose, identity.Sha256,
@@ -147,10 +149,10 @@ public sealed partial class ResearchStore
             }
             var prior = ListRuns();
             var priorUniverse = ListUniverseRuns().ToImmutableArray();
-            if (prior.Count + priorUniverse.Length + ReservedStudySlots() + plan.Candidates.Length * 2 + 2 > 1000) throw new ResearchException("trial-capacity");
+            if (prior.Count + priorUniverse.Length + ListRawTrials().Count + ReservedStudySlots() + plan.Candidates.Length * 2 + 2 > 1000) throw new ResearchException("trial-capacity");
             var study = new ResearchStudy(Guid.NewGuid().ToString("N"), request.RequestId, requestHash, request.Name, "development", clock.GetUtcNow(), plan, JsonHash(plan), [],
                 prior.Select(r => new PriorStudyTrial(r.Id, r.DatasetId, r.ConfigSha256, r.Status, r.ReportSha256)).ToImmutableArray(), [])
-            { PriorUniverseTrials = priorUniverse };
+            { PriorUniverseTrials = priorUniverse, PriorRawTrials = ListRawTrials().Count == 0 ? default : ListRawTrials().ToImmutableArray() };
             using var db = Open(); using var tx = db.BeginTransaction(); var pairs = ImmutableArray.CreateBuilder<StudyRuns>();
             foreach (var candidate in plan.Candidates)
             {

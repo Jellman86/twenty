@@ -6,7 +6,7 @@
   type Study = Row & { planSha256: string; errorCode: string | null; selectedCandidateId: string | null;
     finalRequestedAt: string | null; finalBaseRunId: string | null; finalStressRunId: string | null; finalWorstMarginNotional: number | null;
     plan: { synthetic: boolean; developmentStart: string; developmentEnd: string; reservedStart: string; reservedEnd: string; unitContract: string };
-    priorTrials: unknown[]; priorUniverseTrials: unknown[];
+    priorTrials: unknown[]; priorUniverseTrials: unknown[]; priorRawTrials?: unknown[];
     developmentRuns: { candidateId: string; baseRunId: string; stressRunId: string }[];
     scores: { candidateId: string; baseRunId: string; stressRunId: string; baseEndingNotional: number; stressEndingNotional: number; worstMarginNotional: number }[];
     selectionDiagnostics: { months: number; candidates: number; comparisons: number } | null };
@@ -122,7 +122,7 @@
   {#if history.length}<div class="table-scroll"><table><thead><tr><th>Study</th><th>Status</th><th>Completed / declared</th><th>Inspect</th></tr></thead><tbody>{#each history as row}<tr><td>{row.name}<small>{row.synthetic ? 'Engineering rehearsal' : 'Imported research'}</small></td><td>{row.status}</td><td>{row.completedRuns} / {row.plannedRuns}</td><td><button class="secondary small-button" disabled={busy} onclick={() => void inspect(row.id)} aria-label={`Open universe study ${row.id.slice(0, 8)}`}>Open</button></td></tr>{/each}</tbody></table></div>{/if}
   {#if selected}
     <h3>{selected.name} · {selected.status}</h3>
-    <p class="dataset-note">Development {stamp(selected.plan.developmentStart)}–{stamp(selected.plan.developmentEnd)}; reserved final outcomes {stamp(selected.plan.reservedStart)}–{stamp(selected.plan.reservedEnd)}. Each window starts with an empty account. Earlier local disclosure: {selected.priorTrials.length} model trials and {selected.priorUniverseTrials.length} universe trials.</p>
+    <p class="dataset-note">Development {stamp(selected.plan.developmentStart)}–{stamp(selected.plan.developmentEnd)}; reserved final outcomes {stamp(selected.plan.reservedStart)}–{stamp(selected.plan.reservedEnd)}. Each window starts with an empty account. Earlier local disclosure: {selected.priorTrials.length} model trials and {selected.priorUniverseTrials.length} universe trials{#if selected.priorRawTrials?.length} and {selected.priorRawTrials.length} raw-execution trials{/if}.</p>
     <p>{selected.plan.unitContract}</p>
     {#if selected.errorCode}<p class="error" role="status">{messages[selected.errorCode] ?? selected.errorCode}</p>{/if}
     {#if selected.selectedCandidateId}<p><strong>Frozen choice: {selected.selectedCandidateId}.</strong> The rule maximises the smaller base/stress ending-notional margin over equal weight and cash; ordinal candidate ID breaks ties.</p>{/if}

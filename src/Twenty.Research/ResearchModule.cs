@@ -42,8 +42,19 @@ public static class ResearchModule
         {
             var modelTrials = store.ListRuns().Count;
             var universeTrials = store.ListUniverseRuns().Count;
-            return new { total = modelTrials + universeTrials, modelTrials, universeTrials, displayedLimit = 100 };
+            var rawTrials = store.ListRawTrials().Count;
+            return new { total = modelTrials + universeTrials + rawTrials, modelTrials, universeTrials, rawTrials, displayedLimit = 100 };
         });
+        api.MapGet("/raw-studies", () => Results.Json(new { executionAvailable = false, finalEvaluationAvailable = false, studies = store.RawStudies() }, RawReplayJson.Options));
+        api.MapPost("/raw-studies", (RawStudyInboxRequest request) => Results.Json(store.RegisterRawStudy(new(request.RequestId, request.Name, PlanSha256: request.PlanSha256), Commit()), RawReplayJson.Options));
+        api.MapGet("/raw-studies/{id}", (string id) => store.RawStudies().SingleOrDefault(s => s.Id == id) is { } study
+            ? Results.Json(study, RawReplayJson.Options) : Results.NotFound());
+        api.MapGet("/raw-studies/{id}/events", (string id) => store.RawStudyEvents(id));
+        api.MapGet("/raw-studies/{id}/plan", (string id) => store.RawStudies().SingleOrDefault(s => s.Id == id) is { } study
+            ? Results.Bytes(Convert.FromBase64String(study.PlanBase64), "application/json") : Results.NotFound());
+        api.MapPost("/raw-studies/{id}/cancel", (string id) => Results.Json(store.CancelRawStudy(id), RawReplayJson.Options));
+        api.MapGet("/raw-trials", () => store.ListRawTrials());
+        api.MapGet("/raw-trials/{id}/request", (string id) => Results.Bytes(store.RawTrialRequestBytes(id), "application/json"));
         api.MapPost("/runs", (RunRequest request) => Results.Accepted("/api/research/runs", store.Enqueue(request, Commit())));
         api.MapGet("/runs/{id}", (string id) => store.Find(id) is { } run ? Results.Ok(run) : Results.NotFound());
         api.MapGet("/runs/{id}/report", (string id) => store.Report(id) is { } report ? Results.Ok(report) : Results.NotFound());

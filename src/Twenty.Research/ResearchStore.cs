@@ -42,6 +42,7 @@ public sealed partial class ResearchStore : IDisposable
         InitialiseStudies(db);
         InitialiseUniverseRuns(db);
         InitialiseUniverseStudies(db);
+        InitialiseRawStudies(db);
         foreach (var run in ListRuns().Where(r => r.Status == "running")) Save(run with { Status = "interrupted", FinishedAt = this.clock.GetUtcNow(), ErrorCode = "process-restarted" }, "restart-interrupted");
         InterruptStaleUniverseRuns();
     }
@@ -117,7 +118,7 @@ public sealed partial class ResearchStore : IDisposable
                 return prior;
             }
             using var count = db.CreateCommand(); count.Transaction = transaction;
-            count.CommandText = "SELECT (SELECT COUNT(*) FROM runs) + (SELECT COUNT(*) FROM universe_runs)";
+            count.CommandText = "SELECT (SELECT COUNT(*) FROM runs) + (SELECT COUNT(*) FROM universe_runs) + (SELECT COUNT(*) FROM raw_trials)";
             if ((long)count.ExecuteScalar()! + ReservedStudySlots() >= 1000) throw new ResearchException("trial-capacity");
             count.CommandText = "SELECT COUNT(*) FROM runs WHERE status IN ('queued','running')";
             if ((long)count.ExecuteScalar()! >= 10) throw new ResearchException("queue-capacity");

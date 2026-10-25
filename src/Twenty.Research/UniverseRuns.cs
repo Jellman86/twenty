@@ -134,7 +134,7 @@ public sealed partial class ResearchStore
             if (!datasetFile.Manifest.Synthetic)
                 GuardStudyReservations(window.Start, window.End);
             using var count = db.CreateCommand(); count.Transaction = transaction;
-            count.CommandText = "SELECT (SELECT COUNT(*) FROM universe_runs) + (SELECT COUNT(*) FROM runs)";
+            count.CommandText = "SELECT (SELECT COUNT(*) FROM universe_runs) + (SELECT COUNT(*) FROM runs) + (SELECT COUNT(*) FROM raw_trials)";
             if ((long)count.ExecuteScalar()! + ReservedStudySlots() >= 1000) throw new ResearchException("trial-capacity");
             entry = new(Guid.NewGuid().ToString("N"), request.DatasetSha256, datasetFile.Manifest.DatasetId,
                 datasetFile.Manifest.Synthetic, request.UniverseId, "started", clock.GetUtcNow(), null, null,

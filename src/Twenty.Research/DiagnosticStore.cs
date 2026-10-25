@@ -129,14 +129,14 @@ public sealed partial class DiagnosticStore
             attempt = attempt with { RegistrySnapshotAt = registry.At,
                 Trials = snapshot.Select(run => new DiagnosticTrial(run.Id, run.DatasetId, run.Status, run.ConfigSha256,
                     run.ReportSha256, run.EngineSha256, false, "not-analysed"))
-                    .Concat(registry.Universes.Select(run => UniverseTrial(run, "not-analysed"))).ToImmutableArray() };
+                    .Concat(registry.Universes.Select(run => UniverseTrial(run, "not-analysed"))).Concat(registry.Raw.Select(RawTrial)).ToImmutableArray() };
             Save(attempt);
             var anchor = snapshot.SingleOrDefault(r => r.Id == request.AnchorRunId);
             var universeAnchor = registry.Universes.SingleOrDefault(r => r.Id == request.AnchorRunId);
             if (anchor is not null && universeAnchor is not null) throw new ResearchException("diagnostic-anchor-ambiguous");
             if (universeAnchor is not null)
             {
-                attempt = await AnalyseUniverse(attempt, universeAnchor, snapshot, registry.Universes, deadline.Token);
+                attempt = await AnalyseUniverse(attempt, universeAnchor, snapshot, registry.Universes, registry.Raw, deadline.Token);
                 attempt = attempt with { Status = "succeeded", FinishedAt = clock.GetUtcNow() }; Save(attempt); return attempt;
             }
             if (anchor is null) throw new ResearchException("run-not-found");
@@ -144,7 +144,7 @@ public sealed partial class DiagnosticStore
                 throw new ResearchException("diagnostic-development-run-required");
             var trials = snapshot.Select(run => new DiagnosticTrial(run.Id, run.DatasetId, run.Status, run.ConfigSha256, run.ReportSha256, run.EngineSha256,
                 Reason(run, anchor) == "included", Reason(run, anchor)))
-                .Concat(registry.Universes.Select(run => UniverseTrial(run, "different-research-engine"))).ToImmutableArray();
+                .Concat(registry.Universes.Select(run => UniverseTrial(run, "different-research-engine"))).Concat(registry.Raw.Select(RawTrial)).ToImmutableArray();
             attempt = attempt with { Trials = trials, DatasetId = anchor.DatasetId, Synthetic = anchor.Synthetic }; Save(attempt);
             if (trials.Count(t => t.Included) > SearchDiagnostics.MaximumCandidates) throw new ResearchException("diagnostic-candidate-count");
             var streams = new List<DiagnosticReturns>();

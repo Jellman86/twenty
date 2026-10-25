@@ -21,6 +21,8 @@ public sealed record UniverseResearchStudy(string Id, string RequestId, string R
     string? SelectedCandidateId = null, string? ErrorCode = null, string? FinalRequestId = null,
     DateTimeOffset? FinalRequestedAt = null, string? FinalBaseRunId = null, string? FinalStressRunId = null)
 {
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public ImmutableArray<RawStudyTrialEntry> PriorRawTrials { get; init; }
     public ImmutableArray<UniverseStudyScore> Scores { get; init; } = [];
     public SearchDiagnosticReport? SelectionDiagnostics { get; init; }
     public ResearchBuildEvidence? BuildEvidence { get; init; }
@@ -53,6 +55,8 @@ public sealed partial class ResearchStore
             Overlap(start, end, UtcDate(s.Plan.ReservedStart), UtcDate(s.Plan.ReservedEnd)))) throw new ResearchException("study-reserved-window-conflict");
         if (UniverseStudies().Any(s => !s.Plan.Synthetic && s.Id != ownStudy && (s.Status is "development" or "candidate-frozen" or "final-evaluation") &&
             Overlap(start, end, s.Plan.ReservedStart, s.Plan.ReservedEnd))) throw new ResearchException("study-reserved-window-conflict");
+        if (RawStudies().Any(s => !s.Plan.Synthetic && s.Id != ownStudy && s.Status == "registered" &&
+            Overlap(start, end, s.Plan.ReservedStart, s.Plan.ReservedEnd))) throw new ResearchException("study-reserved-window-conflict");
     }
     private void GuardPriorReservedExposure(DateTimeOffset start, DateTimeOffset end, string? ownStudy = null)
     {
@@ -61,6 +65,8 @@ public sealed partial class ResearchStore
             var window = UniverseExposureWindow(run);
             if (Overlap(start, end, window.Start, window.End)) throw new ResearchException("study-known-reserved-exposure");
         }
+        foreach (var trial in ListRawTrials().Where(r => !r.Synthetic && r.StudyId != ownStudy))
+            if (Overlap(start, end, trial.InformationStartAt, trial.InformationEndAt)) throw new ResearchException("study-known-reserved-exposure");
         var panels = new Dictionary<string, MonthlyPanel>(StringComparer.Ordinal);
         foreach (var run in ListRuns().Where(r => !r.Synthetic && (ownStudy is null || r.StudyId != ownStudy) && (r.StartedAt is not null || r.Status is "queued" or "planned")))
         {
@@ -206,7 +212,7 @@ public sealed partial class ResearchStore
         {
             var previous = UniverseStudies().SingleOrDefault(s => s.RequestId == request.RequestId);
             if (previous is not null) { if (previous.RequestSha256 != requestHash) throw new ResearchException("request-id-conflict"); return previous; }
-            if (Studies().Count + UniverseStudies().Count >= MaximumStudies) throw new ResearchException("study-capacity");
+            if (Studies().Count + UniverseStudies().Count + RawStudies().Count >= MaximumStudies) throw new ResearchException("study-capacity");
             var file = ReadUniverseDataset(request.DatasetSha256); var identity = ResearchIdentity.Current;
             var plan = UniverseStudyProtocol.Declare(request.DatasetSha256, request.UniverseId, file.Manifest.Synthetic, request.Decisions, request.MaximumPriceAgeDays,
                 request.MonthlyGbp, request.Costs, request.Purpose, identity.Sha256, identity.Scheme);
@@ -219,10 +225,10 @@ public sealed partial class ResearchStore
                 GuardPriorReservedExposure(plan.ReservedStart, plan.ReservedEnd);
             }
             var prior = ListRuns(); var priorUniverse = ListUniverseRuns();
-            if (prior.Count + priorUniverse.Count + ReservedStudySlots() + plan.Candidates.Length * 2 + 2 > 1000) throw new ResearchException("trial-capacity");
+            if (prior.Count + priorUniverse.Count + ListRawTrials().Count + ReservedStudySlots() + plan.Candidates.Length * 2 + 2 > 1000) throw new ResearchException("trial-capacity");
             var study = new UniverseResearchStudy(Guid.NewGuid().ToString("N"), request.RequestId, requestHash, request.Name, "development", clock.GetUtcNow(),
                 plan, JsonHash(plan), [], prior.Select(r => new PriorStudyTrial(r.Id, r.DatasetId, r.ConfigSha256, r.Status, r.ReportSha256)).ToImmutableArray(), priorUniverse.ToImmutableArray())
-            { BuildEvidence = identity };
+            { BuildEvidence = identity, PriorRawTrials = ListRawTrials().Count == 0 ? default : ListRawTrials().ToImmutableArray() };
             var rows = plan.Candidates.SelectMany(c => new[] { PrepareUniverseStudyRun(study, c, "development-base", commit, file),
                 PrepareUniverseStudyRun(study, c, "development-stress", commit, file) }).ToArray();
             study = study with { DevelopmentRuns = plan.Candidates.Select((c, i) => new UniverseStudyRuns(c.Id, rows[i * 2].Entry.Id, rows[i * 2 + 1].Entry.Id)).ToImmutableArray() };
