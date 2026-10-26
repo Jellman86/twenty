@@ -45,10 +45,11 @@ public sealed class UniverseStudyTests : IDisposable
         study = store.UniverseStudy(study.Id)!;
         Assert.Equal("candidate-frozen", study.Status); Assert.NotNull(study.SelectedCandidateId);
         var evaluation = new StudyEvaluationRequest(Guid.NewGuid().ToString("D"), study.PlanSha256);
+        SharedFinalClaimFixture.AssertCaseAliasConflict(root, id => store.EvaluateUniverseStudy(study.Id, new(id, study.PlanSha256), "authored-test"));
         var final = store.EvaluateUniverseStudy(study.Id, evaluation, "authored-test");
         Assert.NotNull(final.FinalRequestedAt); Assert.Equal(10, store.ListUniverseRuns().Count);
         Assert.Equal(2, store.ListUniverseRuns().Count(r => r.Status == "planned"));
-        Assert.Equal(final.FinalBaseRunId, store.EvaluateUniverseStudy(study.Id, evaluation, "test").FinalBaseRunId);
+        Assert.Equal(final.FinalBaseRunId, store.EvaluateUniverseStudy(study.Id, evaluation with { RequestId = evaluation.RequestId.ToUpperInvariant() }, "test").FinalBaseRunId);
         Assert.Equal("study-holdout-spent", Assert.Throws<ResearchException>(() => store.EvaluateUniverseStudy(
             study.Id, evaluation with { RequestId = Guid.NewGuid().ToString("D") }, "test")).Code);
         for (var i = 0; i < 4; i++) _ = store.ProcessNextUniverseStudyRun("authored-test");

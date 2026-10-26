@@ -71,6 +71,7 @@ public sealed partial class RawStudyWorkerTests
         var request = new StudyEvaluationRequest(Guid.NewGuid().ToString("D"), study.PlanSha256);
         var slots = typeof(ResearchStore).GetMethod("RawReservedStudySlots", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
         Assert.Equal(2, slots.Invoke(store, null));
+        SharedFinalClaimFixture.AssertCaseAliasConflict(root, id => store.EvaluateRawStudy(study.Id, new(id, study.PlanSha256), "authored"));
         var started = store.EvaluateRawStudy(study.Id, request, "authored");
         Assert.Equal("authored", started.FinalRequestedCommit); Assert.Equal(0, slots.Invoke(store, null));
         Assert.Equal("final-evaluation", started.Status); Assert.Equal(1, RawFinalClaims());
@@ -181,5 +182,34 @@ public sealed partial class RawStudyWorkerTests
         Assert.False(store.ProcessNextRawStudyRun("authored"));
         Assert.Equal("study-holdout-spent", Assert.Throws<ResearchException>(() => store.EvaluateRawStudy(study.Id,
             request with { RequestId = Guid.NewGuid().ToString("D") }, "authored")).Code);
+    }
+
+    [Fact]
+    public void AuthoredFalseProvenancePinsNonSyntheticFinalGuardsAndBlocksAnOutcomeAlias()
+    {
+        // Deliberately false provenance flag exercises the genuine-path guards; all values are authored.
+        var f = RawStudyDistributionTests.Fixture(); var file = Twenty.Core.Data.DatasetJson.Read(f.Dataset);
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(file with { Manifest = file.Manifest with { Synthetic = false } }, Twenty.Core.Data.DatasetJson.Options);
+        var sha = Convert.ToHexStringLower(SHA256.HashData(bytes));
+        var entry = (RawStudyDividendSchedule)RawStudyEvidence.Actions(f.Actions)[0];
+        var actions = JsonSerializer.SerializeToUtf8Bytes<System.Collections.Immutable.ImmutableArray<RawActionSchedule>>(
+            [entry with { Capture = entry.Capture with { DatasetSha256 = sha },
+                Delivery = entry.Delivery! with { Booking = entry.Delivery.Booking with { DatasetSha256 = sha } } }], RawReplayJson.Options);
+        var study = RegisterFixture((f.Plan with { Synthetic = false, Purpose = "research", ActionCatalogSha256 = Convert.ToHexStringLower(SHA256.HashData(actions)) }, bytes, f.Calendar, actions));
+        store.StartRawStudy(study.Id, new(Guid.NewGuid().ToString("D"), study.PlanSha256));
+        for (var i = 0; i < 8; i++) Assert.True(store.ProcessNextRawStudyRun("authored"));
+        study = store.SelectRawStudy(study.Id, new(Guid.NewGuid().ToString("D"), study.PlanSha256), "authored");
+        Assert.Equal("candidate-frozen", study.Status);
+        store.EvaluateRawStudy(study.Id, new(Guid.NewGuid().ToString("D"), study.PlanSha256), "authored");
+        using (var db = new SqliteConnection("Data Source=" + Path.Combine(root, "research.db")))
+        { db.Open(); using var cmd = db.CreateCommand(); cmd.CommandText = "SELECT synthetic FROM study_holdout_claims"; Assert.Equal(0L, (long)cmd.ExecuteScalar()!); }
+        Assert.True(store.ProcessNextRawStudyRun("authored")); Assert.True(store.ProcessNextRawStudyRun("authored"));
+        Assert.Equal("research-rejected", store.RawStudies().Single().Status); // Flat final returns fail the strict positive margin screen.
+        var aliasFile = Twenty.Core.Data.DatasetJson.Read(bytes);
+        var alias = store.ImportUniverseDataset(JsonSerializer.SerializeToUtf8Bytes(aliasFile with
+            { Manifest = aliasFile.Manifest with { DatasetId = "authored-outcome-alias" } }, Twenty.Core.Data.DatasetJson.Options));
+        Assert.Equal("study-known-reserved-exposure", Assert.Throws<ResearchException>(() => store.RegisterUniverseStudy(
+            new(Guid.NewGuid().ToString("D"), "Authored alias guard", "research", alias, study.Plan.UniverseId,
+                study.Plan.Decisions, 45, 20, new()), "authored")).Code);
     }
 }

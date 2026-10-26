@@ -74,11 +74,12 @@ public sealed class StudyWorkflowTests
         Assert.Single(reports.SelectMany(r => r.Summaries).Select(s => s.ContributionsGbp).Distinct());
         Assert.All(reports.SelectMany(r => r.Folds), fold => Assert.True(fold.LastLabelEnd < fold.DecisionDate));
         var request = new StudyEvaluationRequest(Guid.NewGuid().ToString("D"), study.PlanSha256);
+        SharedFinalClaimFixture.AssertCaseAliasConflict(f.Root, id => f.Store.EvaluateStudy(study.Id, new(id, study.PlanSha256), "unit"));
         study = f.Store.EvaluateStudy(study.Id, request, "unit");
         Assert.Equal("final-evaluation", study.Status); Assert.NotNull(study.FinalRequestedAt);
         Assert.All(f.Store.ListRuns().Where(r => r.Config.EvaluateHoldout), r => { Assert.Equal("planned", r.Status); Assert.Null(r.StartedAt); Assert.Equal(study.SelectedCandidateId, r.StudyCandidateId); });
         Assert.Equal(2, f.Store.ListRuns().Count(r => r.Config.EvaluateHoldout));
-        Assert.Equal(study.FinalBaseRunId, f.Store.EvaluateStudy(study.Id, request, "unit").FinalBaseRunId);
+        Assert.Equal(study.FinalBaseRunId, f.Store.EvaluateStudy(study.Id, request with { RequestId = request.RequestId.ToUpperInvariant() }, "unit").FinalBaseRunId);
         Assert.Equal("study-holdout-spent", Assert.Throws<ResearchException>(() => f.Store.EvaluateStudy(study.Id, request with { RequestId = Guid.NewGuid().ToString("D") }, "unit")).Code);
         Drain(f.Store); study = f.Store.Study(study.Id)!;
         Assert.Equal("engineering-complete", study.Status); Assert.NotNull(study.FinalBaseReportSha256);

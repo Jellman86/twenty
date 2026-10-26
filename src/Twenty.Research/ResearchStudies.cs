@@ -186,7 +186,7 @@ public sealed partial class ResearchStore
         {
             var study = Study(id) ?? throw new ResearchException("study-not-found");
             if (study.PlanSha256 != request.PlanSha256) throw new ResearchException("study-plan-binding");
-            if (study.FinalRequestId == request.RequestId) return study;
+            if (study.FinalRequestId is not null && Guid.Parse(study.FinalRequestId) == Guid.Parse(request.RequestId)) return study;
             if (study.FinalRequestedAt is not null) throw new ResearchException("study-holdout-spent");
             if (study.Status != "candidate-frozen" || study.SelectedCandidateId is null) throw new ResearchException("study-candidate-not-frozen");
             if (!StudyCodeMatches(study.Plan)) throw new ResearchException("study-code-changed");
@@ -196,7 +196,7 @@ public sealed partial class ResearchStore
             var requestedAt = clock.GetUtcNow();
             var a = PlannedStudyRun(study, candidate, "final-base", commit, true); var b = PlannedStudyRun(study, candidate, "final-stress", commit, true);
             using var db = Open(); using var tx = db.BeginTransaction(); using var command = db.CreateCommand(); command.Transaction = tx;
-            command.CommandText = "SELECT study_id FROM study_holdout_claims WHERE request_id=$request"; command.Parameters.AddWithValue("$request", request.RequestId);
+            command.CommandText = "SELECT study_id FROM study_holdout_claims WHERE request_id=$request COLLATE NOCASE"; command.Parameters.AddWithValue("$request", request.RequestId);
             if (command.ExecuteScalar() is not null) throw new ResearchException("request-id-conflict");
             command.CommandText = "INSERT INTO study_holdout_claims VALUES($study,$request,$start,$end,$synthetic,$at)";
             command.Parameters.AddWithValue("$study", study.Id);
