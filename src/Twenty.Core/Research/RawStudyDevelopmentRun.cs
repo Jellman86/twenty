@@ -28,10 +28,13 @@ public static class RawStudyDevelopmentRun
              "Independent empty momentum/equal-weight/cash accounts receive the exact frozen deposits; all orders in each bound batch must execute or the trial fails.",
              "Original catalogs freeze pure splits and per-cutoff-share dividend/terminal policies with explicit ownership dispositions. Unsettled claims at marks, mixed consideration and cross-calendar batches are refused; future final-window actions do not gate development.",
              "Raw GBP marks use executable-purpose historical FX labels and supplied reviewed sessions; same-open funding, fractional quantities and retrospective volume screens remain model assumptions."];
-    private static void Scope(DatasetFile file, RawUniverseStudyPlan plan)
+    private static ImmutableArray<string> StageLimitations(bool final) => final
+        ? Limitations.SetItem(0, "Recorded final-stage calculation only; no investment nomination, paper promotion or broker execution is granted. Offline calculation alone does not establish a registered spent claim.")
+        : Limitations;
+    private static void Scope(DatasetFile file, RawUniverseStudyPlan plan, bool final)
     {
         if (file.Manifest.Synthetic != plan.Synthetic || !file.Manifest.Universes.Any(u => u.Id == plan.UniverseId) ||
-            plan.DevelopmentEnd > file.Manifest.CreatedAt) throw new ResearchException("raw-study-dataset-contract");
+            (final ? plan.ReservedEnd : plan.DevelopmentEnd) > file.Manifest.CreatedAt) throw new ResearchException("raw-study-dataset-contract");
 
     }
     public static RawStudyDevelopmentReport Run(RawUniverseStudyPlan plan, string trialId, byte[] datasetBytes,
@@ -39,37 +42,43 @@ public static class RawStudyDevelopmentRun
         Run(plan, trialId, datasetBytes, calendars, "[]"u8.ToArray(), ct, checkpoint);
 
     public static RawStudyDevelopmentReport Run(RawUniverseStudyPlan plan, string trialId, byte[] datasetBytes,
-        IReadOnlyDictionary<string, ExecutionCalendar> calendars, byte[] actionCatalogBytes, CancellationToken ct = default, Action? checkpoint = null)
+        IReadOnlyDictionary<string, ExecutionCalendar> calendars, byte[] actionCatalogBytes, CancellationToken ct = default, Action? checkpoint = null) =>
+        RunStage(plan, trialId, datasetBytes, calendars, actionCatalogBytes, false, ct, checkpoint);
+
+    internal static RawStudyDevelopmentReport RunStage(RawUniverseStudyPlan plan, string trialId, byte[] datasetBytes,
+        IReadOnlyDictionary<string, ExecutionCalendar> calendars, byte[] actionCatalogBytes, bool final, CancellationToken ct, Action? checkpoint)
     {
         _ = RawUniverseStudyProtocol.Encode(plan);
         datasetBytes = datasetBytes.ToArray(); actionCatalogBytes = actionCatalogBytes.ToArray();
-        var file = ReadDataset(plan, datasetBytes); var dataset = new PointInTimeDataset(file);
+        var file = ReadDataset(plan, datasetBytes, final); var dataset = new PointInTimeDataset(file);
         var pinned = calendars.ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
         foreach (var pin in plan.Calendars)
             if (!pinned.TryGetValue(pin.CalendarId, out var calendar) || calendar.Sha256 != pin.Sha256 || calendar.Venue != pin.Venue ||
                 !file.Manifest.Calendars.Contains(calendar.Reference)) throw new ResearchException("raw-study-calendar-binding");
-        var catalog = RawStudyEvidence.Actions(actionCatalogBytes); var actions = StageActions(plan, file, datasetBytes, actionCatalogBytes, catalog);
+        var catalog = RawStudyEvidence.Actions(actionCatalogBytes); var actions = StageActions(plan, file, datasetBytes, actionCatalogBytes, catalog, final);
         var reports = ImmutableArray.CreateBuilder<RawStudyStrategyReport>();
         foreach (var strategy in Strategies)
         {
-            var request = BuildRequest(plan, trialId, strategy, file, dataset, pinned, actionCatalogBytes, catalog, actions, ct, checkpoint);
+            var request = BuildRequest(plan, trialId, strategy, file, dataset, pinned, actionCatalogBytes, catalog, actions, final, ct, checkpoint);
             var receipt = RawReplayArchive.Execute(RawReplayJson.Write(request, RawReplayArchive.MaximumRequestBytes), _ => datasetBytes, ct);
             reports.Add(Summary(strategy, receipt));
         }
-        return new(Version, Hash(RawUniverseStudyProtocol.Encode(plan)), trialId, plan.DatasetSha256, reports.ToImmutable(), Limitations);
+        return new(final ? RawStudyFinalRun.Version : Version, Hash(RawUniverseStudyProtocol.Encode(plan)), trialId, plan.DatasetSha256, reports.ToImmutable(), StageLimitations(final));
     }
-    private static DatasetFile ReadDataset(RawUniverseStudyPlan plan, byte[] bytes)
+    private static DatasetFile ReadDataset(RawUniverseStudyPlan plan, byte[] bytes, bool final)
     {
         if (bytes.Length > DatasetJson.MaximumBytes || Hash(bytes) != plan.DatasetSha256) throw new ResearchException("raw-replay-dataset-hash");
-        var file = RawReplayJson.Read<DatasetFile>(bytes, DatasetJson.MaximumBytes); _ = new PointInTimeDataset(file); Scope(file, plan); return file;
+        var file = RawReplayJson.Read<DatasetFile>(bytes, DatasetJson.MaximumBytes); _ = new PointInTimeDataset(file); Scope(file, plan, final); return file;
     }
     private static ImmutableArray<RawReplayEventSpec> StageActions(RawUniverseStudyPlan plan, DatasetFile file, byte[] datasetBytes,
-        byte[] actionBytes, ImmutableArray<RawActionSchedule> catalog)
+        byte[] actionBytes, ImmutableArray<RawActionSchedule> catalog, bool final)
     {
+        var start = final ? plan.ReservedStart : plan.DevelopmentStart;
+        var end = final ? plan.ReservedEnd : plan.DevelopmentEnd;
         if (Hash(actionBytes) != plan.ActionCatalogSha256) throw new ResearchException("raw-study-action-catalog");
         if (catalog.Select(c => (c.ListingId, c.ActionId)).Distinct().Count() != catalog.Length) throw new ResearchException("raw-study-actions");
         var required = file.Observations.OfType<CorporateAction>().Where(a => a.Action != CorporateActionKind.SymbolChange &&
-            a.EffectiveAt >= plan.DevelopmentStart && a.EffectiveAt <= plan.DevelopmentEnd && a.Evidence.AvailableAt <= plan.DevelopmentEnd)
+            a.EffectiveAt >= start && a.EffectiveAt <= end && a.Evidence.AvailableAt <= end)
             .Select(a => (a.ListingId, a.ActionId)).Distinct().ToArray();
         if (required.Length > RawEventSchedule.MaximumActions || (long)required.Length * file.Observations.Length > RawReplayArchive.MaximumEventObservationWork)
             throw new ResearchException("raw-schedule-work");
@@ -81,24 +90,25 @@ public static class RawStudyDevelopmentRun
             if (entry.Capture is null || string.IsNullOrWhiteSpace(entry.Capture.Id)) throw new ResearchException("raw-study-action-binding");
             var source = file.Observations.OfType<CorporateAction>().SingleOrDefault(a => a.Id == entry.ObservationId &&
                 a.ListingId == entry.ListingId && a.ActionId == entry.ActionId);
-            if (source is null || source.Evidence.AvailableAt is not { } available || source.EffectiveAt < plan.DevelopmentStart ||
-                source.EffectiveAt > plan.DevelopmentEnd || available > plan.DevelopmentEnd) throw new ResearchException("raw-study-action-binding");
+            if (source is null || source.Evidence.AvailableAt is not { } available || source.EffectiveAt < start ||
+                source.EffectiveAt > end || available > end) throw new ResearchException("raw-study-action-binding");
             RawStudyActionTerms.Validate(entry, source, plan.DatasetSha256);
-            selected.Add(RawStudyActionTerms.ForCompiler(entry, plan.DevelopmentEnd));
+            selected.Add(RawStudyActionTerms.ForCompiler(entry, end));
         }
         if (selected.Count == 0) return [];
         var schedule = new RawSchedulePlan(RawEventSchedule.Version, RawEventReplay.Version, plan.Build,
             TimeSpan.FromDays(plan.BaseExecution.MaximumPriceAgeDays).Ticks, TimeSpan.FromDays(plan.BaseExecution.MaximumFxAgeDays).Ticks, FxPurpose.Executable,
-            [new(new("study-action-boundary", int.MaxValue, plan.DatasetSha256), plan.DevelopmentEnd, new RawReplayMark([], []))], selected.ToImmutable());
+            [new(new("study-action-boundary", int.MaxValue, plan.DatasetSha256), end, new RawReplayMark([], []))], selected.ToImmutable());
         var compiled = RawEventSchedule.Compile(RawReplayJson.Write(schedule, RawEventSchedule.MaximumPlanBytes), _ => datasetBytes);
         return RawReplayJson.Read<RawReplayDocument>(compiled, RawReplayArchive.MaximumRequestBytes).Events.Where(e => e.Id != "study-action-boundary").ToImmutableArray();
     }
     private static RawReplayDocument BuildRequest(RawUniverseStudyPlan plan, string trialId, string strategy, DatasetFile file,
         PointInTimeDataset dataset, IReadOnlyDictionary<string, ExecutionCalendar> pinned, byte[] actionCatalogBytes,
-        ImmutableArray<RawActionSchedule> catalog, ImmutableArray<RawReplayEventSpec> actions, CancellationToken ct, Action? checkpoint = null)
+        ImmutableArray<RawActionSchedule> catalog, ImmutableArray<RawReplayEventSpec> actions, bool final, CancellationToken ct, Action? checkpoint = null)
     {
         var encoded = RawUniverseStudyProtocol.Encode(plan); var planSha = Hash(encoded);
-        var policy = RawUniverseStudyProtocol.DevelopmentDecision(plan, trialId, plan.DevelopmentStart).Execution;
+        var contributions = final ? plan.FinalContributions : plan.DevelopmentContributions;
+        var policy = RawUniverseStudyProtocol.StageDecision(plan, trialId, contributions[0].At, final).Execution;
         var priceAge = TimeSpan.FromDays(policy.MaximumPriceAgeDays); var fxAge = TimeSpan.FromDays(policy.MaximumFxAgeDays);
         var ledger = new RawGbpLedger(); var events = ImmutableArray.CreateBuilder<RawReplayEventSpec>();
         long observationWork = 0;
@@ -177,10 +187,10 @@ public static class RawStudyDevelopmentRun
                 dispositions.Add(new(item.Id,listing,action,item.At,disposition));
             }
         }
-        for (var i = 0; i < plan.DevelopmentContributions.Length; i++)
+        for (var i = 0; i < contributions.Length; i++)
         {
             ct.ThrowIfCancellationRequested(); checkpoint?.Invoke(); ct.ThrowIfCancellationRequested();
-            var instruction = RawUniverseStudyProtocol.DevelopmentDecision(plan, trialId, plan.DevelopmentContributions[i].At);
+            var instruction = RawUniverseStudyProtocol.StageDecision(plan, trialId, contributions[i].At, final);
             var at = instruction.Contribution.At; Through(at); var market = dataset.AsOf(at);
             Charge(2L * market.Observations.Length); // Deposit and decision, including repeated slices.
             ledger.Deposit("deposit-" + i, at, instruction.Contribution.AmountGbp);
@@ -229,7 +239,7 @@ public static class RawStudyDevelopmentRun
         ct.ThrowIfCancellationRequested(); checkpoint?.Invoke(); ct.ThrowIfCancellationRequested();
         return new RawReplayDocument(RawReplayArchive.Version, RawEventReplay.Version, plan.Build,
             priceAge.Ticks, fxAge.Ticks, FxPurpose.Executable, events.ToImmutable())
-            { Study = new(Version, planSha, Convert.ToBase64String(encoded), trialId, strategy)
+            { Study = new(final ? RawStudyFinalRun.Version : Version, planSha, Convert.ToBase64String(encoded), trialId, strategy)
               { ActionCatalogBase64 = Convert.ToBase64String(actionCatalogBytes), Dispositions = dispositions.ToImmutable() },
               Calendars = pinned.Values.Where(c => events.Any(e => e.Operation is RawReplayModelledFill f && f.CalendarSha256 == c.Sha256))
                   .OrderBy(c => c.Sha256, StringComparer.Ordinal).ToImmutableArray() };
@@ -253,7 +263,7 @@ public static class RawStudyDevelopmentRun
     public static RawStudyDevelopmentReport Verify(ReadOnlySpan<byte> reportBytes, Func<string, byte[]> readDataset, CancellationToken ct = default)
     {
         var report = RawReplayJson.Read<RawStudyDevelopmentReport>(reportBytes, MaximumReportBytes);
-        if (report.Version != Version || report.Limitations.IsDefault || !report.Limitations.SequenceEqual(Limitations) ||
+        if (report.Version is not (Version or RawStudyFinalRun.Version) || report.Limitations.IsDefault || !report.Limitations.SequenceEqual(StageLimitations(report.Version == RawStudyFinalRun.Version)) ||
             report.Strategies.IsDefault || report.Strategies.Any(s => s is null) || !report.Strategies.Select(s => s.Strategy).SequenceEqual(Strategies))
             throw new ResearchException("raw-study-report-binding");
         string? original = null;
@@ -263,7 +273,7 @@ public static class RawStudyDevelopmentRun
             var receipt = RawReplayArchive.Verify(RawReplayJson.Write(strategy.Receipt, RawReplayArchive.MaximumReceiptBytes), readDataset, ct);
             var request = RawReplayJson.Read<RawReplayDocument>(Convert.FromBase64String(receipt.RequestBase64), RawReplayArchive.MaximumRequestBytes);
             var binding = request.Study;
-            if (binding is null || binding.PlanSha256 != report.PlanSha256 || binding.TrialId != report.TrialId || binding.Strategy != strategy.Strategy ||
+            if (binding is null || binding.Version != report.Version || binding.PlanSha256 != report.PlanSha256 || binding.TrialId != report.TrialId || binding.Strategy != strategy.Strategy ||
                 original is not null && original != binding.PlanBase64 || request.Events.Any(e => e.DatasetSha256 != report.DatasetSha256))
                 throw new ResearchException("raw-study-report-binding");
             original = binding.PlanBase64;
@@ -274,7 +284,8 @@ public static class RawStudyDevelopmentRun
     }
     internal static void VerifyBinding(RawReplayDocument request, RawReplayStudyBinding binding, Func<string, byte[]> readDataset, CancellationToken ct)
     {
-        if (binding.Version != Version || request.Schedule is not null || !Strategies.Contains(binding.Strategy) || binding.PlanBase64 is null ||
+        var final = binding.Version == RawStudyFinalRun.Version;
+        if (binding.Version is not (Version or RawStudyFinalRun.Version) || request.Schedule is not null || !Strategies.Contains(binding.Strategy) || binding.PlanBase64 is null ||
             binding.PlanBase64.Length > 4L * ((RawUniverseStudyProtocol.MaximumPlanBytes + 2L) / 3)) throw new ResearchException("raw-study-replay-binding");
         byte[] bytes;
         try { bytes = Convert.FromBase64String(binding.PlanBase64); }
@@ -288,8 +299,8 @@ public static class RawStudyDevelopmentRun
         try { actionBytes = Convert.FromBase64String(binding.ActionCatalogBase64); }
         catch (FormatException) { throw new ResearchException("raw-study-replay-binding"); }
         var datasetBytes = readDataset(plan.DatasetSha256)?.ToArray() ?? throw new ResearchException("raw-replay-dataset-hash");
-        var file = ReadDataset(plan, datasetBytes); var catalog = RawStudyEvidence.Actions(actionBytes);
-        var actions = StageActions(plan, file, datasetBytes, actionBytes, catalog);
+        var file = ReadDataset(plan, datasetBytes, final); var catalog = RawStudyEvidence.Actions(actionBytes);
+        var actions = StageActions(plan, file, datasetBytes, actionBytes, catalog, final);
         var tables = request.Calendars.IsDefault ? ImmutableArray<ExecutionCalendar>.Empty : request.Calendars;
         if (tables.Select(c => c.Reference.Id).Distinct(StringComparer.Ordinal).Count() != tables.Length)
             throw new ResearchException("raw-study-calendar-binding");
@@ -298,7 +309,7 @@ public static class RawStudyDevelopmentRun
             if (!plan.Calendars.Any(p => p.CalendarId == calendar.Reference.Id && p.Venue == calendar.Venue && p.Sha256 == calendar.Sha256) ||
                 !file.Manifest.Calendars.Contains(calendar.Reference)) throw new ResearchException("raw-study-calendar-binding");
         var expected = BuildRequest(plan, binding.TrialId, binding.Strategy, file, new PointInTimeDataset(file), calendars,
-            actionBytes, catalog, actions, ct);
+            actionBytes, catalog, actions, final, ct);
         if (!RawReplayJson.Write(request, RawReplayArchive.MaximumRequestBytes).AsSpan()
             .SequenceEqual(RawReplayJson.Write(expected, RawReplayArchive.MaximumRequestBytes))) throw new ResearchException("raw-study-replay-binding");
     }

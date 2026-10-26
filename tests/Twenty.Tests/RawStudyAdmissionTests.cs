@@ -227,11 +227,14 @@ public sealed class RawStudyAdmissionTests : IDisposable
             using var history = JsonDocument.Parse(await client.GetByteArrayAsync("/api/research/raw-studies"));
             Assert.True(history.RootElement.GetProperty("executionAvailable").GetBoolean());
             Assert.True(history.RootElement.GetProperty("selectionAvailable").GetBoolean());
-            Assert.False(history.RootElement.GetProperty("finalEvaluationAvailable").GetBoolean());
+            Assert.True(history.RootElement.GetProperty("finalEvaluationAvailable").GetBoolean());
             client.DefaultRequestHeaders.Remove("X-Twenty-Request");
             using var refusedSelection = await client.PostAsJsonAsync("/api/research/raw-studies/"+id+"/select",
                 new RawStudySelectionRequest(Guid.NewGuid().ToString("D"),sha));
             Assert.Equal(HttpStatusCode.Forbidden,refusedSelection.StatusCode);
+            using var refusedFinal = await client.PostAsJsonAsync("/api/research/raw-studies/"+id+"/evaluate-final",
+                new StudyEvaluationRequest(Guid.NewGuid().ToString("D"),sha));
+            Assert.Equal(HttpStatusCode.Forbidden, refusedFinal.StatusCode);
         }
         finally { await app.StopAsync(); }
     }

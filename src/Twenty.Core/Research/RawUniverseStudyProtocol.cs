@@ -103,20 +103,25 @@ public static class RawUniverseStudyProtocol
         var plan = RawReplayJson.Read<RawUniverseStudyPlan>(bytes, MaximumPlanBytes); Validate(plan); return plan;
     }
     public static RawStudyDevelopmentDecision DevelopmentDecision(RawUniverseStudyPlan plan, string trialId, DateTimeOffset at)
+    => StageDecision(plan, trialId, at, false);
+
+    internal static RawStudyDevelopmentDecision StageDecision(RawUniverseStudyPlan plan, string trialId, DateTimeOffset at, bool final)
     {
         Validate(plan);
-        var trial = plan.DevelopmentTrials.SingleOrDefault(t => t.Id == trialId);
-        var index = plan.DevelopmentDecisions.IndexOf(at);
-        if (trial is null || index < RawUniverseDecision.HistoryDecisions - 1 || index >= plan.DevelopmentDecisions.Length - 1)
+        var trial = final ? RawStudyFinalRun.Trial(plan, trialId) : plan.DevelopmentTrials.SingleOrDefault(t => t.Id == trialId);
+        var grid = final ? plan.FinalDecisions : plan.DevelopmentDecisions;
+        var contributions = final ? plan.FinalContributions : plan.DevelopmentContributions;
+        var index = grid.IndexOf(at);
+        if (trial is null || index < RawUniverseDecision.HistoryDecisions - 1 || index >= grid.Length - 1)
             throw new ResearchException("raw-study-development-decision");
         var candidate = plan.Candidates.Single(c => c.Id == trial.CandidateId);
-        var history = plan.DevelopmentDecisions.Skip(index - RawUniverseDecision.HistoryDecisions + 1)
+        var history = grid.Skip(index - RawUniverseDecision.HistoryDecisions + 1)
             .Take(RawUniverseDecision.HistoryDecisions).ToImmutableArray();
         var execution = trial.CostScenario == "base" ? plan.BaseExecution : plan.StressExecution;
         var planSha256 = Convert.ToHexStringLower(SHA256.HashData(RawReplayJson.Write(plan, MaximumPlanBytes)));
         return new(planSha256, plan.DatasetSha256, plan.ActionCatalogSha256, plan.Calendars,
-            trial.Id, candidate.Id, trial.CostScenario, plan.DevelopmentContributions[index - RawUniverseDecision.HistoryDecisions + 1],
-            plan.DevelopmentDecisions[index + 1], execution,
+            trial.Id, candidate.Id, trial.CostScenario, contributions[index - RawUniverseDecision.HistoryDecisions + 1],
+            grid[index + 1], execution,
             new[] { "momentum", "equal_weight", "cash" }.Select(strategy => new RawUniverseStrategySpec(RawUniverseDecision.Version, plan.UniverseId,
                 history, execution.MaximumPriceAgeDays, candidate.Config, strategy)).ToImmutableArray());
     }

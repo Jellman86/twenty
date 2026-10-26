@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Twenty.Core.Data;
 using Twenty.Core.Research;
 
@@ -9,7 +10,7 @@ public sealed record RawStudyStartRequest(string RequestId, string PlanSha256);
 
 public sealed partial class ResearchStore
 {
-    private static bool RawReservationActive(RawResearchStudy study) => study.Status is "registered" or "development" or "development-complete" or "candidate-frozen";
+    private static bool RawReservationActive(RawResearchStudy study) => study.Status is "registered" or "development" or "development-complete" or "candidate-frozen" or "final-evaluation";
     private static bool RawTrialStateValid(RawResearchStudy study, RawStudyTrialEntry row)
     {
         if (row.Status is not ("planned" or "started" or "succeeded" or "failed" or "interrupted" or "cancelled")) return false;
@@ -17,17 +18,19 @@ public sealed partial class ResearchStore
             study.StartRequestId is not null && !Guid.TryParseExact(study.StartRequestId, "D", out _)) return false;
         if (study.StartRequestedAt is null) return study.Status is "registered" or "cancelled" &&
             row.Status == (study.Status == "registered" ? "planned" : "cancelled") && row.QueuedAt is null && row.StartedAt is null && row.ReportSha256 is null;
-        if (row.QueuedAt != study.StartRequestedAt || row.QueuedAt < row.CreatedAt ||
+        var final = IsRawFinalTrial(study, row);
+        if (row.QueuedAt != (final ? study.FinalRequestedAt : study.StartRequestedAt) || row.QueuedAt < row.CreatedAt ||
             row.StartedAt < row.QueuedAt || row.FinishedAt < row.StartedAt) return false;
         if (row.Status == "planned" && (row.StartedAt is not null || row.FinishedAt is not null)) return false;
         if (row.Status is "started" or "succeeded" or "failed" or "interrupted" && (row.StartedAt is null || row.WorkerCommit is null)) return false;
         if (row.Status == "started" && row.FinishedAt is not null || row.Status is "succeeded" or "failed" or "interrupted" or "cancelled" && row.FinishedAt is null) return false;
         if ((row.Status == "succeeded") != (row.ReportSha256 is not null) || row.ReportSha256 is not null && !IsSha256(row.ReportSha256)) return false;
+        if (!final && study.FinalRequestId is not null) return row.Status == "succeeded";
         return study.Status switch
         {
-            "development" => row.Status is "planned" or "started" or "succeeded",
-            "development-complete" or "candidate-frozen" or "no-candidate" => row.Status == "succeeded",
-            "failed" => row.Status is "succeeded" or "failed" or "interrupted" or "cancelled",
+            "development" or "final-evaluation" => row.Status is "planned" or "started" or "succeeded",
+            "development-complete" or "candidate-frozen" or "no-candidate" or "engineering-complete" or "research-complete" or "research-rejected" => row.Status == "succeeded",
+            "failed" or "final-failed" => row.Status is "succeeded" or "failed" or "interrupted" or "cancelled",
             "cancelled" => row.Status is "succeeded" or "failed" or "interrupted" or "cancelled" || row.Status == "started" && row.CancelRequested,
             _ => false
         };
@@ -35,6 +38,10 @@ public sealed partial class ResearchStore
     private void SaveRawFamily(RawResearchStudy study, IEnumerable<RawStudyTrialEntry> trials, string kind)
     {
         using var db = Open(); using var tx = db.BeginTransaction();
+        WriteRawFamily(db, tx, study, trials, kind); tx.Commit();
+    }
+    private void WriteRawFamily(SqliteConnection db, SqliteTransaction tx, RawResearchStudy study, IEnumerable<RawStudyTrialEntry> trials, string kind)
+    {
         foreach (var row in trials)
         {
             using var update = db.CreateCommand(); update.Transaction = tx;
@@ -48,7 +55,7 @@ public sealed partial class ResearchStore
         cmd.Parameters.AddWithValue("$id", study.Id); if (cmd.ExecuteNonQuery() != 1) throw new ResearchException("raw-study-integrity");
         cmd.Parameters.Clear(); cmd.CommandText = "INSERT INTO raw_study_events(study_id,at,kind) VALUES($id,$at,$kind)";
         cmd.Parameters.AddWithValue("$id", study.Id); cmd.Parameters.AddWithValue("$at", clock.GetUtcNow().ToString("O"));
-        cmd.Parameters.AddWithValue("$kind", kind); cmd.ExecuteNonQuery(); tx.Commit();
+        cmd.Parameters.AddWithValue("$kind", kind); cmd.ExecuteNonQuery();
     }
     private static void CurrentRawPlan(RawResearchStudy study)
     {
@@ -96,7 +103,7 @@ public sealed partial class ResearchStore
             var rows = ListRawTrials(); var row = rows.Single(t => t.Id == id); var study = RawStudies().Single(s => s.Id == row.StudyId);
             var at = clock.GetUtcNow();
             var cancelled = study.Status == "cancelled";
-            SaveRawFamily(study with { Status = cancelled ? "cancelled" : "failed" }, rows.Where(t => t.StudyId == study.Id).Select(t =>
+            SaveRawFamily(study with { Status = cancelled ? "cancelled" : study.FinalRequestId is null ? "failed" : "final-failed" }, rows.Where(t => t.StudyId == study.Id).Select(t =>
                 t.Id == id ? t with { Status = cancelled ? "cancelled" : status, FinishedAt = at, ErrorCode = code } :
                 t.Status == "planned" ? t with { Status = "cancelled", FinishedAt = at, ErrorCode = "family-stopped" } : t), "development-" + status);
         }
@@ -128,7 +135,7 @@ public sealed partial class ResearchStore
             try
             {
                 CurrentRawPlan(study); _ = RawTrialRequestBytes(row.Id);
-                if (!row.Synthetic) { lock (gate) { var window = RawDevelopmentWindow(study.Plan); GuardStudyReservations(window.Start, window.End, study.Id); } }
+                if (!row.Synthetic) { lock (gate) { var window = IsRawFinalTrial(study, row) ? RawFinalWindow(study.Plan) : RawDevelopmentWindow(study.Plan); GuardStudyReservations(window.Start, window.End, study.Id); } }
                 var originals = study.Originals.Select(o => (Original: o, Bytes: RawStudyOriginalBytes(study.Id, o.OriginalSha256))).ToArray();
                 var dataset = originals.Single(i => i.Original.Kind == "dataset").Bytes;
                 var actionBytes = originals.Single(i => i.Original.Kind == "actions").Bytes;
@@ -141,17 +148,22 @@ public sealed partial class ResearchStore
                     deadline.Token.ThrowIfCancellationRequested();
                 }
                 Checkpoint();
-                var report = RawStudyDevelopmentRun.Run(study.Plan, row.TrialId, dataset, calendars, actionBytes, deadline.Token, Checkpoint);
+                var final = IsRawFinalTrial(study, row);
+                var report = final
+                    ? RawStudyFinalRun.Run(study.Plan, row.CandidateId, row.CostScenario, dataset, calendars, actionBytes, deadline.Token, Checkpoint)
+                    : RawStudyDevelopmentRun.Run(study.Plan, row.TrialId, dataset, calendars, actionBytes, deadline.Token, Checkpoint);
                 var bytes = RawStudyDevelopmentRun.EncodeReport(report);
                 _ = RawStudyDevelopmentRun.Verify(bytes, sha => sha == row.DatasetSha256 ? dataset : throw new ResearchException("raw-replay-dataset-hash"), deadline.Token);
                 lock (gate)
                 {
                     Checkpoint(); var current = ListRawTrials().Single(t => t.Id == row.Id);
                     var parent = RawStudies().Single(s => s.Id == study.Id);
-                    if (parent.Status != "development") throw new OperationCanceledException();
+                    if (parent.Status != (final ? "final-evaluation" : "development")) throw new OperationCanceledException();
                     EnsureArtifactCapacity(bytes); ImmutableWrite(RawReportPath(row.Id), bytes);
                     current = current with { Status = "succeeded", FinishedAt = clock.GetUtcNow(), ReportSha256 = RawHash(bytes) };
-                    if (ListRawTrials().Where(t => t.StudyId == study.Id && t.Id != row.Id).All(t => t.Status == "succeeded")) parent = parent with { Status = "development-complete" };
+                    if (!final && ListRawTrials().Where(t => t.StudyId == study.Id && t.Id != row.Id).All(t => t.Status == "succeeded"))
+                        parent = parent with { Status = "development-complete" };
+                    if (final) parent = CompleteRawFinal(parent, current, report);
                     SaveRawFamily(parent, [current], "trial-succeeded");
                 }
             }

@@ -22,7 +22,7 @@ The [initial-v1 acceptance contract](initial-v1-acceptance.md) remains authorita
 
 The [reviewed deployment checkpoint](raw-study-distributions.md#reviewed-publication-and-deployment-26-october-2026) passes 1,272 .NET tests and preserves production state; authored acceptance is separate from genuine market evidence.
 
-The next application gates are a permanent one-time raw final pair with empty stage ledgers and the exact reserved deposits, pending-claim valuation across monthly decisions, raw-family paired diagnostics, graphical raw-workflow/report controls and paper-account integration. Those require their own tests and acceptance; the final endpoint remains unavailable. Data gates also remain: source-wide action discovery, genuine market/FX and inactive-stock coverage, retained historical availability, and consumption of reviewed dispositions. Full operational recovery and final combined acceptance remain partial. Live trading is outside this research roadmap.
+A separate [one-time raw final pair](raw-study-final.md) now commits its permanent claim before work and uses empty stage ledgers with the exact reserved deposits. The next application gates are pending-claim valuation across monthly decisions, raw-family paired diagnostics, graphical raw-workflow/report controls and paper-account integration. Those require their own tests and acceptance. Data gates also remain: source-wide action discovery, genuine market/FX and inactive-stock coverage, retained historical availability, and consumption of reviewed dispositions. Full operational recovery and final combined acceptance remain partial. Live trading is outside this research roadmap.
 
 ## Research planning context
 

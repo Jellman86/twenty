@@ -6,7 +6,7 @@ using Twenty.Research;
 
 namespace Twenty.Tests;
 
-public sealed class RawStudyWorkerTests : IDisposable
+public sealed partial class RawStudyWorkerTests : IDisposable
 {
     private readonly string root = Path.Combine(Path.GetTempPath(), "twenty-raw-worker-" + Guid.NewGuid().ToString("N"));
     private ResearchStore store;
@@ -41,6 +41,8 @@ public sealed class RawStudyWorkerTests : IDisposable
         for(var i=0;i<8;i++) Assert.True(store.ProcessNextRawStudyRun("authored"));
         var result=store.SelectRawStudy(study.Id,new(Guid.NewGuid().ToString("D"),study.PlanSha256),"authored");
         Assert.Equal("no-candidate",result.Status);Assert.Null(result.SelectedCandidateId);
+        Assert.Equal("study-candidate-not-frozen", Assert.Throws<ResearchException>(() => store.EvaluateRawStudy(study.Id,
+            new(Guid.NewGuid().ToString("D"), study.PlanSha256), "authored")).Code);
         Assert.Equal(8,store.ListRawTrials().Count);
         using var db=new SqliteConnection("Data Source="+Path.Combine(root,"research.db"));db.Open();using var cmd=db.CreateCommand();
         cmd.CommandText="SELECT COUNT(*) FROM study_holdout_claims";Assert.Equal(0L,(long)cmd.ExecuteScalar()!);

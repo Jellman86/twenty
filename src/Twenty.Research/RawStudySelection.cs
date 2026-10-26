@@ -22,7 +22,7 @@ public sealed partial class ResearchStore
             var bytes=DatasetArchive.ReadBounded(RawSelectionPath(study.SelectionReportSha256));
             if(bytes.Length>MaximumStudyPayload || RawHash(bytes)!=study.SelectionReportSha256) throw new ResearchException("raw-study-selection-integrity");
             var artifact=JsonSerializer.Deserialize<RawStudySelectionArtifact>(bytes,RawReplayJson.Options)??throw new ResearchException("raw-study-selection-integrity");
-            var inputs=ListRawTrials().Where(t=>t.StudyId==id).OrderBy(t=>t.TrialId,StringComparer.Ordinal)
+            var inputs=ListRawTrials().Where(t=>t.StudyId==id && study.DevelopmentTrialIds.Contains(t.Id)).OrderBy(t=>t.TrialId,StringComparer.Ordinal)
                 .Select(t=>new RawStudySelectionInput(t.Id,t.TrialId,t.RequestSha256,t.ReportSha256!)).ToImmutableArray();
             if(artifact.Version!=RawStudySelection.Version || artifact.StudyId!=id || artifact.RequestId!=study.SelectionRequestId || artifact.At!=study.SelectionRequestedAt ||
                 artifact.Result.PlanSha256!=study.PlanSha256 || artifact.Result.SelectedCandidateId!=study.SelectedCandidateId ||
@@ -43,7 +43,7 @@ public sealed partial class ResearchStore
             CurrentRawPlan(study);
             // These exact immutable artifacts were independently replayed before worker publication.
             // Selection is metadata/wealth arithmetic and opens no original dataset or final-window observation.
-            var rows=ListRawTrials().Where(t=>t.StudyId==id).OrderBy(t=>t.TrialId,StringComparer.Ordinal).ToArray();
+            var rows=ListRawTrials().Where(t=>t.StudyId==id && study.DevelopmentTrialIds.Contains(t.Id)).OrderBy(t=>t.TrialId,StringComparer.Ordinal).ToArray();
             if(rows.Length!=8 || rows.Any(t=>t.Status!="succeeded")) throw new ResearchException("raw-study-selection-family");
             var observations=new List<RawStudySelectionObservation>();
             foreach(var row in rows)

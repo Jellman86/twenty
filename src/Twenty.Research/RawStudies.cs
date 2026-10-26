@@ -30,6 +30,14 @@ public sealed record RawResearchStudy(string Id, string RequestId, string Reques
     ImmutableArray<PriorStudyTrial> PriorTrials, ImmutableArray<UniverseRunEntry> PriorUniverseTrials,
     ImmutableArray<RawStudyTrialEntry> PriorRawTrials, ImmutableArray<string> DevelopmentTrialIds, ImmutableArray<RawStudyOriginal> Originals)
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? FinalRequestId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? FinalRequestedAt { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? FinalBaseTrialId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? FinalStressTrialId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? FinalBaseReportSha256 { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? FinalStressReportSha256 { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public decimal? FinalWorstMarginGbp { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public bool? FinalPassed { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? SelectionRequestId { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? SelectionRequestedAt { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? SelectionReportSha256 { get; init; }
@@ -47,7 +55,7 @@ public sealed partial class ResearchStore
     private int RawReservedStudySlots()
     {
         _ = ListRawTrials(); // Missing/corrupt admitted rows cannot silently free budget.
-        return RawStudies().Count(s => RawReservationActive(s)) * 2;
+        return RawStudies().Count(s => RawReservationActive(s) && s.FinalRequestId is null) * 2;
     }
     private static string RawHash(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
     private static byte[] RawBytes<T>(T value) => JsonSerializer.SerializeToUtf8Bytes(value, RawReplayJson.Options);
@@ -56,7 +64,7 @@ public sealed partial class ResearchStore
         var bytes = Encoding.UTF8.GetBytes(json);
         if (bytes.Length > MaximumStudyPayload || RawHash(bytes) != sha) throw new ResearchException("raw-study-integrity");
         var study = JsonSerializer.Deserialize<RawResearchStudy>(bytes, RawReplayJson.Options) ?? throw new ResearchException("raw-study-integrity");
-        if (!Guid.TryParseExact(study.Id, "N", out _) || study.Status is not ("registered" or "development" or "development-complete" or "candidate-frozen" or "no-candidate" or "failed" or "cancelled") ||
+        if (!Guid.TryParseExact(study.Id, "N", out _) || study.Status is not ("registered" or "development" or "development-complete" or "candidate-frozen" or "no-candidate" or "failed" or "cancelled" or "final-evaluation" or "final-failed" or "engineering-complete" or "research-complete" or "research-rejected") ||
             study.Originals.IsDefault || study.DevelopmentTrialIds.IsDefault || study.Originals.Any(i => i is null || i.Kind is not ("dataset" or "calendar" or "actions") ||
                 !IsSha256(i.OriginalSha256) || !IsSha256(i.PinSha256) || i.Bytes < 0)) throw new ResearchException("raw-study-integrity");
         var selection = study.SelectionRequestId is not null;
@@ -65,7 +73,8 @@ public sealed partial class ResearchStore
             study.Status is "candidate-frozen" or "no-candidate" && !selection ||
             study.Status == "candidate-frozen" && (study.SelectedCandidateId is null || !study.Plan.Candidates.Any(c=>c.Id==study.SelectedCandidateId)) ||
             study.Status == "no-candidate" && study.SelectedCandidateId is not null ||
-            selection && study.Status is not ("candidate-frozen" or "no-candidate" or "cancelled")) throw new ResearchException("raw-study-integrity");
+            selection && study.Status is not ("candidate-frozen" or "no-candidate" or "cancelled" or "final-evaluation" or "final-failed" or "engineering-complete" or "research-complete" or "research-rejected")) throw new ResearchException("raw-study-integrity");
+        ValidateRawFinalMetadata(study);
         byte[] plan;
         try { plan = Convert.FromBase64String(study.PlanBase64); }
         catch (FormatException) { throw new ResearchException("raw-study-plan-integrity"); }
@@ -98,22 +107,34 @@ public sealed partial class ResearchStore
             {
                 var row = JsonSerializer.Deserialize<RawStudyTrialEntry>(reader.GetString(0), RawReplayJson.Options) ?? throw new ResearchException("raw-trial-integrity");
                 if (!studies.TryGetValue(row.StudyId, out var study)) throw new ResearchException("raw-trial-integrity");
-                var role = study.Plan.DevelopmentTrials.SingleOrDefault(t => t.Id == row.TrialId);
-                var window = RawDevelopmentWindow(study.Plan);
+                var final = IsRawFinalTrial(study, row);
+                var role = final ? new RawStudyTrial("final:" + study.SelectedCandidateId + ":" + (row.Id == study.FinalBaseTrialId ? "base" : "stress"), study.SelectedCandidateId!, row.Id == study.FinalBaseTrialId ? "base" : "stress")
+                    : study.Plan.DevelopmentTrials.SingleOrDefault(t => t.Id == row.TrialId);
+                var window = final ? RawFinalWindow(study.Plan) : RawDevelopmentWindow(study.Plan);
                 if (!Guid.TryParseExact(row.Id, "N", out _) || row.Status != reader.GetString(1) || !RawTrialStateValid(study, row) || role is null ||
-                    row.CandidateId != role.CandidateId || row.CostScenario != role.CostScenario ||
+                    row.TrialId != role.Id || row.CandidateId != role.CandidateId || row.CostScenario != role.CostScenario ||
                     row.DatasetSha256 != study.Plan.DatasetSha256 || row.Synthetic != study.Plan.Synthetic || row.ResearchSha256 != study.Plan.CodeSha256 ||
-                    row.InformationStartAt != window.Start || row.InformationEndAt != window.End || row.CreatedAt != study.CreatedAt ||
-                    !study.DevelopmentTrialIds.Contains(row.Id) || row.RequestSha256 != RawHash(RawBytes(new RawStudyTrialRequest(study.Id, study.PlanSha256, role.Id, "development"))))
+                    row.InformationStartAt != window.Start || row.InformationEndAt != window.End || row.CreatedAt != (final ? study.FinalRequestedAt : study.CreatedAt) ||
+                    (!final && !study.DevelopmentTrialIds.Contains(row.Id)) || row.RequestSha256 != RawHash(RawBytes(new RawStudyTrialRequest(study.Id, study.PlanSha256, role.Id, final ? "final" : "development"))))
                     throw new ResearchException("raw-trial-integrity");
                 rows.Add(row);
             }
             foreach (var study in studies.Values)
                 if (study.DevelopmentTrialIds.Length != 8 || study.DevelopmentTrialIds.Distinct(StringComparer.Ordinal).Count() != 8 ||
-                    !rows.Where(r => r.StudyId == study.Id).Select(r => r.TrialId).Order(StringComparer.Ordinal)
+                    !rows.Where(r => r.StudyId == study.Id && !IsRawFinalTrial(study, r)).Select(r => r.TrialId).Order(StringComparer.Ordinal)
                         .SequenceEqual(study.Plan.DevelopmentTrials.Select(t => t.Id).Order(StringComparer.Ordinal)) ||
                     !study.DevelopmentTrialIds.All(id => rows.Any(r => r.Id == id && r.StudyId == study.Id)))
                     throw new ResearchException("raw-trial-integrity");
+            foreach (var study in studies.Values)
+            {
+                var final = rows.Where(r => r.StudyId == study.Id && IsRawFinalTrial(study, r)).ToArray();
+                if (final.Length != (study.FinalRequestId is null ? 0 : 2)) throw new ResearchException("raw-trial-integrity");
+                if (study.FinalBaseReportSha256 is not null &&
+                    (final.Single(t => t.Id == study.FinalBaseTrialId).ReportSha256 != study.FinalBaseReportSha256 ||
+                     final.Single(t => t.Id == study.FinalStressTrialId).ReportSha256 != study.FinalStressReportSha256))
+                    throw new ResearchException("raw-study-final-integrity");
+                ValidateRawFinalClaim(study);
+            }
             return rows;
         }
     }
@@ -131,7 +152,7 @@ public sealed partial class ResearchStore
         lock (gate)
         {
             var study = RawStudies().SingleOrDefault(s => s.Id == id) ?? throw new ResearchException("study-not-found");
-            if (study.Status == "cancelled") return study;
+            if (!RawReservationActive(study)) return study;
             var trials = ListRawTrials().Where(t => t.StudyId == id).ToArray();
             study = study with { Status = "cancelled" };
             SaveRawFamily(study, trials.Select(t => t.Status == "planned" ? t with { Status = "cancelled", FinishedAt = clock.GetUtcNow() } :
@@ -153,7 +174,7 @@ public sealed partial class ResearchStore
     {
         var trial = ListRawTrials().SingleOrDefault(t => t.Id == id) ?? throw new ResearchException("raw-trial-not-found");
         var bytes = DatasetArchive.ReadBounded(Path.Combine(Root, "runs", trial.Id, "raw-study-request.json"));
-        var expected = RawBytes(new RawStudyTrialRequest(trial.StudyId, RawStudies().Single(s => s.Id == trial.StudyId).PlanSha256, trial.TrialId, "development"));
+        var expected = RawBytes(new RawStudyTrialRequest(trial.StudyId, RawStudies().Single(s => s.Id == trial.StudyId).PlanSha256, trial.TrialId, IsRawFinalTrial(RawStudies().Single(s => s.Id == trial.StudyId), trial) ? "final" : "development"));
         if (RawHash(bytes) != trial.RequestSha256 || !bytes.AsSpan().SequenceEqual(expected)) throw new ResearchException("raw-trial-request-integrity");
         return bytes;
     }
