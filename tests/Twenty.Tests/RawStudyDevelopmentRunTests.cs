@@ -104,7 +104,7 @@ public sealed class RawStudyDevelopmentRunTests
     }
 
     [Fact]
-    public void DevelopmentActionsAreExplicitlyRefusedButFutureActionsDoNotGateTheStage()
+    public void UndeclaredDevelopmentSplitsAreRefusedButFutureSplitsDoNotGateTheStage()
     {
         var f = Fixture(); var file = DatasetJson.Read(f.Dataset);
         var at = f.Plan.DevelopmentStart.AddDays(1);
@@ -118,7 +118,7 @@ public sealed class RawStudyDevelopmentRunTests
             return RawStudyDevelopmentRun.Run(f.Plan with { DatasetSha256 = Convert.ToHexStringLower(SHA256.HashData(bytes)) }, "momentum:1:base", bytes,
                 new Dictionary<string, ExecutionCalendar> { [f.Calendar.Reference.Id] = f.Calendar });
         }
-        Assert.Equal("raw-study-actions-unsupported", Assert.Throws<ResearchException>(() => Run(action)).Code);
+        Assert.Equal("raw-study-action-coverage", Assert.Throws<ResearchException>(() => Run(action)).Code);
         var later = f.Plan.ReservedStart.AddDays(1);
         var future = Run(action with { EffectiveAt = later, Evidence = evidence with { AvailableAt = later, PublishedAt = later } });
         Assert.All(future.Strategies, s => Assert.Equal(700, s.EndingEquityGbp));

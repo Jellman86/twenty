@@ -131,7 +131,7 @@ public sealed partial class ResearchStore
                 if (!row.Synthetic) { lock (gate) { var window = RawDevelopmentWindow(study.Plan); GuardStudyReservations(window.Start, window.End, study.Id); } }
                 var originals = study.Originals.Select(o => (Original: o, Bytes: RawStudyOriginalBytes(study.Id, o.OriginalSha256))).ToArray();
                 var dataset = originals.Single(i => i.Original.Kind == "dataset").Bytes;
-                _ = RawStudyEvidence.Actions(originals.Single(i => i.Original.Kind == "actions").Bytes);
+                var actionBytes = originals.Single(i => i.Original.Kind == "actions").Bytes;
                 var calendars = originals.Where(i => i.Original.Kind == "calendar").Select(i => RawStudyEvidence.Calendar(i.Bytes))
                     .ToDictionary(c => c.Reference.Id, StringComparer.Ordinal);
                 void Checkpoint()
@@ -141,7 +141,7 @@ public sealed partial class ResearchStore
                     deadline.Token.ThrowIfCancellationRequested();
                 }
                 Checkpoint();
-                var report = RawStudyDevelopmentRun.Run(study.Plan, row.TrialId, dataset, calendars, deadline.Token, Checkpoint);
+                var report = RawStudyDevelopmentRun.Run(study.Plan, row.TrialId, dataset, calendars, actionBytes, deadline.Token, Checkpoint);
                 var bytes = RawStudyDevelopmentRun.EncodeReport(report);
                 _ = RawStudyDevelopmentRun.Verify(bytes, sha => sha == row.DatasetSha256 ? dataset : throw new ResearchException("raw-replay-dataset-hash"), deadline.Token);
                 lock (gate)

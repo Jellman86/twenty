@@ -79,7 +79,7 @@ public static class RawReplayArchive
         if (request.Events.Select(e => e.DatasetSha256).Distinct(StringComparer.Ordinal).Count() > MaximumDatasets)
             throw new ResearchException("raw-replay-datasets");
         var executable = ResolveCalendars(request);
-        if (request.Study is { } studyBinding) RawStudyDevelopmentRun.VerifyBinding(executable, studyBinding, readDataset, ct);
+        if (request.Study is { } studyBinding) RawStudyDevelopmentRun.VerifyBinding(request, studyBinding, readDataset, ct);
         if (request.Schedule is { } binding) RawEventSchedule.VerifyBinding(request, binding, readDataset);
         var datasets = new Dictionary<string, PointInTimeDataset>(StringComparer.Ordinal);
         var slices = new Dictionary<(string, DateTimeOffset), DataSlice>();

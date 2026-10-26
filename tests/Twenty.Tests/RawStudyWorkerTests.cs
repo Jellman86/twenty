@@ -12,18 +12,33 @@ public sealed class RawStudyWorkerTests : IDisposable
     private ResearchStore store;
     public RawStudyWorkerTests() => store = new(root);
     public void Dispose() { store.Dispose(); Directory.Delete(root, true); }
-    private RawResearchStudy Register()
+    private RawResearchStudy Register(bool withSplit = false)
     {
-        var f = RawStudyDevelopmentRunTests.Fixture();
+        var original = RawStudyDevelopmentRunTests.Fixture();
+        var f = withSplit ? RawStudySplitTests.Fixture() : (original.Plan, original.Dataset, original.Calendar, Actions: "[]"u8.ToArray());
         var sha = store.ImportUniverseDataset(f.Dataset);
         var plan = RawUniverseStudyProtocol.Declare(sha, f.Plan.UniverseId, true, "engineering",
             ResearchIdentity.Current.Sha256, ResearchIdentity.Scheme, f.Plan.Decisions, f.Plan.MonthlyGbp,
             f.Plan.BaseExecution, f.Plan.Calendars, f.Plan.ActionCatalogSha256);
         var inbox = Path.Combine(root, "imports"); Directory.CreateDirectory(inbox);
         File.WriteAllBytes(Path.Combine(inbox, f.Calendar.Sha256 + ".calendar.json"), JsonSerializer.SerializeToUtf8Bytes(f.Calendar, RawReplayJson.Options));
-        File.WriteAllBytes(Path.Combine(inbox, plan.ActionCatalogSha256 + ".actions.json"), "[]"u8.ToArray());
+        File.WriteAllBytes(Path.Combine(inbox, plan.ActionCatalogSha256 + ".actions.json"), f.Actions);
         return store.RegisterRawStudy(new(Guid.NewGuid().ToString("D"), "Authored execution", Convert.ToBase64String(RawUniverseStudyProtocol.Encode(plan))), "authored");
     }
+    [Fact]
+    public void RegisteredWorkerConsumesTheRetainedSplitCatalogAndPublishesReplayableReports()
+    {
+        var study = Register(withSplit: true);
+        store.StartRawStudy(study.Id, new(Guid.NewGuid().ToString("D"), study.PlanSha256));
+        Directory.Delete(Path.Combine(root, "imports"), true);
+        Assert.True(store.ProcessNextRawStudyRun("authored"));
+        var row = store.ListRawTrials().Single(t => t.Status == "succeeded");
+        var dataset = store.RawStudyOriginalBytes(study.Id, study.Originals.Single(o => o.Kind == "dataset").OriginalSha256);
+        var report = RawStudyDevelopmentRun.Verify(store.RawTrialReportBytes(row.Id), _ => dataset);
+        Assert.All(report.Strategies, s => Assert.Equal(700, s.EndingEquityGbp));
+        Assert.Contains("applied-split", System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(report.Strategies[0].Receipt.RequestBase64)));
+    }
+
     [Fact]
     public void RestartInterruptsAStartedAttemptAndNeverReplacesIt()
     {
