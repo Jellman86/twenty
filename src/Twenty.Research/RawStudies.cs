@@ -275,6 +275,7 @@ public sealed partial class ResearchStore
                     action is RawDividendSchedule && observed.Action == CorporateActionKind.Dividend ||
                     action is RawTerminalSchedule && observed.Action is CorporateActionKind.Delisting or CorporateActionKind.Merger))
                     throw new ResearchException("raw-study-action-binding");
+                RawStudyClaimMarks.ValidateCoverage(plan, action, observed);
                 var bookings = new List<RawSchedulePoint> { action.Capture };
                 if (action is RawDividendSchedule { Payment: { } payment }) bookings.Add(payment.Booking);
                 if (action is RawTerminalSchedule { Settlement: { } settlement }) bookings.Add(settlement.Booking);

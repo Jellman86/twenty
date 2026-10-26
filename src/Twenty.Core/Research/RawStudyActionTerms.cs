@@ -1,4 +1,5 @@
 using Twenty.Core.Data;
+using System.Text.Json.Serialization;
 
 namespace Twenty.Core.Research;
 
@@ -7,13 +8,19 @@ public sealed record RawStudyDividendDelivery(RawSchedulePoint Booking, string S
     string ContentSha256, DateTimeOffset PaidAt, DateTimeOffset AvailableAt, string Currency, decimal GrossPerShare,
     decimal WithheldPerShare, decimal FixedFeeGbp, string? FxObservationId, string AllocationRule);
 public sealed record RawStudyDividendSchedule(string ListingId, string ActionId, string ObservationId, RawSchedulePoint Capture,
-    RawDividendEvidence Evidence, RawStudyDividendDelivery? Delivery) : RawActionSchedule(ListingId, ActionId, ObservationId, Capture);
+    RawDividendEvidence Evidence, RawStudyDividendDelivery? Delivery) : RawActionSchedule(ListingId, ActionId, ObservationId, Capture)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public RawStudyClaimMarkPolicy? MarkPolicy { get; init; }
+}
 public sealed record RawStudyTerminalDelivery(RawSchedulePoint Booking, string SourceSettlementId, string SourceReference,
     string ContentSha256, DateTimeOffset SettledAt, DateTimeOffset AvailableAt, string? Currency, decimal GrossPerShare,
     decimal WithheldPerShare, decimal FixedFeeGbp, string? FxObservationId, string? SuccessorListingId,
     decimal SuccessorSharesPerShare, string AllocationRule);
 public sealed record RawStudyTerminalSchedule(string ListingId, string ActionId, string ObservationId, RawSchedulePoint Capture,
-    RawTerminalEvidence Evidence, RawStudyTerminalDelivery? Delivery) : RawActionSchedule(ListingId, ActionId, ObservationId, Capture);
+    RawTerminalEvidence Evidence, RawStudyTerminalDelivery? Delivery) : RawActionSchedule(ListingId, ActionId, ObservationId, Capture)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public RawStudyClaimMarkPolicy? MarkPolicy { get; init; }
+}
 
 public static class RawStudyActionTerms
 {
@@ -32,6 +39,7 @@ public static class RawStudyActionTerms
         if (entry.ListingId != observed.ListingId || entry.ActionId != observed.ActionId || entry.ObservationId != observed.Id)
             throw new ResearchException("raw-study-action-binding");
         Point(entry.Capture, datasetSha);
+        RawStudyClaimMarks.Validate(entry, observed);
         if (observed.NewSymbol is not null) throw new ResearchException("raw-ledger-action-complex");
         switch (entry)
         {

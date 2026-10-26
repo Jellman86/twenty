@@ -92,9 +92,16 @@ public static class RawEventReplay
                             !allocation.Weights.SequenceEqual(supplied.Weights))
                             throw new ResearchException("raw-replay-universe-binding");
                     }
-                    var recomputed = RawRebalancePlanner.Plan(ledger, item.Market, supplied.UniverseId, supplied.Weights,
-                        supplied.NextDecisionAt, supplied.CashReserveGbp, supplied.FeePerFillGbp,
-                        TimeSpan.FromTicks(supplied.MaximumPriceAgeTicks), TimeSpan.FromTicks(supplied.MaximumFxAgeTicks));
+                    RawRebalancePlan recomputed;
+                    if (supplied.Version == RawRebalancePlanner.ClaimsVersion && supplied.ClaimAssumptions is { } assumptions)
+                        recomputed = RawRebalancePlanner.PlanWithReceivables(ledger, item.Market, supplied.UniverseId, supplied.Weights,
+                            supplied.NextDecisionAt, supplied.CashReserveGbp, supplied.FeePerFillGbp,
+                            TimeSpan.FromTicks(supplied.MaximumPriceAgeTicks), TimeSpan.FromTicks(supplied.MaximumFxAgeTicks), assumptions.Dividends, assumptions.Terminals);
+                    else if (supplied.Version == RawRebalancePlanner.Version && supplied.ClaimAssumptions is null)
+                        recomputed = RawRebalancePlanner.Plan(ledger, item.Market, supplied.UniverseId, supplied.Weights,
+                            supplied.NextDecisionAt, supplied.CashReserveGbp, supplied.FeePerFillGbp,
+                            TimeSpan.FromTicks(supplied.MaximumPriceAgeTicks), TimeSpan.FromTicks(supplied.MaximumFxAgeTicks));
+                    else throw new ResearchException("raw-replay-rebalance-plan");
                     if (!RawReplayJson.Write(supplied, RawReplayArchive.MaximumRequestBytes).AsSpan()
                         .SequenceEqual(RawReplayJson.Write(recomputed, RawReplayArchive.MaximumRequestBytes)))
                         throw new ResearchException("raw-replay-rebalance-plan");

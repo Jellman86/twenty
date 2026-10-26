@@ -11,7 +11,15 @@ public sealed record RawReplayStudyBinding(string Version, string PlanSha256, st
     public ImmutableArray<RawStudyActionDisposition> Dispositions { get; init; }
 }
 public sealed record RawStudyMonth(DateTimeOffset DecisionAt, DateTimeOffset EndAt, decimal ContributionGbp,
-    decimal OpeningEquityAfterDepositGbp, decimal EndingEquityGbp, decimal CashGbp, decimal PeriodReturn);
+    decimal OpeningEquityAfterDepositGbp, decimal EndingEquityGbp, decimal CashGbp, decimal PeriodReturn)
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public int PendingClaimCount { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public decimal ExpectedClaimValueGbp { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public decimal ExpectedClaimFeesGbp { get; init; }
+}
 public sealed record RawStudyStrategyReport(string Strategy, decimal EndingEquityGbp, decimal ContributionsGbp,
     decimal FeesGbp, ImmutableArray<RawStudyMonth> Months, RawReplayReceipt Receipt);
 public sealed record RawStudyDevelopmentReport(string Version, string PlanSha256, string TrialId, string DatasetSha256,
@@ -19,14 +27,14 @@ public sealed record RawStudyDevelopmentReport(string Version, string PlanSha256
 
 public static class RawStudyDevelopmentRun
 {
-    public const string Version = "raw-study-development-v3";
+    public const string Version = "raw-study-development-v4";
     public const int MaximumReportBytes = 8 * 1024 * 1024;
     private static string Hash(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
     private static readonly string[] Strategies = ["momentum", "equal_weight", "cash"];
     public static byte[] EncodeReport(RawStudyDevelopmentReport report) => RawReplayJson.Write(report, MaximumReportBytes);
     private static readonly ImmutableArray<string> Limitations = ["Registered-development calculation only; development selection is a separate recorded step. No final evaluation, investment nomination or broker execution is granted.",
-             "Independent empty momentum/equal-weight/cash accounts receive the exact frozen deposits; all orders in each bound batch must execute or the trial fails.",
-             "Original catalogs freeze pure splits and per-cutoff-share dividend/terminal policies with explicit ownership dispositions. Unsettled claims at marks, mixed consideration and cross-calendar batches are refused; future final-window actions do not gate development.",
+             "Independent empty momentum/equal-weight/cash accounts receive the exact frozen deposits. OpeningEquityAfterDepositGbp includes expected interim claims; all emitted orders must execute or the trial fails. Unfunded target changes and reserve shortfall remain explicit planning deferrals.",
+             "Original catalogs freeze pure splits and per-cutoff-share dividend/terminal policies with explicit ownership dispositions. Interim claims use separately frozen available estimates and cash-capped targets; all claims must settle by the stage end. Mixed consideration and cross-calendar batches are refused; future final-window actions do not gate development.",
              "Raw GBP marks use executable-purpose historical FX labels and supplied reviewed sessions; same-open funding, fractional quantities and retrospective volume screens remain model assumptions."];
     private static ImmutableArray<string> StageLimitations(bool final) => final
         ? Limitations.SetItem(0, "Recorded final-stage calculation only; no investment nomination, paper promotion or broker execution is granted. Offline calculation alone does not establish a registered spent claim.")
@@ -124,6 +132,18 @@ public static class RawStudyDevelopmentRun
         }
         var dispositions = ImmutableArray.CreateBuilder<RawStudyActionDisposition>(); var cursor = 0; long actionWork = 0;
         var captured = new HashSet<(string, string)>();
+        var indexedCatalog = catalog.ToDictionary(c => (c.ListingId, c.ActionId));
+        RawRebalanceClaimAssumptions Assumptions(DateTimeOffset at) => RawStudyClaimMarks.ForLedger(ledger, indexedCatalog, at);
+        RawReplayMark Mark(string id, DataSlice market, bool ending = false)
+        {
+            if (ending) _ = ledger.Value(market, priceAge, fxAge, FxPurpose.Executable);
+            var input = Assumptions(market.DecisionAt);
+            Charge((1L + input.Dividends.Length + input.Terminals.Length) * market.Observations.Length);
+            var valuation = ledger.ValueWithReceivables(market, priceAge, fxAge, FxPurpose.Executable, input.Dividends, input.Terminals);
+            if (valuation.ExpectedEquityGbp <= 0 && id.StartsWith("mark-open-", StringComparison.Ordinal))
+                throw new ResearchException("raw-study-opening-equity");
+            var mark = new RawReplayMark(input.Dividends, input.Terminals); Add(id, market.DecisionAt, mark); return mark;
+        }
         decimal OwnedBefore(string listing, DateTimeOffset cutoff)
         {
             decimal quantity = 0;
@@ -195,11 +215,16 @@ public static class RawStudyDevelopmentRun
             Charge(2L * market.Observations.Length); // Deposit and decision, including repeated slices.
             ledger.Deposit("deposit-" + i, at, instruction.Contribution.AmountGbp);
             Add("deposit-" + i, at, new RawReplayDeposit(instruction.Contribution.AmountGbp));
+            var opening = Mark("mark-open-" + i, market);
             var spec = instruction.Strategies.Single(s => s.Strategy == strategy);
             foreach (var historicalAt in spec.Decisions) Charge(dataset.AsOf(historicalAt).Observations.Length);
             var allocation = RawUniverseDecision.Allocate(dataset, spec);
-            var decision = RawRebalancePlanner.Plan(ledger, market, plan.UniverseId, allocation.Weights, instruction.NextDecisionAt,
-                policy.CashReserveGbp, policy.FeePerFillGbp, priceAge, fxAge);
+            Charge((long)(opening.Dividends.Length + opening.Terminals.Length) * market.Observations.Length);
+            var decision = opening.Dividends.IsEmpty && opening.Terminals.IsEmpty
+                ? RawRebalancePlanner.Plan(ledger, market, plan.UniverseId, allocation.Weights, instruction.NextDecisionAt,
+                    policy.CashReserveGbp, policy.FeePerFillGbp, priceAge, fxAge)
+                : RawRebalancePlanner.PlanWithReceivables(ledger, market, plan.UniverseId, allocation.Weights, instruction.NextDecisionAt,
+                    policy.CashReserveGbp, policy.FeePerFillGbp, priceAge, fxAge, opening.Dividends, opening.Terminals);
             Add("decision-" + i, at, new RawReplayRebalanceDecision(decision) { UniverseStrategy = new(spec, allocation) });
             if (!decision.Orders.IsEmpty)
             {
@@ -233,8 +258,7 @@ public static class RawStudyDevelopmentRun
             }
             Through(instruction.NextDecisionAt);
             var markMarket = dataset.AsOf(instruction.NextDecisionAt); Charge(markMarket.Observations.Length);
-            _ = ledger.Value(markMarket, priceAge, fxAge, FxPurpose.Executable);
-            Add("mark-" + i, instruction.NextDecisionAt, new RawReplayMark([], []));
+            Mark("mark-" + i, markMarket, ending: i == contributions.Length - 1);
         }
         ct.ThrowIfCancellationRequested(); checkpoint?.Invoke(); ct.ThrowIfCancellationRequested();
         return new RawReplayDocument(RawReplayArchive.Version, RawEventReplay.Version, plan.Build,
@@ -253,10 +277,14 @@ public static class RawStudyDevelopmentRun
         {
             var decision = (RawReplayRebalanceDecision)e.Operation; var mark = result.Marks.Single(m => m.Id == "mark-" + i).Valuation;
             var deposit = (RawReplayDeposit)request.Events.Single(x => x.Id == "deposit-" + i).Operation;
-            var opening = decision.Plan.Valuation.EquityGbp;
+            var opening = result.Marks.Single(m => m.Id == "mark-open-" + i).Valuation.ExpectedEquityGbp;
             if (opening <= 0) throw new ResearchException("raw-study-opening-equity");
             return new RawStudyMonth(e.At, decision.Plan.NextDecisionAt, deposit.AmountGbp, opening, mark.ExpectedEquityGbp,
-                mark.HoldingsAndCash.CashGbp, mark.ExpectedEquityGbp / opening - 1m);
+                mark.HoldingsAndCash.CashGbp, mark.ExpectedEquityGbp / opening - 1m)
+                { PendingClaimCount = mark.DividendReceivables.Length + mark.TerminalReceivables.Length,
+                  ExpectedClaimValueGbp = mark.ExpectedDividendReceivablesGbp + mark.ExpectedTerminalReceivablesGbp,
+                  ExpectedClaimFeesGbp = mark.DividendReceivables.Sum(c => c.Assumption.ExpectedFeeGbp) +
+                      mark.TerminalReceivables.Sum(c => c.Assumption.ExpectedFeeGbp) };
         }).ToImmutableArray();
         return new(strategy, result.Marks[^1].Valuation.ExpectedEquityGbp, result.ContributionsGbp, result.FeesGbp, months, receipt);
     }

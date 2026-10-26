@@ -4,7 +4,7 @@ namespace Twenty.Core.Research;
 /// claim and exact trial pair before invoking this reference; this helper grants no registry authority.</summary>
 public static class RawStudyFinalRun
 {
-    public const string Version = "raw-study-final-v1";
+    public const string Version = "raw-study-final-v2";
     internal static RawStudyTrial? Trial(RawUniverseStudyPlan plan, string trialId) =>
         plan.Candidates.SelectMany(c => new[] { "base", "stress" }.Select(cost =>
             new RawStudyTrial("final:" + c.Id + ":" + cost, c.Id, cost))).SingleOrDefault(t => t.Id == trialId);

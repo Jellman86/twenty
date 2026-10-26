@@ -1,6 +1,6 @@
 # Registered per-share distributions
 
-`raw-study-development-v3` extends the [registered raw worker](raw-study-development.md) beyond pure splits. The original action catalog now supports declared dividend payments and pure zero/cash/stock terminal outcomes across independent momentum, equal-weight and cash accounts. This is a bounded policy simulation. It does not import broker confirmations, establish tax treatment, authenticate source contents or certify achievable wealth.
+The original `raw-study-development-v3` checkpoint extended the [registered raw worker](raw-study-development.md) beyond pure splits. The original action catalog now supports declared dividend payments and pure zero/cash/stock terminal outcomes across independent momentum, equal-weight and cash accounts. This is a bounded policy simulation. It does not import broker confirmations, establish tax treatment, authenticate source contents or certify achievable wealth.
 
 ## Frozen catalog contract
 
@@ -20,7 +20,7 @@ The existing source/vintage scheduler derives capture from the latest of effecti
 
 Ownership reconstruction includes modelled opening times, split effectiveness, terminal retirement and actual successor delivery. This permits a later dividend on delivered successor shares without inventing earlier ownership. Late disclosures after quantity changes still refuse historical restatement. Due accounting events precede a shared monthly mark/deposit; an outstanding ordered fill batch cannot be interrupted by another accounting operation.
 
-Known deliveries after the development end are not brought forward. A pending dividend or terminal claim at any monthly mark refuses the trial through the ordinary ledger's unpaid/unsettled guard. Pending value is never dropped or used to fund the next rebalance. The separate explicit receivable-mark reference remains available offline; crossing a registered mark with a pending claim still needs a frozen valuation policy and planner integration. All failures remain registered and stop their remaining family.
+Known deliveries after a stage end are not brought forward. The original v3 calculation refused every pending monthly mark. Current v4 development/v2 final reports support [separately frozen monthly claim policies and cash-capped planning](raw-study-pending-claims.md); a pending stage-end mark still refuses. Pending value is never dropped or used as buying power. All failures remain registered and stop their remaining family.
 
 Each receipt binds original plan/catalog bytes, source hashes, complete derived event order and ownership dispositions. Recovery reconstructs the request and independently replays ledger operations, including the actual allocated amounts. Existing request/report sizes, observation-work ceilings, computation lease, deadlines, cancellation and no-replacement rules remain in force. Historical v1/v2 reports remain inspectable without reexecution under a changed scientific build.
 

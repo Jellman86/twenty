@@ -1,3 +1,5 @@
+Current calculation format: `raw-study-final-v2` adds [monthly pending-claim policies](raw-study-pending-claims.md). The v1 acceptance/deployment receipt below remains historical; the claim-spending protocol is unchanged.
+
 # One-time registered raw final evaluation
 
 After [development selection](raw-study-selection.md), `POST /api/research/raw-studies/{id}/evaluate-final` accepts `{ requestId, planSha256 }`. It requires the frozen candidate, original selection bindings and current scientific/Core/runtime identity. Admission reads retained metadata, not original market values. One SQLite transaction permanently spends the shared holdout claim, records its exact UTC window, inserts only that candidate's base/stress requests and moves the parent to `final-evaluation` before either calculation can start. An artifact-write failure rolls the transaction back; uncommitted orphan files grant no authority.

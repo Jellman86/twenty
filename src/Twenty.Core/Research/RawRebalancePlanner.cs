@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Text.Json.Serialization;
 using Twenty.Core.Data;
 
 namespace Twenty.Core.Research;
@@ -6,18 +7,37 @@ namespace Twenty.Core.Research;
 public sealed record RawRebalanceQuote(Listing Listing, PriceBar Price, SourceSnapshot PriceSource,
     FxRate? Fx, SourceSnapshot? FxSource);
 public sealed record RawRebalanceTarget(string ListingId, decimal Weight, decimal CurrentQuantity,
-    decimal TargetQuantity, decimal TargetValueGbp, RawRebalanceQuote Quote);
+    decimal TargetQuantity, decimal TargetValueGbp, RawRebalanceQuote Quote)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public decimal? FundedTargetQuantity { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public decimal PendingSuccessorValueGbp { get; init; }
+}
 public sealed record RawRebalancePlan(string Version, string UniverseId, RawGbpValuation Valuation,
     DateTimeOffset NextDecisionAt, long MaximumPriceAgeTicks, long MaximumFxAgeTicks, decimal CashReserveGbp, decimal FeePerFillGbp, decimal FeeBudgetGbp,
     decimal InvestableEquityGbp, decimal ProjectedCashAfterFeesGbp,
     ImmutableSortedDictionary<string, decimal> Weights, ImmutableArray<RawRebalanceTarget> Targets,
-    ImmutableArray<PlannedOrder> Orders, ImmutableArray<string> Limitations);
+    ImmutableArray<PlannedOrder> Orders, ImmutableArray<string> Limitations)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public RawRebalanceClaimAssumptions? ClaimAssumptions { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public decimal? ExpectedTargetEquityGbp { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public decimal ClaimCashReserveGbp { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public decimal ReserveShortfallGbp { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public decimal DeferredOrderValueGbp { get; init; }
+}
 
 /// <summary>Pure decision-time conversion of supplied targets into share intents over a single-owner
 /// ledger. It neither selects a strategy nor executes, persists, or certifies the resulting trades.</summary>
 public static class RawRebalancePlanner
 {
     public const string Version = "raw-rebalance-v1";
+    public const string ClaimsVersion = "raw-rebalance-claims-v1";
+    public const int MaximumPendingClaims = 8;
+    public static RawRebalancePlan PlanWithReceivables(RawGbpLedger ledger, DataSlice market, string universeId,
+        IReadOnlyDictionary<string, decimal> weights, DateTimeOffset nextDecisionAt, decimal cashReserveGbp, decimal feePerFillGbp,
+        TimeSpan maximumPriceAge, TimeSpan maximumFxAge, ImmutableArray<RawDividendMarkAssumption> dividends,
+        ImmutableArray<RawTerminalMarkAssumption> terminals) =>
+        RawClaimRebalancePlanner.Plan(ledger, market, universeId, weights, nextDecisionAt, cashReserveGbp, feePerFillGbp,
+            maximumPriceAge, maximumFxAge, new(dividends, terminals));
     public const int MaximumTargets = 100;
     public const int MaximumSubjects = 200;
     public static RawRebalancePlan Plan(RawGbpLedger ledger, DataSlice market, string universeId,

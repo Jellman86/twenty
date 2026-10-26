@@ -109,7 +109,14 @@ public static class RawReplayArchive
             }
             // Count repeated slices too: cached inputs must not permit an unbounded
             // number of position/claim marks to be materialized before output limits.
-            if ((observationWork += market.Observations.Length) > MaximumEventObservationWork)
+            var claimWork = item.Operation switch
+            {
+                RawReplayMark m => (long)(m.Dividends.IsDefault ? 0 : m.Dividends.Length) + (m.Terminals.IsDefault ? 0 : m.Terminals.Length),
+                RawReplayRebalanceDecision { Plan.ClaimAssumptions: { } a } =>
+                    (long)(a.Dividends.IsDefault ? 0 : a.Dividends.Length) + (a.Terminals.IsDefault ? 0 : a.Terminals.Length),
+                _ => 0
+            };
+            if ((observationWork += (1 + claimWork) * market.Observations.Length) > MaximumEventObservationWork)
                 throw new ResearchException("raw-replay-work");
             if (item.Operation is RawReplayRebalanceDecision { UniverseStrategy: { } strategyBinding })
             {
