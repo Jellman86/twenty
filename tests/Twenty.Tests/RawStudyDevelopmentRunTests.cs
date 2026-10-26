@@ -68,6 +68,7 @@ public sealed class RawStudyDevelopmentRunTests
         var report = RawStudyDevelopmentRun.Run(f.Plan, "momentum:1:base", f.Dataset,
             new Dictionary<string, ExecutionCalendar> { [f.Calendar.Reference.Id] = f.Calendar });
         var bytes = Write(report, RawStudyDevelopmentRun.MaximumReportBytes);
+        Assert.Equal("Registered-development calculation only; development selection is a separate recorded step. No final evaluation, investment nomination or broker execution is granted.", report.Limitations[0]);
         Assert.Equal(bytes, Write(RawStudyDevelopmentRun.Verify(bytes, _ => f.Dataset), RawStudyDevelopmentRun.MaximumReportBytes));
         Assert.Throws<ResearchException>(() => RawStudyDevelopmentRun.Verify(
             Write(report with { Limitations = ["Certified investment returns"] }, RawStudyDevelopmentRun.MaximumReportBytes), _ => f.Dataset));
@@ -122,6 +123,37 @@ public sealed class RawStudyDevelopmentRunTests
         var later = f.Plan.ReservedStart.AddDays(1);
         var future = Run(action with { EffectiveAt = later, Evidence = evidence with { AvailableAt = later, PublishedAt = later } });
         Assert.All(future.Strategies, s => Assert.Equal(700, s.EndingEquityGbp));
+    }
+
+    [Theory]
+    [InlineData(CorporateActionKind.Split)]
+    [InlineData(CorporateActionKind.Dividend)]
+    [InlineData(CorporateActionKind.Delisting)]
+    public void ActionsEffectiveDuringDevelopmentButDisclosedAfterwardsCannotGateOrChangeDevelopment(CorporateActionKind kind)
+    {
+        var f = Fixture(); var file = DatasetJson.Read(f.Dataset);
+        var calendars = new Dictionary<string, ExecutionCalendar> { [f.Calendar.Reference.Id] = f.Calendar };
+        var baseline = RawStudyDevelopmentRun.Run(f.Plan, "momentum:1:base", f.Dataset, calendars);
+        var listing = file.Observations.OfType<Listing>().First();
+        var effective = f.Plan.DevelopmentStart.AddDays(15); var disclosed = f.Plan.DevelopmentEnd.AddDays(1);
+        var evidence = file.Observations[0].Evidence with { AvailableAt = disclosed, PublishedAt = disclosed };
+        var action = new CorporateAction("late-action", evidence, listing.ListingId, "late-action", kind, effective,
+            kind == CorporateActionKind.Split ? 2 : null, kind == CorporateActionKind.Dividend ? 8 : null,
+            kind == CorporateActionKind.Dividend ? "USD" : null, null, null,
+            kind == CorporateActionKind.Delisting ? TerminalOutcome.Zero : TerminalOutcome.NotApplicable);
+        // Keep the frozen raw price series unchanged: this tests evidence isolation, not historical economics.
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(file with { Observations = file.Observations.Add(action) }, DatasetJson.Options);
+        var dataset = new PointInTimeDataset(DatasetJson.Read(bytes));
+        Assert.Empty(dataset.AsOf(f.Plan.DevelopmentEnd).EffectiveActions(listing.ListingId));
+        Assert.Single(dataset.AsOf(disclosed).EffectiveActions(listing.ListingId));
+        var report = RawStudyDevelopmentRun.Run(f.Plan with { DatasetSha256 = Convert.ToHexStringLower(SHA256.HashData(bytes)) },
+            "momentum:1:base", bytes, calendars);
+        for (var i = 0; i < 3; i++) Assert.Equal(baseline.Strategies[i].Months.ToArray(), report.Strategies[i].Months.ToArray());
+        var invested = report.Strategies.Single(s => s.Strategy == "equal_weight");
+        var result = JsonSerializer.Deserialize<RawEventReplayResult>(Convert.FromBase64String(invested.Receipt.ResultBase64), RawReplayJson.Options)!;
+        Assert.Contains(result.Entries, e => e.ListingId == listing.ListingId && e.Quantity > 0);
+        Assert.Equal(RawStudyDevelopmentRun.EncodeReport(report), RawStudyDevelopmentRun.EncodeReport(
+            RawStudyDevelopmentRun.Verify(RawStudyDevelopmentRun.EncodeReport(report), _ => bytes)));
     }
 
     [Fact]

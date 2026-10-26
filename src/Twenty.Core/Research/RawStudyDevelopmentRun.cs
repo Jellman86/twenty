@@ -24,7 +24,7 @@ public static class RawStudyDevelopmentRun
     private static string Hash(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
     private static readonly string[] Strategies = ["momentum", "equal_weight", "cash"];
     public static byte[] EncodeReport(RawStudyDevelopmentReport report) => RawReplayJson.Write(report, MaximumReportBytes);
-    private static readonly ImmutableArray<string> Limitations = ["Registered-development calculation only; no final evaluation, selection, investment nomination or broker execution is granted.",
+    private static readonly ImmutableArray<string> Limitations = ["Registered-development calculation only; development selection is a separate recorded step. No final evaluation, investment nomination or broker execution is granted.",
              "Independent empty momentum/equal-weight/cash accounts receive the exact frozen deposits; all orders in each bound batch must execute or the trial fails.",
              "Original catalogs freeze pure splits and per-cutoff-share dividend/terminal policies with explicit ownership dispositions. Unsettled claims at marks, mixed consideration and cross-calendar batches are refused; future final-window actions do not gate development.",
              "Raw GBP marks use executable-purpose historical FX labels and supplied reviewed sessions; same-open funding, fractional quantities and retrospective volume screens remain model assumptions."];
