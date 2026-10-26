@@ -14,4 +14,6 @@ Three authored regressions place a split, dividend or zero delisting inside deve
 
 ## Limits
 
+The second read-only Big Pickle round at `6a2c07e` independently ran all 68 `RawStudy` tests, confirmed the wording and recovery response, and retracted the post-window-evidence finding in full. It confirmed that the new tests exercise real holdings and the empty-catalog boundary. Its remaining Low finding was a stale current-capability sentence in `raw-study-development.md` denying selection; that sentence now identifies the separate recorded selection endpoints. No code or arithmetic change was needed for that documentation correction.
+
 The review and regressions use authored engineering datasets and private rehearsal artifacts. No genuine holdout, vendor/broker request or production experiment was used. This review does not complete source-wide action discovery, historical availability, pending-claim valuation across decisions, final evaluation or operational/paper acceptance.
