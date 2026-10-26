@@ -33,6 +33,16 @@ public static class SearchDiagnostics
             "Changing-universe candidates are recorded momentum baselines versus their own equal-weight and zero-interest cash paths. No external benchmark is supplied. Local-currency returns have no FX conversion; GBP notionals do not establish achievable GBP wealth.") };
     }
 
+    public const string RawVersion = "stationary-raw-active-mean-v1";
+    public static SearchDiagnosticReport BuildRaw(IReadOnlyList<DiagnosticReturns> candidates, CancellationToken ct = default, int registeredTrials = 0)
+    {
+        var result = BuildCore(candidates, UniverseComparators, RawVersion, ct, registeredTrials);
+        return result with { Limitations = result.Limitations.AddRange(new[] {
+            "Recorded raw momentum candidates use their own equal-weight and zero-interest cash comparators. Monthly returns use expected equity in GBP, including separately declared pending-claim estimates; successful stage ends are settled. No external market benchmark is supplied.",
+            "This diagnostic covers one upfront registered candidate family and one cost scenario. Other studies, opposite costs and all final trials remain disclosed but excluded; this is not whole-programme search correction or investment promotion.",
+            "Raw FX, order funding, estimated deductions, successor availability and modelled execution retain their original report assumptions. Integrity and paired resampling do not establish genuine provenance, settlement certainty or achievable returns." }) };
+    }
+
     private static SearchDiagnosticReport BuildCore(IReadOnlyList<DiagnosticReturns> candidates, ImmutableArray<string> comparators,
         string version, CancellationToken ct, int registeredTrials)
     {

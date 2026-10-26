@@ -8,12 +8,13 @@ public sealed partial class ResearchStore
 {
     // All research admission and state transitions hold this gate. Take both registers
     // together so an analysis cannot disclose a snapshot assembled across admissions.
-    internal (DateTimeOffset At, ImmutableArray<RunEntry> Models, ImmutableArray<UniverseRunEntry> Universes, ImmutableArray<RawStudyTrialEntry> Raw) DiagnosticSnapshot()
+    internal (DateTimeOffset At, ImmutableArray<RunEntry> Models, ImmutableArray<UniverseRunEntry> Universes,
+        ImmutableArray<RawStudyTrialEntry> Raw, ImmutableArray<RawResearchStudy> RawStudies) DiagnosticSnapshot()
     {
         lock (gate)
         {
             var models = ListRuns().ToImmutableArray(); var universes = ListUniverseRuns().ToImmutableArray();
-            return (clock.GetUtcNow(), models, universes, ListRawTrials().ToImmutableArray());
+            return (clock.GetUtcNow(), models, universes, ListRawTrials().ToImmutableArray(), RawStudies().ToImmutableArray());
         }
     }
 }
@@ -21,7 +22,10 @@ public sealed partial class ResearchStore
 public sealed partial class DiagnosticStore
 {
     private static DiagnosticTrial RawTrial(RawStudyTrialEntry run) =>
-        new(run.Id, run.DatasetSha256, run.Status, run.RequestSha256, null, run.ResearchSha256, false, "different-research-engine") { ResearchEngine = "raw-universe" };
+        RawTrial(run, "different-research-engine");
+    private static DiagnosticTrial RawTrial(RawStudyTrialEntry run, string reason) =>
+        new(run.Id, run.DatasetSha256, run.Status, run.RequestSha256, run.ReportSha256, run.ResearchSha256,
+            reason == "included", reason) { ResearchEngine = "raw-universe" };
     private static DiagnosticTrial UniverseTrial(UniverseRunEntry run, string reason) =>
         new(run.Id, run.DatasetId, run.Status, run.RequestSha256, run.ReportSha256, run.ResearchSha256,
             reason == "included", reason) { ResearchEngine = "changing-universe" };

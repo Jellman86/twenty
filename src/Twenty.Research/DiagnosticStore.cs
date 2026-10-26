@@ -23,6 +23,9 @@ public sealed record DiagnosticAttempt(string Id, string RequestId, string Ancho
     public string? FamilyEngine { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ResearchSha256 { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? RawPlanSha256 { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? RawCostScenario { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? RawReportVersion { get; init; }
 }
 
 /// <summary>A bounded journal of analysis attempts. Its family is derived from the complete local register, never a caller-supplied winner shortlist.</summary>
@@ -133,7 +136,14 @@ public sealed partial class DiagnosticStore
             Save(attempt);
             var anchor = snapshot.SingleOrDefault(r => r.Id == request.AnchorRunId);
             var universeAnchor = registry.Universes.SingleOrDefault(r => r.Id == request.AnchorRunId);
-            if (anchor is not null && universeAnchor is not null) throw new ResearchException("diagnostic-anchor-ambiguous");
+            var rawAnchor = registry.Raw.SingleOrDefault(r => r.Id == request.AnchorRunId);
+            if ((anchor is null ? 0 : 1) + (universeAnchor is null ? 0 : 1) + (rawAnchor is null ? 0 : 1) > 1)
+                throw new ResearchException("diagnostic-anchor-ambiguous");
+            if (rawAnchor is not null)
+            {
+                attempt = await AnalyseRaw(attempt, rawAnchor, registry.Models, registry.Universes, registry.Raw, registry.RawStudies, deadline.Token);
+                attempt = attempt with { Status = "succeeded", FinishedAt = clock.GetUtcNow() }; Save(attempt); return attempt;
+            }
             if (universeAnchor is not null)
             {
                 attempt = await AnalyseUniverse(attempt, universeAnchor, snapshot, registry.Universes, registry.Raw, deadline.Token);
