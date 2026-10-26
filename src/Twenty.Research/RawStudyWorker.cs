@@ -91,7 +91,7 @@ public sealed partial class ResearchStore
             if (bytes.Length > RawStudyDevelopmentRun.MaximumReportBytes || RawHash(bytes) != row.ReportSha256) throw new ResearchException("raw-study-report-integrity");
             var report = JsonSerializer.Deserialize<RawStudyDevelopmentReport>(bytes, RawReplayJson.Options) ?? throw new ResearchException("raw-study-report-integrity");
             var study = RawStudies().Single(s => s.Id == row.StudyId);
-            if (report.PlanSha256 != study.PlanSha256 || report.TrialId != row.TrialId || report.DatasetSha256 != row.DatasetSha256)
+            if (IsRawFinalTrial(study, row) && report.Version != RawStudyFinalRun.Version || report.PlanSha256 != study.PlanSha256 || report.TrialId != row.TrialId || report.DatasetSha256 != row.DatasetSha256)
                 throw new ResearchException("raw-study-report-integrity");
             return bytes;
         }
@@ -105,7 +105,7 @@ public sealed partial class ResearchStore
             var cancelled = study.Status == "cancelled";
             SaveRawFamily(study with { Status = cancelled ? "cancelled" : study.FinalRequestId is null ? "failed" : "final-failed" }, rows.Where(t => t.StudyId == study.Id).Select(t =>
                 t.Id == id ? t with { Status = cancelled ? "cancelled" : status, FinishedAt = at, ErrorCode = code } :
-                t.Status == "planned" ? t with { Status = "cancelled", FinishedAt = at, ErrorCode = "family-stopped" } : t), "development-" + status);
+                t.Status == "planned" ? t with { Status = "cancelled", FinishedAt = at, ErrorCode = "family-stopped" } : t), (study.FinalRequestId is null ? "development-" : "final-") + status);
         }
     }
     private void InterruptStaleRawRuns()

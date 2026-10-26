@@ -30,6 +30,7 @@ public sealed record RawResearchStudy(string Id, string RequestId, string Reques
     ImmutableArray<PriorStudyTrial> PriorTrials, ImmutableArray<UniverseRunEntry> PriorUniverseTrials,
     ImmutableArray<RawStudyTrialEntry> PriorRawTrials, ImmutableArray<string> DevelopmentTrialIds, ImmutableArray<RawStudyOriginal> Originals)
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? FinalRequestedCommit { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? FinalRequestId { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? FinalRequestedAt { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? FinalBaseTrialId { get; init; }
@@ -133,7 +134,7 @@ public sealed partial class ResearchStore
                     (final.Single(t => t.Id == study.FinalBaseTrialId).ReportSha256 != study.FinalBaseReportSha256 ||
                      final.Single(t => t.Id == study.FinalStressTrialId).ReportSha256 != study.FinalStressReportSha256))
                     throw new ResearchException("raw-study-final-integrity");
-                ValidateRawFinalClaim(study);
+                ValidateRawFinalClaim(db, study);
             }
             return rows;
         }

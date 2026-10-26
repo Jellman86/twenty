@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Security.Cryptography;
 using Microsoft.Data.Sqlite;
 using Twenty.Core.Research;
 using Twenty.Research;
@@ -7,6 +8,7 @@ namespace Twenty.Tests;
 
 public sealed partial class RawStudyWorkerTests
 {
+    private sealed class RawFinalClock(DateTimeOffset at) : TimeProvider { public override DateTimeOffset GetUtcNow() => at; }
     private RawResearchStudy FreezeRawCandidate()
     {
         var study = Register(); store.StartRawStudy(study.Id, new(Guid.NewGuid().ToString("D"), study.PlanSha256));
@@ -18,6 +20,19 @@ public sealed partial class RawStudyWorkerTests
         using var db = new SqliteConnection("Data Source=" + Path.Combine(root, "research.db")); db.Open();
         using var cmd = db.CreateCommand(); cmd.CommandText = "SELECT COUNT(*) FROM study_holdout_claims";
         return (long)cmd.ExecuteScalar()!;
+    }
+    private void WriteAuthoredFinalIntegrityFixture(RawResearchStudy study, RawStudyTrialEntry? row = null)
+    {
+        using var db = new SqliteConnection("Data Source=" + Path.Combine(root, "research.db")); db.Open();
+        using var tx = db.BeginTransaction(); using var cmd = db.CreateCommand(); cmd.Transaction = tx;
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(study, RawReplayJson.Options);
+        cmd.CommandText = "UPDATE raw_studies SET json=$json,sha256=$sha WHERE id=$id";
+        cmd.Parameters.AddWithValue("$json", System.Text.Encoding.UTF8.GetString(bytes));
+        cmd.Parameters.AddWithValue("$sha", Convert.ToHexStringLower(SHA256.HashData(bytes))); cmd.Parameters.AddWithValue("$id", study.Id); cmd.ExecuteNonQuery();
+        if (row is not null)
+        { cmd.Parameters.Clear(); cmd.CommandText = "UPDATE raw_trials SET json=$json WHERE id=$id";
+          cmd.Parameters.AddWithValue("$json", JsonSerializer.Serialize(row, RawReplayJson.Options)); cmd.Parameters.AddWithValue("$id", row.Id); cmd.ExecuteNonQuery(); }
+        tx.Commit();
     }
     [Fact]
     public void FinalRequiresFrozenSelectionAndRollsBackPartialAdmissionButRetainsFailedExposure()
@@ -54,8 +69,22 @@ public sealed partial class RawStudyWorkerTests
         var study = FreezeRawCandidate(); var selection = store.RawStudySelectionBytes(study.Id);
         var originals = store.ListRawTrials().ToDictionary(t => t.Id, t => store.RawTrialReportBytes(t.Id));
         var request = new StudyEvaluationRequest(Guid.NewGuid().ToString("D"), study.PlanSha256);
+        var slots = typeof(ResearchStore).GetMethod("RawReservedStudySlots", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        Assert.Equal(2, slots.Invoke(store, null));
         var started = store.EvaluateRawStudy(study.Id, request, "authored");
+        Assert.Equal("authored", started.FinalRequestedCommit); Assert.Equal(0, slots.Invoke(store, null));
         Assert.Equal("final-evaluation", started.Status); Assert.Equal(1, RawFinalClaims());
+        using (var db = new SqliteConnection("Data Source=" + Path.Combine(root, "research.db")))
+        {
+            db.Open(); using var cmd = db.CreateCommand();
+            cmd.CommandText = "SELECT c.start_date,c.end_date,c.at,c.synthetic,w.start_at,w.end_at FROM study_holdout_claims c JOIN universe_holdout_windows w ON c.study_id=w.study_id";
+            using var reader = cmd.ExecuteReader(); Assert.True(reader.Read());
+            Assert.Equal(DateOnly.FromDateTime(study.Plan.ReservedStart.UtcDateTime).ToString("yyyy-MM-dd"), reader.GetString(0));
+            Assert.Equal(DateOnly.FromDateTime(study.Plan.ReservedEnd.UtcDateTime).AddDays(1).ToString("yyyy-MM-dd"), reader.GetString(1));
+            Assert.Equal(started.FinalRequestedAt!.Value.ToString("O"), reader.GetString(2)); Assert.Equal(1, reader.GetInt32(3));
+            Assert.Equal(study.Plan.ReservedStart.ToString("O"), reader.GetString(4));
+            Assert.Equal(study.Plan.ReservedEnd.ToString("O"), reader.GetString(5)); Assert.False(reader.Read());
+        }
         Assert.Equal(10, store.ListRawTrials().Count); Assert.Equal(2, store.ListRawTrials().Count(t => t.Status == "planned"));
         Assert.All(store.ListRawTrials().Where(t => t.Status == "planned"), t =>
         { Assert.Equal(study.SelectedCandidateId, t.CandidateId); Assert.Null(t.StartedAt); Assert.Null(t.ReportSha256); });
@@ -66,6 +95,9 @@ public sealed partial class RawStudyWorkerTests
         Assert.True(store.ProcessNextRawStudyRun("authored")); Assert.True(store.ProcessNextRawStudyRun("authored"));
         Assert.False(store.ProcessNextRawStudyRun("authored"));
         var completed = store.RawStudies().Single(); Assert.Equal("engineering-complete", completed.Status);
+        Assert.Equal("engineering-complete", store.CancelRawStudy(study.Id).Status);
+        Assert.Equal("study-holdout-spent", Assert.Throws<ResearchException>(() => store.EvaluateRawStudy(study.Id,
+            request with { RequestId = Guid.NewGuid().ToString("D") }, "authored")).Code);
         Assert.Equal(0, completed.FinalWorstMarginGbp); Assert.False(completed.FinalPassed);
         Assert.Equal(study.SelectedCandidateId, completed.SelectedCandidateId); Assert.Equal(1, RawFinalClaims());
         var reports = store.ListRawTrials().ToDictionary(t => t.Id, t => store.RawTrialReportBytes(t.Id));
@@ -78,9 +110,29 @@ public sealed partial class RawStudyWorkerTests
         }
         store.Dispose(); store = new(root);
         Assert.Equal(JsonSerializer.Serialize(completed, RawReplayJson.Options), JsonSerializer.Serialize(store.EvaluateRawStudy(study.Id, request, "changed-deployment"), RawReplayJson.Options));
+        Assert.Equal(completed.FinalBaseTrialId, store.EvaluateRawStudy(study.Id, request with { RequestId = request.RequestId.ToUpperInvariant() }, "other").FinalBaseTrialId);
         Assert.Equal(selection, store.RawStudySelectionBytes(study.Id));
         Assert.All(reports, pair => Assert.Equal(pair.Value, store.RawTrialReportBytes(pair.Key)));
         Assert.Equal(1, RawFinalClaims());
+        try
+        {
+            WriteAuthoredFinalIntegrityFixture(completed with { FinalBaseReportSha256 = new string('a', 64) });
+            Assert.Equal("raw-study-final-integrity", Assert.Throws<ResearchException>(() => store.ListRawTrials()).Code);
+        }
+        finally { WriteAuthoredFinalIntegrityFixture(completed); }
+        // Authored coherent corruption: matching hashes do not allow a development-version final report.
+        var finalRow = store.ListRawTrials().Single(t => t.Id == completed.FinalBaseTrialId);
+        var reportPath = Path.Combine(root, "runs", finalRow.Id, "raw-study-report.json"); var original = File.ReadAllBytes(reportPath);
+        var wrong = JsonSerializer.SerializeToUtf8Bytes(JsonSerializer.Deserialize<RawStudyDevelopmentReport>(original, RawReplayJson.Options)! with
+            { Version = RawStudyDevelopmentRun.Version }, RawReplayJson.Options);
+        var wrongSha = Convert.ToHexStringLower(SHA256.HashData(wrong));
+        try
+        {
+            File.WriteAllBytes(reportPath, wrong);
+            WriteAuthoredFinalIntegrityFixture(completed with { FinalBaseReportSha256 = wrongSha }, finalRow with { ReportSha256 = wrongSha });
+            Assert.Equal("raw-study-report-integrity", Assert.Throws<ResearchException>(() => store.RawTrialReportBytes(finalRow.Id)).Code);
+        }
+        finally { File.WriteAllBytes(reportPath, original); WriteAuthoredFinalIntegrityFixture(completed, finalRow); }
     }
     [Theory]
     [InlineData(false)]
@@ -88,6 +140,13 @@ public sealed partial class RawStudyWorkerTests
     public void FinalCancellationOrRestartKeepsPermanentClaimAndCannotReplaceThePair(bool restart)
     {
         var study = FreezeRawCandidate(); var request = new StudyEvaluationRequest(Guid.NewGuid().ToString("D"), study.PlanSha256);
+        if (!restart)
+        {
+            store.Dispose(); store = new(root, new RawFinalClock(study.SelectionRequestedAt!.Value.AddDays(-1)));
+            Assert.Equal("raw-study-clock-regression", Assert.Throws<ResearchException>(() => store.EvaluateRawStudy(study.Id, request, "authored")).Code);
+            Assert.Equal(0, RawFinalClaims()); Assert.Equal("candidate-frozen", store.RawStudies().Single().Status);
+            store.Dispose(); store = new(root);
+        }
         store.EvaluateRawStudy(study.Id, request, "authored");
         if (restart)
         {
@@ -105,5 +164,22 @@ public sealed partial class RawStudyWorkerTests
             request with { RequestId = Guid.NewGuid().ToString("D") }, "authored")).Code);
         Assert.Equal(JsonSerializer.Serialize(store.RawStudies().Single(), RawReplayJson.Options), JsonSerializer.Serialize(store.EvaluateRawStudy(study.Id, request, "authored"), RawReplayJson.Options));
         Assert.Equal(8, store.ListRawTrials().Count(t => t.Status == "succeeded"));
+        if (restart) Assert.Contains("final-interrupted", JsonSerializer.Serialize(store.RawStudyEvents(study.Id)));
+    }
+
+    [Fact]
+    public void PublicationCapacityFailureRetainsPermanentExposureAndDoesNotRerunTheFinal()
+    {
+        var study = FreezeRawCandidate(); var request = new StudyEvaluationRequest(Guid.NewGuid().ToString("D"), study.PlanSha256);
+        store.EvaluateRawStudy(study.Id, request, "authored");
+        var blocker = Path.Combine(root, "authored-quota-blocker");
+        using (var file = File.Create(blocker)) file.SetLength(256L * 1024 * 1024); // Sparse authored file; no large download.
+        Assert.True(store.ProcessNextRawStudyRun("authored")); File.Delete(blocker);
+        Assert.Equal("final-failed", store.RawStudies().Single().Status); Assert.Equal(1, RawFinalClaims());
+        var failed = Assert.Single(store.ListRawTrials(), t => t.Status == "failed"); Assert.Equal("artifact-capacity", failed.ErrorCode);
+        Assert.Contains("final-failed", JsonSerializer.Serialize(store.RawStudyEvents(study.Id)));
+        Assert.False(store.ProcessNextRawStudyRun("authored"));
+        Assert.Equal("study-holdout-spent", Assert.Throws<ResearchException>(() => store.EvaluateRawStudy(study.Id,
+            request with { RequestId = Guid.NewGuid().ToString("D") }, "authored")).Code);
     }
 }

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 using Twenty.Core.Research;
 
 namespace Twenty.Research;
@@ -29,9 +30,9 @@ public sealed partial class ResearchStore
                 study.Status != (study.Plan.Synthetic ? "engineering-complete" : study.FinalPassed == true ? "research-complete" : "research-rejected")))
             throw new ResearchException("raw-study-final-integrity");
     }
-    private void ValidateRawFinalClaim(RawResearchStudy study)
+    private static void ValidateRawFinalClaim(SqliteConnection db, RawResearchStudy study)
     {
-        using var db = Open(); using var cmd = db.CreateCommand();
+        using var cmd = db.CreateCommand();
         cmd.CommandText = "SELECT c.request_id,c.start_date,c.end_date,c.synthetic,c.at,w.start_at,w.end_at FROM study_holdout_claims c LEFT JOIN universe_holdout_windows w ON w.study_id=c.study_id WHERE c.study_id=$id";
         cmd.Parameters.AddWithValue("$id", study.Id); using var reader = cmd.ExecuteReader();
         if (!reader.Read()) { if (study.FinalRequestId is not null) throw new ResearchException("raw-study-final-claim-integrity"); return; }
@@ -51,7 +52,7 @@ public sealed partial class ResearchStore
             var study = RawStudies().SingleOrDefault(s => s.Id == id) ?? throw new ResearchException("study-not-found");
             if (request.PlanSha256 != study.PlanSha256) throw new ResearchException("raw-study-plan-integrity");
             _ = ListRawTrials();
-            if (study.FinalRequestId == request.RequestId) return study;
+            if (study.FinalRequestId is not null && Guid.Parse(study.FinalRequestId) == Guid.Parse(request.RequestId)) return study;
             if (study.FinalRequestId is not null) throw new ResearchException("study-holdout-spent");
             if (study.Status != "candidate-frozen" || study.SelectedCandidateId is null) throw new ResearchException("study-candidate-not-frozen");
             CurrentRawPlan(study); _ = RawStudySelectionBytes(id);
@@ -61,7 +62,9 @@ public sealed partial class ResearchStore
                 var window = RawFinalWindow(study.Plan); GuardStudyReservations(window.Start, window.End, id);
             }
             // This operation reads only retained metadata; original market values are opened by the worker after commit.
-            var at = clock.GetUtcNow(); var windowFinal = RawFinalWindow(study.Plan);
+            var at = clock.GetUtcNow();
+            if (at < study.SelectionRequestedAt) throw new ResearchException("raw-study-clock-regression");
+            var windowFinal = RawFinalWindow(study.Plan);
             var rows = new[] { "base", "stress" }.Select(cost =>
             {
                 var trialId = "final:" + study.SelectedCandidateId + ":" + cost;
@@ -72,7 +75,7 @@ public sealed partial class ResearchStore
                 return (Row: row, Bytes: bytes);
             }).ToArray();
             using var db = Open(); using var tx = db.BeginTransaction(); using var cmd = db.CreateCommand(); cmd.Transaction = tx;
-            cmd.CommandText = "SELECT study_id FROM study_holdout_claims WHERE request_id=$request"; cmd.Parameters.AddWithValue("$request", request.RequestId);
+            cmd.CommandText = "SELECT study_id FROM study_holdout_claims WHERE request_id=$request COLLATE NOCASE"; cmd.Parameters.AddWithValue("$request", request.RequestId);
             if (cmd.ExecuteScalar() is not null) throw new ResearchException("request-id-conflict");
             cmd.CommandText = "INSERT INTO study_holdout_claims VALUES($study,$request,$start,$end,$synthetic,$at)";
             cmd.Parameters.AddWithValue("$study", id); cmd.Parameters.AddWithValue("$start", Day(study.Plan.ReservedStart).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
@@ -89,7 +92,7 @@ public sealed partial class ResearchStore
                 EnsureArtifactCapacity(item.Bytes); var path = Path.Combine(Root, "runs", item.Row.Id); Directory.CreateDirectory(path);
                 ImmutableWrite(Path.Combine(path, "raw-study-request.json"), item.Bytes);
             }
-            study = study with { Status = "final-evaluation", FinalRequestId = request.RequestId, FinalRequestedAt = at,
+            study = study with { Status = "final-evaluation", FinalRequestId = request.RequestId, FinalRequestedAt = at, FinalRequestedCommit = commit,
                 FinalBaseTrialId = rows[0].Row.Id, FinalStressTrialId = rows[1].Row.Id };
             WriteRawFamily(db, tx, study, [], "holdout-spent-before-work"); tx.Commit(); return study;
         }

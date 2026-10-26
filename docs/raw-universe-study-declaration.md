@@ -1,6 +1,6 @@
 # Frozen raw-universe study declarations
 
-The subsequent [atomic admission path](raw-study-admission.md) now persists this declaration and shares the trial/reservation controls. The declaration-only checkpoint below remains historical; raw execution and final evaluation remain closed.
+The subsequent [atomic admission path](raw-study-admission.md) now persists this declaration and shares the trial/reservation controls. The declaration-only checkpoint below remains historical; the separate [development worker](raw-study-development.md) and [one-time final pair](raw-study-final.md) now provide execution and final spending.
 
 `RawUniverseStudyProtocol` (`raw-universe-study-v1`) declares a separate raw-share/GBP study contract before reading market values. It freezes the existing four momentum concentrations (1, 2, 4, 8), eight base/stress development trials, two reserved final slots, common comparators, chronological windows, contribution schedules and execution assumptions. It does **not** admit trials, reserve a database holdout, execute a study or grant final-evaluation authority.
 
