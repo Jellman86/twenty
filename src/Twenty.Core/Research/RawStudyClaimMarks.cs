@@ -49,25 +49,32 @@ public static class RawStudyClaimMarks
     public static RawRebalanceClaimAssumptions ForLedger(RawGbpLedger ledger,
         IReadOnlyDictionary<(string ListingId, string ActionId), RawActionSchedule> catalog, DateTimeOffset at)
     {
+        try { return ForLedgerCore(ledger, catalog, at); }
+        catch (OverflowException) { throw new ResearchException("raw-study-claim-arithmetic"); }
+    }
+    private static RawRebalanceClaimAssumptions ForLedgerCore(RawGbpLedger ledger,
+        IReadOnlyDictionary<(string ListingId, string ActionId), RawActionSchedule> catalog, DateTimeOffset at)
+    {
         var dividends = ledger.DividendEntitlements.Where(c => c.PaidAt is null).ToArray();
         var terminals = ledger.TerminalEntitlements.Where(c => c.SettledAt is null).ToArray();
         if ((long)dividends.Length + terminals.Length > RawRebalancePlanner.MaximumPendingClaims)
             throw new ResearchException("raw-study-claim-capacity");
-        RawStudyClaimMarkPolicy Get(string listing, string action, string missing)
+        RawStudyClaimMarkPolicy Get(string listing, string action)
         {
-            if (!catalog.TryGetValue((listing, action), out var entry) || Policy(entry) is not { } policy) throw new ResearchException(missing);
+            if (!catalog.TryGetValue((listing, action), out var entry)) throw new ResearchException("raw-study-claim-catalog-missing");
+            if (Policy(entry) is not { } policy) throw new ResearchException("raw-study-claim-policy-missing");
             if (policy.AvailableAt > at) throw new ResearchException("raw-study-claim-policy-unavailable");
             return policy;
         }
         // The sole per-share -> total seam. Ledger/planner/replay only receive these total-amount assumptions.
         return new(dividends.Select(c =>
         {
-            var p = Get(c.ListingId, c.ActionId, "raw-ledger-dividend-unpaid");
+            var p = Get(c.ListingId, c.ActionId);
             return new RawDividendMarkAssumption(c.ListingId, c.ActionId, p.Currency!, p.ExpectedWithheldPerShare * c.Quantity,
                 p.ExpectedFeeGbp, p.AvailableAt, p.SourceReference, p.ContentSha256);
         }).ToImmutableArray(), terminals.Select(c =>
         {
-            var p = Get(c.Action.ListingId, c.Action.ActionId, "raw-ledger-terminal-unsettled");
+            var p = Get(c.Action.ListingId, c.Action.ActionId);
             return new RawTerminalMarkAssumption(c.Action.ListingId, c.Action.ActionId, p.Currency, p.ExpectedWithheldPerShare * c.Quantity,
                 p.ExpectedFeeGbp, p.AvailableAt, p.SourceReference, p.ContentSha256);
         }).ToImmutableArray());

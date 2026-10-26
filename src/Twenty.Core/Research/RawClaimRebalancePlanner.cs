@@ -88,7 +88,7 @@ internal static class RawClaimRebalancePlanner
             // Order priority is frozen: ordinal sales, then ordinal cash-capped purchases.
             foreach (var target in targets.Where(t => t.TargetQuantity < t.CurrentQuantity))
             {
-                var quantity = target.CurrentQuantity - target.TargetQuantity; var after = cash + Cost(target, quantity) - feePerFillGbp;
+                var quantity = target.CurrentQuantity - target.TargetQuantity; var after = cash + (Cost(target, quantity) - feePerFillGbp);
                 if (after < 0) continue; // The sale cannot borrow its fee from a later sale or claim.
                 cash = after; Order(target, false, quantity);
             }
@@ -98,7 +98,8 @@ internal static class RawClaimRebalancePlanner
                 if (available == 0) continue;
                 var quantity = Math.Min(target.TargetQuantity - target.CurrentQuantity, available / Unit(target));
                 if (quantity <= 0) continue;
-                var after = cash - Cost(target, quantity) - feePerFillGbp;
+                quantity = RawQuantityRounding.Fit(quantity, q => cash + (-Cost(target, q) - feePerFillGbp) >= reserve);
+                var after = cash + (-Cost(target, quantity) - feePerFillGbp);
                 if (after < 0 || after < Math.Min(cash, reserve)) throw new ResearchException("raw-rebalance-rounding");
                 cash = after; Order(target, true, quantity);
             }

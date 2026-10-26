@@ -112,17 +112,20 @@ public sealed class RawStudyPendingClaimTests
     public void MissingOrFutureExpectationPolicyNeverFallsBackToLaterPaymentTerms()
     {
         var f = Fixture(); var d = (RawStudyDividendSchedule)RawStudyEvidence.Actions(f.Actions)[0];
-        Assert.Equal("raw-ledger-dividend-unpaid", Assert.Throws<ResearchException>(() => Run(Actions(f, d with { MarkPolicy = null }))).Code);
+        Assert.Equal("raw-study-claim-policy-missing", Assert.Throws<ResearchException>(() => Run(Actions(f, d with { MarkPolicy = null }))).Code);
         Assert.Equal("raw-study-claim-policy-unavailable", Assert.Throws<ResearchException>(() => Run(Actions(f,
             d with { MarkPolicy = d.MarkPolicy! with { AvailableAt = f.Plan.DevelopmentContributions[1].At.AddMinutes(1) } }))).Code);
     }
 
-    [Fact]
-    public void AClaimStillUnpaidAtTheStageEndRefusesRatherThanDisappearingFromTheScreen()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void AClaimStillUnpaidAtTheStageEndRefusesRatherThanDisappearingFromTheScreen(bool final)
     {
-        var f = Fixture(); var d = (RawStudyDividendSchedule)RawStudyEvidence.Actions(f.Actions)[0]; var at = f.Plan.DevelopmentEnd.AddDays(1);
+        var f = Fixture(final: final); var d = (RawStudyDividendSchedule)RawStudyEvidence.Actions(f.Actions)[0];
+        var at = (final ? f.Plan.ReservedEnd : f.Plan.DevelopmentEnd).AddDays(1);
         Assert.Equal("raw-ledger-dividend-unpaid", Assert.Throws<ResearchException>(() => Run(Actions(f,
-            d with { Delivery = d.Delivery! with { PaidAt = at, AvailableAt = at } }))).Code);
+            d with { Delivery = d.Delivery! with { PaidAt = at, AvailableAt = at } }), final)).Code);
     }
     [Fact]
     public void OnePerSharePolicyProducesDistinctAccountEstimatesAndNoFeeForUnownedIncome()
@@ -238,6 +241,71 @@ public sealed class RawStudyPendingClaimTests
         var result = JsonSerializer.Deserialize<RawEventReplayResult>(Convert.FromBase64String(momentum.Receipt.ResultBase64), RawReplayJson.Options)!;
         Assert.Equal(.9m, Assert.Single(result.Entries, e => e.Kind == "dividend-payment").GbpPerLocalUnit);
         _ = RawStudyDevelopmentRun.Verify(RawStudyDevelopmentRun.EncodeReport(report), _ => dataset);
+    }
+
+    [Fact]
+    public void PaymentExactlyAtTheMonthlyBoundaryReplacesTheClaimBeforeClosingAndOpening()
+    {
+        var f = Fixture(); var at = f.Plan.DevelopmentContributions[1].At;
+        var d = (RawStudyDividendSchedule)RawStudyEvidence.Actions(f.Actions)[0];
+        // Keep the payment's pinned FX at its actual instant, independent of the later booking.
+        var file = DatasetJson.Read(f.Dataset);
+        var dataset = JsonSerializer.SerializeToUtf8Bytes(file with { Observations = file.Observations.Select(o =>
+            o is FxRate fx && fx.Id == "distribution-fx" ? fx with { ObservedAt = at, Evidence = fx.Evidence with { AvailableAt = at, PublishedAt = at } } : o).ToImmutableArray() }, DatasetJson.Options);
+        var sha = Hash(dataset);
+        var report = Run(Actions((f.Plan with { DatasetSha256 = sha }, dataset, f.Calendar, f.Actions), d with
+            { Capture = d.Capture with { DatasetSha256 = sha }, Delivery = d.Delivery! with { PaidAt = at, AvailableAt = at, Booking = d.Delivery.Booking with { DatasetSha256 = sha } } }));
+        var momentum = report.Strategies[0]; Assert.Equal(0, momentum.Months[0].PendingClaimCount);
+        Assert.Equal(21.1m, momentum.Months[0].EndingEquityGbp); Assert.Equal(41.1m, momentum.Months[1].OpeningEquityAfterDepositGbp);
+        var result = JsonSerializer.Deserialize<RawEventReplayResult>(Convert.FromBase64String(momentum.Receipt.ResultBase64), RawReplayJson.Options)!;
+        Assert.Single(result.Entries, e => e.Kind == "dividend-payment"); Assert.Equal(701.1m, momentum.EndingEquityGbp);
+    }
+
+    [Theory]
+    [InlineData("version")]
+    [InlineData("missing-assumptions")]
+    public void EngineOnlyReplayRefusesAnInconsistentClaimPlanVersion(string change)
+    {
+        var f = Fixture(); var report = Run(f);
+        var request = JsonSerializer.Deserialize<RawReplayDocument>(Convert.FromBase64String(report.Strategies[0].Receipt.RequestBase64), RawReplayJson.Options)!;
+        request = request with { Study = null, Events = request.Events.Select(e => e.Id != "decision-1" ? e : e with
+        { Operation = ((RawReplayRebalanceDecision)e.Operation) with { Plan = change == "version"
+            ? ((RawReplayRebalanceDecision)e.Operation).Plan with { Version = RawRebalancePlanner.Version }
+            : ((RawReplayRebalanceDecision)e.Operation).Plan with { ClaimAssumptions = null } } }).ToImmutableArray() };
+        Assert.Equal("raw-replay-rebalance-plan", Assert.Throws<ResearchException>(() => RawReplayArchive.Execute(
+            JsonSerializer.SerializeToUtf8Bytes(request, RawReplayJson.Options), _ => f.Dataset)).Code);
+    }
+
+    [Theory]
+    [InlineData("zero")]
+    [InlineData("stock-currency")]
+    [InlineData("stock-withholding")]
+    public void ZeroAndStockPoliciesCannotInventCashConsideration(string change)
+    {
+        var f = RawStudyDistributionTests.Fixture(change == "zero" ? "zero" : "stock");
+        var t = (RawStudyTerminalSchedule)RawStudyEvidence.Actions(f.Actions)[0];
+        var p = new RawStudyClaimMarkPolicy(change == "stock-currency" ? "USD" : null, change == "stock-withholding" ? 1 : 0,
+            0, t.Evidence.AvailableAt, "urn:authored:invalid-policy", new string('a', 64), RawStudyClaimMarks.AllocationRule);
+        Assert.Equal("raw-study-claim-policy", Assert.Throws<ResearchException>(() => Run(Actions(f, t with { MarkPolicy = p }))).Code);
+    }
+
+    [Fact]
+    public void OverflowingExpectedFeesUseAClaimArithmeticRefusalInsteadOfAnInfrastructureCode()
+    {
+        var f = Fixture(); var file = DatasetJson.Read(f.Dataset); var a = file.Observations.OfType<CorporateAction>().Single();
+        var later = a.EffectiveAt.AddMinutes(1);
+        var second = a with { Id = a.Id + "-second", ActionId = a.ActionId + "-second", EffectiveAt = later,
+            Evidence = a.Evidence with { AvailableAt = later, PublishedAt = later } };
+        var dataset = JsonSerializer.SerializeToUtf8Bytes(file with { Observations = file.Observations.Add(second) }, DatasetJson.Options); var sha = Hash(dataset);
+        var d = (RawStudyDividendSchedule)RawStudyEvidence.Actions(f.Actions)[0];
+        d = d with { Capture = d.Capture with { DatasetSha256 = sha }, MarkPolicy = d.MarkPolicy! with { ExpectedFeeGbp = decimal.MaxValue },
+            Delivery = d.Delivery! with { Booking = d.Delivery.Booking with { DatasetSha256 = sha } } };
+        var other = d with { ActionId = second.ActionId, ObservationId = second.Id, Capture = d.Capture with { Id = "second-capture" },
+            Evidence = d.Evidence with { EntitlementAt = later, AvailableAt = later },
+            Delivery = d.Delivery with { Booking = d.Delivery.Booking with { Id = "second-delivery", TieOrder = 2 }, SourcePaymentId = "second-payment" } };
+        var actions = JsonSerializer.SerializeToUtf8Bytes<ImmutableArray<RawActionSchedule>>([d, other], RawReplayJson.Options);
+        Assert.Equal("raw-study-claim-arithmetic", Assert.Throws<ResearchException>(() => Run((f.Plan with
+            { DatasetSha256 = sha, ActionCatalogSha256 = Hash(actions) }, dataset, f.Calendar, actions))).Code);
     }
 
 }

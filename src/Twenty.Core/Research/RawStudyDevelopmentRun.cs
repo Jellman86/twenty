@@ -136,13 +136,17 @@ public static class RawStudyDevelopmentRun
         RawRebalanceClaimAssumptions Assumptions(DateTimeOffset at) => RawStudyClaimMarks.ForLedger(ledger, indexedCatalog, at);
         RawReplayMark Mark(string id, DataSlice market, bool ending = false)
         {
-            if (ending) _ = ledger.Value(market, priceAge, fxAge, FxPurpose.Executable);
-            var input = Assumptions(market.DecisionAt);
-            Charge((1L + input.Dividends.Length + input.Terminals.Length) * market.Observations.Length);
-            var valuation = ledger.ValueWithReceivables(market, priceAge, fxAge, FxPurpose.Executable, input.Dividends, input.Terminals);
-            if (valuation.ExpectedEquityGbp <= 0 && id.StartsWith("mark-open-", StringComparison.Ordinal))
-                throw new ResearchException("raw-study-opening-equity");
-            var mark = new RawReplayMark(input.Dividends, input.Terminals); Add(id, market.DecisionAt, mark); return mark;
+            try
+            {
+                if (ending) _ = ledger.Value(market, priceAge, fxAge, FxPurpose.Executable);
+                var input = Assumptions(market.DecisionAt);
+                Charge((1L + input.Dividends.Length + input.Terminals.Length) * market.Observations.Length);
+                var valuation = ledger.ValueWithReceivables(market, priceAge, fxAge, FxPurpose.Executable, input.Dividends, input.Terminals);
+                if (valuation.ExpectedEquityGbp <= 0 && id.StartsWith("mark-open-", StringComparison.Ordinal))
+                    throw new ResearchException("raw-study-opening-equity");
+                var mark = new RawReplayMark(input.Dividends, input.Terminals); Add(id, market.DecisionAt, mark); return mark;
+            }
+            catch (OverflowException) { throw new ResearchException("raw-study-claim-arithmetic"); }
         }
         decimal OwnedBefore(string listing, DateTimeOffset cutoff)
         {

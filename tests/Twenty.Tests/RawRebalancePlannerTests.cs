@@ -415,4 +415,100 @@ public sealed partial class RawGbpLedgerTests
             market, "synthetic-isa", new Dictionary<string, decimal> { ["listing-a"] = 1 }, market.DecisionAt.AddDays(7), 0, 0, Age, Age, [], [])).Code);
     }
 
+    [Theory]
+    [InlineData(1500, 1.06)]
+    [InlineData(2000, 1.09)]
+    [InlineData(250, 1.11)]
+    [InlineData(750, 1.19)]
+    [InlineData(2000, 1.21)]
+    [InlineData(50, .03)]
+    public void FractionalCashCapsFloorQuantityWithoutBorrowingOrRejectingDecimalDrift(decimal cash, decimal price)
+    {
+        var units = new Denomination("GBP", QuoteUnit.Major); var ledger = new RawGbpLedger(); ledger.Deposit("cash", BuyAt, cash);
+        var settled = Rebalance(ledger, RebalanceMarket(Market(BuyAt, units, price)), new Dictionary<string, decimal> { ["listing-a"] = 1 });
+        var filled = Assert.Single(settled.Orders).Quantity!.Value;
+        Assert.True(filled > 0); Assert.True(filled * price <= cash); Assert.Equal(cash - filled * price, settled.ProjectedCashAfterFeesGbp);
+        Assert.InRange(settled.ProjectedCashAfterFeesGbp, 0, .00000000000000000001m);
+        ledger.Fill("owned", Market(BuyAt, units, price), "listing-a", 1, price, PriceBasis.Raw, 0, Age);
+        var action = Dividend() with { CashCurrency = "GBP" }; var at = action.EffectiveAt;
+        var market = RebalanceMarket(Market(at, units, price, actions: [action]), secondPrice: price);
+        ledger.CaptureDividend("claim", market, "listing-a", action.ActionId, EntitlementEvidence(action));
+        var plan = RawRebalancePlanner.PlanWithReceivables(ledger, market, "synthetic-isa", new Dictionary<string, decimal> { ["listing-b"] = 1 },
+            at.AddDays(7), 0, 0, Age, Age, [DividendMark(action) with { Currency = "GBP", ExpectedWithheldLocal = 0, ExpectedFeeGbp = 0 }], []);
+        var buy = plan.Orders.Single(o => o.Buy); Assert.Equal(filled, buy.Quantity);
+        Assert.Equal(settled.ProjectedCashAfterFeesGbp, plan.ProjectedCashAfterFeesGbp);
+        Assert.True(plan.DeferredOrderValueGbp >= 2); Assert.Equal(cash - price, ledger.CashGbp);
+    }
+
+    [Theory]
+    [InlineData(1, 0, 4, 0)]
+    [InlineData(1, 80, 6, 2)]
+    [InlineData(.25, 0, 0, -4)]
+    public void HeldSuccessorAndPendingSuccessorAreCountedOnce(decimal weight, decimal deposit, decimal desired, decimal change)
+    {
+        var ledger = new RawGbpLedger(); var opening = RebalanceMarket(Market(BuyAt)); ledger.Deposit("cash", BuyAt, 320);
+        ledger.Fill("a", opening, "listing-a", 2, 100, PriceBasis.Raw, 0, Age); ledger.Fill("b", opening, "listing-b", 4, 50, PriceBasis.Raw, 0, Age);
+        var action = Terminal(TerminalOutcome.Stock) with { SuccessorListingId = "listing-b", SplitRatio = 2 };
+        var market = RebalanceActionMarket(action); ledger.CaptureTerminal("exit", market, "listing-a", action.ActionId, TerminalProof(action));
+        if (deposit > 0) ledger.Deposit("later-cash", market.DecisionAt, deposit);
+        var plan = RawRebalancePlanner.PlanWithReceivables(ledger, market, "synthetic-isa", new Dictionary<string, decimal> { ["listing-b"] = weight },
+            market.DecisionAt.AddDays(7), 0, 0, Age, Age, [], [TerminalMark(action, 0, 0)]);
+        var target = Assert.Single(plan.Targets); Assert.Equal(160, target.PendingSuccessorValueGbp); Assert.Equal(desired, target.TargetQuantity);
+        Assert.Equal(desired, target.FundedTargetQuantity); Assert.Equal(0, plan.DeferredOrderValueGbp);
+        if (change == 0) Assert.Empty(plan.Orders);
+        else { var order = Assert.Single(plan.Orders); Assert.Equal(change > 0, order.Buy); Assert.Equal(Math.Abs(change), order.Quantity); }
+        Assert.Equal(4, ledger.Holdings["listing-b"].Quantity); Assert.Equal(deposit, ledger.CashGbp);
+    }
+
+    [Fact]
+    public void AnUndeliveredSuccessorCannotRaiseItsKnownCashDeliveryFee()
+    {
+        var ledger = new RawGbpLedger(); var opening = RebalanceMarket(Market(BuyAt)); ledger.Deposit("cash", BuyAt, 320);
+        ledger.Fill("a", opening, "listing-a", 4, 100, PriceBasis.Raw, 0, Age);
+        var action = Terminal(TerminalOutcome.Stock) with { SuccessorListingId = "listing-b", SplitRatio = 2 };
+        var market = RebalanceActionMarket(action); ledger.CaptureTerminal("exit", market, "listing-a", action.ActionId, TerminalProof(action));
+        var plan = RawRebalancePlanner.PlanWithReceivables(ledger, market, "synthetic-isa", new Dictionary<string, decimal> { ["listing-b"] = 1 },
+            market.DecisionAt.AddDays(7), 0, 0, Age, Age, [], [TerminalMark(action, 0, 20)]);
+        Assert.Empty(plan.Orders); Assert.Equal(20, plan.ClaimCashReserveGbp); Assert.Equal(20, plan.ReserveShortfallGbp);
+        var delivery = new RawTerminalSettlement("delivery", "urn:authored:delivery", new string('a', 64), market.DecisionAt, market.DecisionAt,
+            null, 0, 0, 20, null, "listing-b", 8);
+        Assert.Equal("raw-ledger-cash", Assert.Throws<ResearchException>(() => ledger.SettleTerminal("settle", market, "listing-a", action.ActionId, delivery, Age)).Code);
+        Assert.Empty(ledger.Holdings); Assert.Equal(0, ledger.CashGbp);
+    }
+
+    [Fact]
+    public void TheRegisteredStudySeamAlsoRefusesNinePendingClaims()
+    {
+        var ledger = DividendBook(); var actions = Enumerable.Range(0, 9).Select(i => Dividend("claim-" + i) with
+            { EffectiveAt = BuyAt.AddHours(1).AddMinutes(i) }).ToImmutableArray();
+        foreach (var action in actions) ledger.CaptureDividend(action.ActionId, Market(action.EffectiveAt, actions: actions), "listing-a", action.ActionId, EntitlementEvidence(action));
+        Assert.Equal("raw-study-claim-capacity", Assert.Throws<ResearchException>(() => RawStudyClaimMarks.ForLedger(ledger,
+            new Dictionary<(string, string), RawActionSchedule>(), actions[^1].EffectiveAt)).Code);
+    }
+
+    private static DataSlice RebalanceActionMarket(CorporateAction action)
+    {
+        var market = RebalanceMarket(Market(action.EffectiveAt));
+        var file = DatasetJson.Read(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "point-in-time.v1.json")));
+        return new PointInTimeDataset(file with { Observations = market.Observations.Add(action) }).AsOf(action.EffectiveAt);
+    }
+
+    [Fact]
+    public void FractionalRoundingUsesTheSameFxFeeAndReserveArithmeticAsActualLedgerFills()
+    {
+        var ledger = new RawGbpLedger(); ledger.Deposit("cash", BuyAt, 1500);
+        var opening = RebalanceMarket(Market(BuyAt, price: 1.325m), secondPrice: 1.325m);
+        ledger.Fill("owned", opening, "listing-a", 1, 1.325m, PriceBasis.Raw, 0, Age);
+        var action = Dividend(); var market = RebalanceMarket(Market(action.EffectiveAt, price: 1.325m, actions: [action]), secondPrice: 1.325m);
+        ledger.CaptureDividend("claim", market, "listing-a", action.ActionId, EntitlementEvidence(action));
+        var plan = RawRebalancePlanner.PlanWithReceivables(ledger, market, "synthetic-isa", new Dictionary<string, decimal> { ["listing-b"] = 1 },
+            market.DecisionAt.AddDays(7), 12.34m, .17m, Age, Age, [DividendMark(action) with { ExpectedWithheldLocal = 0, ExpectedFeeGbp = 0 }], []);
+        var i = 0;
+        foreach (var order in plan.Orders) ledger.Fill("fill-" + i++, market, order.ListingId, (order.Buy ? 1 : -1) * order.Quantity!.Value,
+            1.325m, PriceBasis.Raw, .17m, Age);
+        Assert.Equal(plan.ProjectedCashAfterFeesGbp, ledger.CashGbp);
+        Assert.InRange(ledger.CashGbp, 12.34m, 12.34000000000000000001m);
+        Assert.Equal(.34m, ledger.FeesGbp);
+    }
+
 }

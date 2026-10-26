@@ -106,11 +106,23 @@ public static class RawRebalancePlanner
                 { Quantity = Math.Abs(change), FxObservationId = fx?.Id });
             }
             var targetRows = targets.ToImmutable();
-            var orderedOrders = orders.OrderBy(o => o.Buy).ThenBy(o => o.ListingId, StringComparer.Ordinal).ToImmutableArray();
+            var orderedOrders = orders.OrderBy(o => o.Buy).ThenBy(o => o.ListingId, StringComparer.Ordinal).ToImmutableArray().ToBuilder();
             var quotes = targetRows.ToDictionary(t => t.ListingId, t => t.Quote, StringComparer.Ordinal);
-            foreach (var order in orderedOrders)
+            for (var i = 0; i < orderedOrders.Count; i++)
             {
+                var order = orderedOrders[i];
                 var quote = quotes[order.ListingId];
+                if (order.Buy)
+                {
+                    var quantity = RawQuantityRounding.Fit(order.Quantity!.Value,
+                        q => projectedCash + (-q * quote.Price.Denomination.ToMajor(quote.Price.Close) * (quote.Fx?.QuoteUnitsPerBase ?? 1) - feePerFillGbp) >= cashReserveGbp);
+                    if (quantity != order.Quantity)
+                    {
+                        order = order with { Quantity = quantity }; orderedOrders[i] = order;
+                        targetRows = targetRows.Select(t => t.ListingId == order.ListingId
+                            ? t with { FundedTargetQuantity = t.CurrentQuantity + quantity } : t).ToImmutableArray();
+                    }
+                }
                 var signedQuantity = order.Buy ? order.Quantity!.Value : -order.Quantity!.Value;
                 // Match ledger arithmetic and the declared execution order, including
                 // funding a sale's own fee before relying on any later sale proceeds.
@@ -121,7 +133,7 @@ public static class RawRebalancePlanner
             // Do not silently borrow to hide a decimal rounding boundary.
             if (projectedCash < cashReserveGbp) throw new ResearchException("raw-rebalance-rounding");
             return new(Version, universeId, value, nextDecisionAt.ToUniversalTime(), maximumPriceAge.Ticks, maximumFxAge.Ticks, cashReserveGbp, feePerFillGbp, feeBudget,
-                investable, projectedCash, frozen, targetRows, orderedOrders,
+                investable, projectedCash, frozen, targetRows, orderedOrders.ToImmutable(),
                 ["Offline conversion of supplied positive target weights, not a registered strategy or eligibility certification.",
                  "Targets use known raw closes and executable-purpose FX; exact decision FX identifiers remain pinned at later execution.",
                  "One fee per current/target subject is reserved before sizing; unused fee budget stays cash. Claims must be settled.",

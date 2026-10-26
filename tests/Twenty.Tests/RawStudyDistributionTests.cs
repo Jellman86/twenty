@@ -82,7 +82,7 @@ public sealed class RawStudyDistributionTests
     }
 
     [Theory]
-    [InlineData("dividend","raw-ledger-dividend-unpaid")]
+    [InlineData("dividend","raw-study-claim-policy-missing")]
     [InlineData("cash","raw-ledger-terminal-unsettled")]
     public void DeliveryBeyondTheDevelopmentMarkCannotDisappearOrUseFinalWindowCash(string kind,string expected)
     {
