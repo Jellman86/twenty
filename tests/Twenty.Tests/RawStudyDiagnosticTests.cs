@@ -123,4 +123,31 @@ public sealed partial class RawStudyWorkerTests
         Assert.Equal("succeeded", result.Status); Assert.Equal(4, result.Report!.Candidates); Assert.Equal(0, RawFinalClaims());
     }
 
+    [Fact]
+    public async Task RawDiagnosticRefusesAChangedRowAfterJournalingItsOriginalSnapshot()
+    {
+        _ = CompleteRawDiagnosticFamily(); var rows = store.ListRawTrials();
+        var anchor = rows.Single(r => r.TrialId == "momentum:1:base");
+        var target = rows.Where(r => r.CostScenario == "base").OrderBy(r => r.Id, StringComparer.Ordinal).First();
+        var service = new DiagnosticStore(store);
+        using (var db = new SqliteConnection("Data Source=" + Path.Combine(root, "research.db")))
+        {
+            db.Open(); using var cmd = db.CreateCommand();
+            // Deterministic authored interleaving: mutate after the classified snapshot is saved,
+            // before loading its first artifact. No sleeps or timing race are involved.
+            cmd.CommandText = $"""
+                CREATE TRIGGER authored_snapshot_mutation AFTER UPDATE ON research_diagnostics
+                WHEN json_extract(NEW.json,'$.rawReportVersion') IS NOT NULL AND NEW.status='running'
+                BEGIN UPDATE raw_trials SET json=json_set(json,'$.reportSha256','{new string('f',64)}') WHERE id='{target.Id}'; END;
+                """;
+            cmd.ExecuteNonQuery();
+        }
+        var result = await service.Create(new(Guid.NewGuid().ToString("D"), anchor.Id));
+        Assert.Equal("failed", result.Status); Assert.Equal("diagnostic-snapshot-changed", result.ErrorCode);
+        Assert.Equal(8, result.Trials.Length); Assert.Null(result.Report);
+        Assert.Equal(target.ReportSha256, result.Trials.Single(t => t.RunId == target.Id).ReportSha256);
+        Assert.Equal(new string('f',64), store.ListRawTrials().Single(r => r.Id == target.Id).ReportSha256);
+        Assert.Equal(0, RawFinalClaims());
+    }
+
 }
