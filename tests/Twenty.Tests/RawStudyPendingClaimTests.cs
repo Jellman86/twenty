@@ -221,4 +221,23 @@ public sealed class RawStudyPendingClaimTests
         Assert.Equal("raw-replay-work", Assert.Throws<ResearchException>(() => RawReplayArchive.Execute(bytes, _ => dataset)).Code);
     }
 
+    [Fact]
+    public void ActualPaymentFxReplacesTheInterimEstimateExactlyOnce()
+    {
+        var f = Fixture(); var file = DatasetJson.Read(f.Dataset);
+        var dataset = JsonSerializer.SerializeToUtf8Bytes(file with { Observations = file.Observations.Select(o =>
+            o is FxRate fx && fx.Id == "distribution-fx" ? fx with { QuoteUnitsPerBase = .9m } : o).ToImmutableArray() }, DatasetJson.Options);
+        var sha = Hash(dataset); var d = (RawStudyDividendSchedule)RawStudyEvidence.Actions(f.Actions)[0];
+        var action = d with { Capture = d.Capture with { DatasetSha256 = sha },
+            Delivery = d.Delivery! with { Booking = d.Delivery.Booking with { DatasetSha256 = sha } } };
+        var report = Run(Actions((f.Plan with { DatasetSha256 = sha }, dataset, f.Calendar, f.Actions), action));
+        var momentum = report.Strategies[0];
+        Assert.Equal(21.1m, momentum.Months[0].EndingEquityGbp); Assert.Equal(41.1m, momentum.Months[1].OpeningEquityAfterDepositGbp);
+        Assert.Equal(41.25m, momentum.Months[1].EndingEquityGbp); Assert.Equal(41.25m / 41.1m - 1, momentum.Months[1].PeriodReturn);
+        Assert.Equal(701.25m, momentum.EndingEquityGbp); Assert.Equal(.1m, momentum.FeesGbp);
+        var result = JsonSerializer.Deserialize<RawEventReplayResult>(Convert.FromBase64String(momentum.Receipt.ResultBase64), RawReplayJson.Options)!;
+        Assert.Equal(.9m, Assert.Single(result.Entries, e => e.Kind == "dividend-payment").GbpPerLocalUnit);
+        _ = RawStudyDevelopmentRun.Verify(RawStudyDevelopmentRun.EncodeReport(report), _ => dataset);
+    }
+
 }
