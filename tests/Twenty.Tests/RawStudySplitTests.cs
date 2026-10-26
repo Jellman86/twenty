@@ -88,14 +88,14 @@ public sealed class RawStudySplitTests
     [Theory]
     [InlineData(CorporateActionKind.Dividend)]
     [InlineData(CorporateActionKind.Delisting)]
-    public void IncomeAndTerminalActionsRemainExplicitlyRefused(CorporateActionKind kind)
+    public void IncomeAndTerminalActionsRefuseAnIncorrectSplitCatalog(CorporateActionKind kind)
     {
         var f = Fixture(); var file = DatasetJson.Read(f.Dataset); var action = file.Observations.OfType<CorporateAction>().Single();
         var changed = kind == CorporateActionKind.Dividend
             ? action with { Action = kind, SplitRatio = null, CashPerShare = 1, CashCurrency = "USD" }
             : action with { Action = kind, SplitRatio = null, TerminalOutcome = TerminalOutcome.Zero };
         var bytes = JsonSerializer.SerializeToUtf8Bytes(file with { Observations = file.Observations.Replace(action, changed) }, DatasetJson.Options);
-        Assert.Equal("raw-study-actions-unsupported", Assert.Throws<ResearchException>(() => Run((f.Plan with { DatasetSha256 = Hash(bytes) }, bytes, f.Calendar, f.Actions))).Code);
+        Assert.Equal("raw-study-action-binding", Assert.Throws<ResearchException>(() => Run((f.Plan with { DatasetSha256 = Hash(bytes) }, bytes, f.Calendar, f.Actions))).Code);
     }
     [Theory]
     [InlineData(2)]

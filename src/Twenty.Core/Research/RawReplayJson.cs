@@ -32,6 +32,8 @@ public static class RawReplayJson
                 info.PolymorphismOptions.DerivedTypes.Add(new(typeof(RawSplitSchedule), "split"));
                 info.PolymorphismOptions.DerivedTypes.Add(new(typeof(RawDividendSchedule), "dividend"));
                 info.PolymorphismOptions.DerivedTypes.Add(new(typeof(RawTerminalSchedule), "terminal"));
+                info.PolymorphismOptions.DerivedTypes.Add(new(typeof(RawStudyDividendSchedule), "studyDividend"));
+                info.PolymorphismOptions.DerivedTypes.Add(new(typeof(RawStudyTerminalSchedule), "studyTerminal"));
             }
             // Derived display values have no setter/constructor binding. Exclude them from
             // this wire format so a supplied value cannot be silently ignored on read.

@@ -19,22 +19,20 @@ public sealed record RawStudyDevelopmentReport(string Version, string PlanSha256
 
 public static class RawStudyDevelopmentRun
 {
-    public const string Version = "raw-study-development-v2";
+    public const string Version = "raw-study-development-v3";
     public const int MaximumReportBytes = 8 * 1024 * 1024;
     private static string Hash(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
     private static readonly string[] Strategies = ["momentum", "equal_weight", "cash"];
     public static byte[] EncodeReport(RawStudyDevelopmentReport report) => RawReplayJson.Write(report, MaximumReportBytes);
     private static readonly ImmutableArray<string> Limitations = ["Registered-development calculation only; no final evaluation, selection, investment nomination or broker execution is granted.",
              "Independent empty momentum/equal-weight/cash accounts receive the exact frozen deposits; all orders in each bound batch must execute or the trial fails.",
-             "Pure splits use the original action catalog and explicit ownership dispositions. Dividends, terminal outcomes and simultaneous cross-calendar order batches remain unsupported; future final-window actions do not gate development.",
+             "Original catalogs freeze pure splits and per-cutoff-share dividend/terminal policies with explicit ownership dispositions. Unsettled claims at marks, mixed consideration and cross-calendar batches are refused; future final-window actions do not gate development.",
              "Raw GBP marks use executable-purpose historical FX labels and supplied reviewed sessions; same-open funding, fractional quantities and retrospective volume screens remain model assumptions."];
     private static void Scope(DatasetFile file, RawUniverseStudyPlan plan)
     {
         if (file.Manifest.Synthetic != plan.Synthetic || !file.Manifest.Universes.Any(u => u.Id == plan.UniverseId) ||
             plan.DevelopmentEnd > file.Manifest.CreatedAt) throw new ResearchException("raw-study-dataset-contract");
-        if (file.Observations.OfType<CorporateAction>().Any(a => a.Action is not (CorporateActionKind.SymbolChange or CorporateActionKind.Split) &&
-            a.EffectiveAt >= plan.DevelopmentStart && a.EffectiveAt <= plan.DevelopmentEnd && a.Evidence.AvailableAt <= plan.DevelopmentEnd))
-            throw new ResearchException("raw-study-actions-unsupported");
+
     }
     public static RawStudyDevelopmentReport Run(RawUniverseStudyPlan plan, string trialId, byte[] datasetBytes,
         IReadOnlyDictionary<string, ExecutionCalendar> calendars, CancellationToken ct = default, Action? checkpoint = null) =>
@@ -50,7 +48,7 @@ public static class RawStudyDevelopmentRun
         foreach (var pin in plan.Calendars)
             if (!pinned.TryGetValue(pin.CalendarId, out var calendar) || calendar.Sha256 != pin.Sha256 || calendar.Venue != pin.Venue ||
                 !file.Manifest.Calendars.Contains(calendar.Reference)) throw new ResearchException("raw-study-calendar-binding");
-        var catalog = RawStudyEvidence.Actions(actionCatalogBytes); var actions = StageSplits(plan, file, datasetBytes, actionCatalogBytes, catalog);
+        var catalog = RawStudyEvidence.Actions(actionCatalogBytes); var actions = StageActions(plan, file, datasetBytes, actionCatalogBytes, catalog);
         var reports = ImmutableArray.CreateBuilder<RawStudyStrategyReport>();
         foreach (var strategy in Strategies)
         {
@@ -65,12 +63,12 @@ public static class RawStudyDevelopmentRun
         if (bytes.Length > DatasetJson.MaximumBytes || Hash(bytes) != plan.DatasetSha256) throw new ResearchException("raw-replay-dataset-hash");
         var file = RawReplayJson.Read<DatasetFile>(bytes, DatasetJson.MaximumBytes); _ = new PointInTimeDataset(file); Scope(file, plan); return file;
     }
-    private static ImmutableArray<RawReplayEventSpec> StageSplits(RawUniverseStudyPlan plan, DatasetFile file, byte[] datasetBytes,
+    private static ImmutableArray<RawReplayEventSpec> StageActions(RawUniverseStudyPlan plan, DatasetFile file, byte[] datasetBytes,
         byte[] actionBytes, ImmutableArray<RawActionSchedule> catalog)
     {
         if (Hash(actionBytes) != plan.ActionCatalogSha256) throw new ResearchException("raw-study-action-catalog");
         if (catalog.Select(c => (c.ListingId, c.ActionId)).Distinct().Count() != catalog.Length) throw new ResearchException("raw-study-actions");
-        var required = file.Observations.OfType<CorporateAction>().Where(a => a.Action == CorporateActionKind.Split &&
+        var required = file.Observations.OfType<CorporateAction>().Where(a => a.Action != CorporateActionKind.SymbolChange &&
             a.EffectiveAt >= plan.DevelopmentStart && a.EffectiveAt <= plan.DevelopmentEnd && a.Evidence.AvailableAt <= plan.DevelopmentEnd)
             .Select(a => (a.ListingId, a.ActionId)).Distinct().ToArray();
         if (required.Length > RawEventSchedule.MaximumActions || (long)required.Length * file.Observations.Length > RawReplayArchive.MaximumEventObservationWork)
@@ -79,19 +77,14 @@ public static class RawStudyDevelopmentRun
         foreach (var subject in required)
         {
             var entry = catalog.SingleOrDefault(c => c.ListingId == subject.ListingId && c.ActionId == subject.ActionId);
-            if (entry is not RawSplitSchedule) throw new ResearchException("raw-study-action-coverage");
+            if (entry is null) throw new ResearchException("raw-study-action-coverage");
             if (entry.Capture is null || string.IsNullOrWhiteSpace(entry.Capture.Id)) throw new ResearchException("raw-study-action-binding");
             var source = file.Observations.OfType<CorporateAction>().SingleOrDefault(a => a.Id == entry.ObservationId &&
                 a.ListingId == entry.ListingId && a.ActionId == entry.ActionId);
-            if (source is not { Action: CorporateActionKind.Split, SplitRatio: > 0 } || source.Evidence.AvailableAt is not { } available ||
-                source.EffectiveAt < plan.DevelopmentStart || source.EffectiveAt > plan.DevelopmentEnd || available > plan.DevelopmentEnd ||
-                entry.Capture.DatasetSha256 != plan.DatasetSha256) throw new ResearchException("raw-study-action-binding");
-            if (source.CashPerShare is not (null or 0) || source.SuccessorListingId is not null || source.NewSymbol is not null ||
-                source.TerminalOutcome != TerminalOutcome.NotApplicable) throw new ResearchException("raw-ledger-action-complex");
-            if (entry.Capture.Id.StartsWith("deposit-", StringComparison.Ordinal) || entry.Capture.Id.StartsWith("decision-", StringComparison.Ordinal) ||
-                entry.Capture.Id.StartsWith("fill-", StringComparison.Ordinal) || entry.Capture.Id.StartsWith("mark-", StringComparison.Ordinal))
-                throw new ResearchException("raw-study-action-id");
-            selected.Add(entry);
+            if (source is null || source.Evidence.AvailableAt is not { } available || source.EffectiveAt < plan.DevelopmentStart ||
+                source.EffectiveAt > plan.DevelopmentEnd || available > plan.DevelopmentEnd) throw new ResearchException("raw-study-action-binding");
+            RawStudyActionTerms.Validate(entry, source, plan.DatasetSha256);
+            selected.Add(RawStudyActionTerms.ForCompiler(entry, plan.DevelopmentEnd));
         }
         if (selected.Count == 0) return [];
         var schedule = new RawSchedulePlan(RawEventSchedule.Version, RawEventReplay.Version, plan.Build,
@@ -120,29 +113,68 @@ public static class RawStudyDevelopmentRun
             events.Add(new(id, events.Count, at.ToUniversalTime(), plan.DatasetSha256, op));
         }
         var dispositions = ImmutableArray.CreateBuilder<RawStudyActionDisposition>(); var cursor = 0; long actionWork = 0;
+        var captured = new HashSet<(string, string)>();
+        decimal OwnedBefore(string listing, DateTimeOffset cutoff)
+        {
+            decimal quantity = 0;
+            foreach (var entry in ledger.Entries)
+            {
+                if (entry.TerminalSettlement is { SuccessorListingId: { } successor } delivered && successor == listing && delivered.SettledAt < cutoff)
+                    quantity += delivered.SuccessorQuantity;
+                if (entry.ListingId != listing || entry.Quantity == 0) continue;
+                var at = entry.Kind is "split" or "terminal-entitlement" ? entry.ActionEffectiveAt : entry.ModelledExecution?.Timing.Session.OpenAt ?? entry.At;
+                if (at < cutoff) quantity += entry.Quantity;
+            }
+            return quantity;
+        }
         void Through(DateTimeOffset until, bool pendingBatch = false)
         {
             while (cursor < actions.Length && actions[cursor].At <= until)
             {
-                ct.ThrowIfCancellationRequested(); var item = actions[cursor++]; var split = (RawReplaySplit)item.Operation;
+                ct.ThrowIfCancellationRequested(); var item = actions[cursor++];
                 if ((actionWork += ledger.Entries.Length) > RawReplayArchive.MaximumEventObservationWork) throw new ResearchException("raw-study-action-work");
-                var observed = file.Observations.OfType<CorporateAction>().Single(a => a.ListingId == split.ListingId && a.ActionId == split.ActionId &&
-                    a.Id == catalog.Single(c => c.ListingId == split.ListingId && c.ActionId == split.ActionId).ObservationId);
-                // All quantity-changing entries in this supported engine are modelled fills or pure splits.
-                // Use economic time, rather than later receipt booking time, for strict pre-cutoff ownership.
-                var owned = ledger.Entries.Where(e => e.ListingId == split.ListingId &&
-                    (e.Kind == "split" ? e.ActionEffectiveAt : e.ModelledExecution?.Timing.Session.OpenAt ?? e.At) < observed.EffectiveAt)
-                    .Sum(e => e.Quantity);
+                var (listing, action) = item.Operation switch
+                {
+                    RawReplaySplit a => (a.ListingId,a.ActionId), RawReplayDividendCapture a => (a.ListingId,a.ActionId),
+                    RawReplayDividendPayment a => (a.ListingId,a.ActionId), RawReplayTerminalCapture a => (a.ListingId,a.ActionId),
+                    RawReplayTerminalSettlement a => (a.ListingId,a.ActionId), _ => throw new ResearchException("raw-study-action-binding")
+                };
+                var instruction = catalog.Single(c => c.ListingId == listing && c.ActionId == action);
+                var observed = file.Observations.OfType<CorporateAction>().Single(a => a.Id == instruction.ObservationId);
+                var capture = item.Operation is RawReplaySplit or RawReplayDividendCapture or RawReplayTerminalCapture;
+                var owned = capture ? OwnedBefore(listing, observed.EffectiveAt) : 0;
                 if (owned < 0) throw new ResearchException("raw-study-action-history");
-                var disposition = "not-held-before-cutoff";
-                if (owned > 0)
+                var applies = capture ? owned > 0 : captured.Contains((listing,action));
+                var disposition = capture ? "not-held-before-cutoff" : "no-entitlement";
+                if (applies)
                 {
                     if (pendingBatch) throw new ResearchException("raw-study-action-during-batch");
-                    var actionMarket = dataset.AsOf(item.At); Charge(actionMarket.Observations.Length);
-                    ledger.ApplySplit(item.Id, actionMarket, split.ListingId, split.ActionId);
-                    Add(item.Id, item.At, split); disposition = "applied-split";
+                    var market = dataset.AsOf(item.At); Charge(market.Observations.Length);
+                    RawReplayOperation actual = item.Operation;
+                    switch (item.Operation)
+                    {
+                        case RawReplaySplit split:
+                            ledger.ApplySplit(item.Id,market,listing,action); disposition = "applied-split"; break;
+                        case RawReplayDividendCapture dividend:
+                            ledger.CaptureDividend(item.Id,market,listing,action,dividend.Evidence); disposition = "captured-dividend"; break;
+                        case RawReplayDividendPayment dividend:
+                            var quantity = ledger.DividendEntitlements.Single(e => e.ListingId == listing && e.ActionId == action).Quantity;
+                            var payment = dividend.Payment with { GrossLocal = dividend.Payment.GrossLocal * quantity, WithheldLocal = dividend.Payment.WithheldLocal * quantity };
+                            ledger.PayDividend(item.Id,market,listing,action,payment,fxAge); actual = new RawReplayDividendPayment(listing,action,payment);
+                            disposition = "paid-dividend"; break;
+                        case RawReplayTerminalCapture terminal:
+                            ledger.CaptureTerminal(item.Id,market,listing,action,terminal.Evidence); disposition = "captured-terminal"; break;
+                        case RawReplayTerminalSettlement terminal:
+                            var shares = ledger.TerminalEntitlements.Single(e => e.Action.ListingId == listing && e.Action.ActionId == action).Quantity;
+                            var settlement = terminal.Settlement with { GrossLocal = terminal.Settlement.GrossLocal * shares,
+                                WithheldLocal = terminal.Settlement.WithheldLocal * shares, SuccessorQuantity = terminal.Settlement.SuccessorQuantity * shares };
+                            ledger.SettleTerminal(item.Id,market,listing,action,settlement,fxAge); actual = new RawReplayTerminalSettlement(listing,action,settlement);
+                            disposition = "settled-terminal"; break;
+                    }
+                    Add(item.Id,item.At,actual);
+                    if (capture) captured.Add((listing,action));
                 }
-                dispositions.Add(new(item.Id, split.ListingId, split.ActionId, item.At, disposition));
+                dispositions.Add(new(item.Id,listing,action,item.At,disposition));
             }
         }
         for (var i = 0; i < plan.DevelopmentContributions.Length; i++)
@@ -249,7 +281,7 @@ public static class RawStudyDevelopmentRun
         catch (FormatException) { throw new ResearchException("raw-study-replay-binding"); }
         if (Hash(bytes) != binding.PlanSha256) throw new ResearchException("raw-study-replay-binding");
         var plan = RawUniverseStudyProtocol.Decode(bytes);
-        if (binding.Dispositions.IsDefault || binding.Dispositions.Length > RawEventSchedule.MaximumActions || binding.Dispositions.Any(d => d is null) ||
+        if (binding.Dispositions.IsDefault || binding.Dispositions.Length > 2 * RawEventSchedule.MaximumActions || binding.Dispositions.Any(d => d is null) ||
             binding.ActionCatalogBase64 is null || binding.ActionCatalogBase64.Length > 4L * ((RawStudyEvidence.MaximumBytes + 2L) / 3))
             throw new ResearchException("raw-study-replay-binding");
         byte[] actionBytes;
@@ -257,7 +289,7 @@ public static class RawStudyDevelopmentRun
         catch (FormatException) { throw new ResearchException("raw-study-replay-binding"); }
         var datasetBytes = readDataset(plan.DatasetSha256)?.ToArray() ?? throw new ResearchException("raw-replay-dataset-hash");
         var file = ReadDataset(plan, datasetBytes); var catalog = RawStudyEvidence.Actions(actionBytes);
-        var actions = StageSplits(plan, file, datasetBytes, actionBytes, catalog);
+        var actions = StageActions(plan, file, datasetBytes, actionBytes, catalog);
         var tables = request.Calendars.IsDefault ? ImmutableArray<ExecutionCalendar>.Empty : request.Calendars;
         if (tables.Select(c => c.Reference.Id).Distinct(StringComparer.Ordinal).Count() != tables.Length)
             throw new ResearchException("raw-study-calendar-binding");

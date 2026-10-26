@@ -9,7 +9,7 @@ public sealed record RawStudyStartRequest(string RequestId, string PlanSha256);
 
 public sealed partial class ResearchStore
 {
-    private static bool RawReservationActive(RawResearchStudy study) => study.Status is "registered" or "development" or "development-complete";
+    private static bool RawReservationActive(RawResearchStudy study) => study.Status is "registered" or "development" or "development-complete" or "candidate-frozen";
     private static bool RawTrialStateValid(RawResearchStudy study, RawStudyTrialEntry row)
     {
         if (row.Status is not ("planned" or "started" or "succeeded" or "failed" or "interrupted" or "cancelled")) return false;
@@ -26,7 +26,7 @@ public sealed partial class ResearchStore
         return study.Status switch
         {
             "development" => row.Status is "planned" or "started" or "succeeded",
-            "development-complete" => row.Status == "succeeded",
+            "development-complete" or "candidate-frozen" or "no-candidate" => row.Status == "succeeded",
             "failed" => row.Status is "succeeded" or "failed" or "interrupted" or "cancelled",
             "cancelled" => row.Status is "succeeded" or "failed" or "interrupted" or "cancelled" || row.Status == "started" && row.CancelRequested,
             _ => false

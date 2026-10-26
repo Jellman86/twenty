@@ -30,6 +30,10 @@ public sealed record RawResearchStudy(string Id, string RequestId, string Reques
     ImmutableArray<PriorStudyTrial> PriorTrials, ImmutableArray<UniverseRunEntry> PriorUniverseTrials,
     ImmutableArray<RawStudyTrialEntry> PriorRawTrials, ImmutableArray<string> DevelopmentTrialIds, ImmutableArray<RawStudyOriginal> Originals)
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? SelectionRequestId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? SelectionRequestedAt { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? SelectionReportSha256 { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? SelectedCandidateId { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? StartRequestId { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? StartRequestedAt { get; init; }
 }
@@ -52,9 +56,16 @@ public sealed partial class ResearchStore
         var bytes = Encoding.UTF8.GetBytes(json);
         if (bytes.Length > MaximumStudyPayload || RawHash(bytes) != sha) throw new ResearchException("raw-study-integrity");
         var study = JsonSerializer.Deserialize<RawResearchStudy>(bytes, RawReplayJson.Options) ?? throw new ResearchException("raw-study-integrity");
-        if (!Guid.TryParseExact(study.Id, "N", out _) || study.Status is not ("registered" or "development" or "development-complete" or "failed" or "cancelled") ||
+        if (!Guid.TryParseExact(study.Id, "N", out _) || study.Status is not ("registered" or "development" or "development-complete" or "candidate-frozen" or "no-candidate" or "failed" or "cancelled") ||
             study.Originals.IsDefault || study.DevelopmentTrialIds.IsDefault || study.Originals.Any(i => i is null || i.Kind is not ("dataset" or "calendar" or "actions") ||
                 !IsSha256(i.OriginalSha256) || !IsSha256(i.PinSha256) || i.Bytes < 0)) throw new ResearchException("raw-study-integrity");
+        var selection = study.SelectionRequestId is not null;
+        if (selection != (study.SelectionReportSha256 is not null) || selection != (study.SelectionRequestedAt is not null) ||
+            selection && (!Guid.TryParseExact(study.SelectionRequestId,"D",out _) || !IsSha256(study.SelectionReportSha256!)) ||
+            study.Status is "candidate-frozen" or "no-candidate" && !selection ||
+            study.Status == "candidate-frozen" && (study.SelectedCandidateId is null || !study.Plan.Candidates.Any(c=>c.Id==study.SelectedCandidateId)) ||
+            study.Status == "no-candidate" && study.SelectedCandidateId is not null ||
+            selection && study.Status is not ("candidate-frozen" or "no-candidate" or "cancelled")) throw new ResearchException("raw-study-integrity");
         byte[] plan;
         try { plan = Convert.FromBase64String(study.PlanBase64); }
         catch (FormatException) { throw new ResearchException("raw-study-plan-integrity"); }
@@ -235,13 +246,18 @@ public sealed partial class ResearchStore
                     RawDividendSchedule { Payment: { Payment: null } } or RawTerminalSchedule { Settlement: { Settlement: null } } ||
                     !subjects.Add((action.ListingId, action.ActionId))) throw new ResearchException("raw-study-actions");
                 var observed = file.Observations.OfType<CorporateAction>().SingleOrDefault(a => a.Id == action.ObservationId && a.ListingId == action.ListingId && a.ActionId == action.ActionId);
-                if (observed is null || !(action is RawSplitSchedule && observed.Action == CorporateActionKind.Split ||
+                if (observed is null) throw new ResearchException("raw-study-action-binding");
+                if (action is RawStudyDividendSchedule or RawStudyTerminalSchedule)
+                    RawStudyActionTerms.Validate(action, observed, plan.DatasetSha256);
+                else if (!(action is RawSplitSchedule && observed.Action == CorporateActionKind.Split ||
                     action is RawDividendSchedule && observed.Action == CorporateActionKind.Dividend ||
                     action is RawTerminalSchedule && observed.Action is CorporateActionKind.Delisting or CorporateActionKind.Merger))
                     throw new ResearchException("raw-study-action-binding");
                 var bookings = new List<RawSchedulePoint> { action.Capture };
                 if (action is RawDividendSchedule { Payment: { } payment }) bookings.Add(payment.Booking);
                 if (action is RawTerminalSchedule { Settlement: { } settlement }) bookings.Add(settlement.Booking);
+                if (action is RawStudyDividendSchedule { Delivery: { } income }) bookings.Add(income.Booking);
+                if (action is RawStudyTerminalSchedule { Delivery: { } delivery }) bookings.Add(delivery.Booking);
                 foreach (var point in bookings)
                     if (point is null || string.IsNullOrWhiteSpace(point.Id) || point.Id.Length > 128 || point.TieOrder < 0 ||
                         point.DatasetSha256 != plan.DatasetSha256 || !points.Add(point.Id)) throw new ResearchException("raw-study-action-binding");

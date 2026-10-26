@@ -45,13 +45,15 @@ public static class ResearchModule
             var rawTrials = store.ListRawTrials().Count;
             return new { total = modelTrials + universeTrials + rawTrials, modelTrials, universeTrials, rawTrials, displayedLimit = 100 };
         });
-        api.MapGet("/raw-studies", () => Results.Json(new { executionAvailable = true, finalEvaluationAvailable = false, studies = store.RawStudies() }, RawReplayJson.Options));
+        api.MapGet("/raw-studies", () => Results.Json(new { executionAvailable = true, selectionAvailable = true, finalEvaluationAvailable = false, studies = store.RawStudies() }, RawReplayJson.Options));
         api.MapPost("/raw-studies", (RawStudyInboxRequest request) => Results.Json(store.RegisterRawStudy(new(request.RequestId, request.Name, PlanSha256: request.PlanSha256), Commit()), RawReplayJson.Options));
         api.MapGet("/raw-studies/{id}", (string id) => store.RawStudies().SingleOrDefault(s => s.Id == id) is { } study
             ? Results.Json(study, RawReplayJson.Options) : Results.NotFound());
         api.MapGet("/raw-studies/{id}/events", (string id) => store.RawStudyEvents(id));
         api.MapGet("/raw-studies/{id}/plan", (string id) => store.RawStudies().SingleOrDefault(s => s.Id == id) is { } study
             ? Results.Bytes(Convert.FromBase64String(study.PlanBase64), "application/json") : Results.NotFound());
+        api.MapPost("/raw-studies/{id}/select", (string id, RawStudySelectionRequest request) => Results.Json(store.SelectRawStudy(id, request, Commit()), RawReplayJson.Options));
+        api.MapGet("/raw-studies/{id}/selection", (string id) => Results.Bytes(store.RawStudySelectionBytes(id), "application/json"));
         api.MapPost("/raw-studies/{id}/start", (string id, RawStudyStartRequest request) => Results.Json(store.StartRawStudy(id, request), RawReplayJson.Options));
         api.MapGet("/raw-trials/{id}/report", (string id) => Results.Bytes(store.RawTrialReportBytes(id), "application/json"));
         api.MapPost("/raw-studies/{id}/cancel", (string id) => Results.Json(store.CancelRawStudy(id), RawReplayJson.Options));

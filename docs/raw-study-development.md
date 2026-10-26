@@ -1,5 +1,7 @@
 # Registered raw development worker
 
+The current worker adds [declared per-share distributions](raw-study-distributions.md) and [frozen development selection](raw-study-selection.md). The earlier split-only limitations below describe their original checkpoint; pending claims across marks and raw final evaluation remain unsupported.
+
 The raw-study API now supports an explicit development start after [atomic admission](raw-study-admission.md). Admission alone does not execute anything. This is a bounded research calculation, not final evaluation, a selected investment strategy or broker execution. The initial-v1 accounting, combined acceptance and genuine-data gates remain partial.
 
 ## Execution contract
@@ -38,7 +40,7 @@ The worker shares the existing computation lease and two-minute deadline. Queue 
 
 Authored fixtures exercise independent hand arithmetic: 35 deposits of £20 produce £700 with flat raw prices and zero costs. With a £0.25 fee, the single-asset momentum account pays £8.75 and ends at £691.25; two-asset equal weight pays £17.50 and ends at £682.50; cash remains £700. These are engineering examples, not historical performance.
 
-Regressions cover full-window replay, changed deposits, altered limitations, missing/duplicate calendar tables, cancellation, preserved successful reports, missing retained inputs, interrupted-attempt restart, queue timing, explicit action refusal and byte-identical report recovery. Multiplying prices strictly after the development end by 100 leaves all development months unchanged. The full .NET suite passes 1,250 tests; 45 Python tests, Ruff, Svelte checks/build, secret/path scans and the isolated scientific-boundary probe pass. No optional neural or real-device accelerator path changed.
+Regressions cover full-window replay, changed deposits, altered limitations, missing/duplicate calendar tables, cancellation, preserved successful reports, missing retained inputs, interrupted-attempt restart, queue timing, explicit action refusal and byte-identical report recovery. Multiplying prices strictly after the development end by 100 leaves all development months unchanged. The current full .NET suite passes 1,269 tests; 45 Python tests, Ruff, Svelte checks/build, secret/path scans and the isolated scientific-boundary probe pass. No optional neural or real-device accelerator path changed.
 
 Private cold-host HTTP acceptance is retained under `/mnt/apps/developer/jellman86/artifacts/twenty/raw-study-worker-20261025`: authored input preparation, explicit start after inbox removal, eight original trials, report hashes, UUID replay and report identity after restart. No genuine holdout or production experiment is used for this rehearsal. The original deployment evidence is recorded below; subsequent checkpoints add their own receipts.
 

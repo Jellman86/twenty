@@ -12,12 +12,17 @@ public sealed class RawStudyWorkerTests : IDisposable
     private ResearchStore store;
     public RawStudyWorkerTests() => store = new(root);
     public void Dispose() { store.Dispose(); Directory.Delete(root, true); }
-    private RawResearchStudy Register(bool withSplit = false)
+    private RawResearchStudy Register(bool withSplit = false, string? distribution = null)
     {
         var original = RawStudyDevelopmentRunTests.Fixture();
         var f = withSplit ? RawStudySplitTests.Fixture() : (original.Plan, original.Dataset, original.Calendar, Actions: "[]"u8.ToArray());
+        if (distribution is not null) f = RawStudyDistributionTests.Fixture(distribution);
+        return RegisterFixture(f);
+    }
+    private RawResearchStudy RegisterFixture((RawUniverseStudyPlan Plan, byte[] Dataset, ExecutionCalendar Calendar, byte[] Actions) f)
+    {
         var sha = store.ImportUniverseDataset(f.Dataset);
-        var plan = RawUniverseStudyProtocol.Declare(sha, f.Plan.UniverseId, true, "engineering",
+        var plan = RawUniverseStudyProtocol.Declare(sha, f.Plan.UniverseId, f.Plan.Synthetic, f.Plan.Purpose,
             ResearchIdentity.Current.Sha256, ResearchIdentity.Scheme, f.Plan.Decisions, f.Plan.MonthlyGbp,
             f.Plan.BaseExecution, f.Plan.Calendars, f.Plan.ActionCatalogSha256);
         var inbox = Path.Combine(root, "imports"); Directory.CreateDirectory(inbox);
@@ -25,6 +30,53 @@ public sealed class RawStudyWorkerTests : IDisposable
         File.WriteAllBytes(Path.Combine(inbox, plan.ActionCatalogSha256 + ".actions.json"), f.Actions);
         return store.RegisterRawStudy(new(Guid.NewGuid().ToString("D"), "Authored execution", Convert.ToBase64String(RawUniverseStudyProtocol.Encode(plan))), "authored");
     }
+    [Fact]
+    public void AuthoredFalseProvenanceExercisesNoCandidateWithoutSpendingARealHoldout()
+    {
+        // Authored values with a false synthetic flag test the guard; these are not historical evidence.
+        var f = RawStudyDevelopmentRunTests.Fixture();var file=Twenty.Core.Data.DatasetJson.Read(f.Dataset);
+        var bytes=JsonSerializer.SerializeToUtf8Bytes(file with { Manifest=file.Manifest with { Synthetic=false } },Twenty.Core.Data.DatasetJson.Options);
+        var study=RegisterFixture((f.Plan with { Synthetic=false,Purpose="research" },bytes,f.Calendar,"[]"u8.ToArray()));
+        store.StartRawStudy(study.Id,new(Guid.NewGuid().ToString("D"),study.PlanSha256));
+        for(var i=0;i<8;i++) Assert.True(store.ProcessNextRawStudyRun("authored"));
+        var result=store.SelectRawStudy(study.Id,new(Guid.NewGuid().ToString("D"),study.PlanSha256),"authored");
+        Assert.Equal("no-candidate",result.Status);Assert.Null(result.SelectedCandidateId);
+        Assert.Equal(8,store.ListRawTrials().Count);
+        using var db=new SqliteConnection("Data Source="+Path.Combine(root,"research.db"));db.Open();using var cmd=db.CreateCommand();
+        cmd.CommandText="SELECT COUNT(*) FROM study_holdout_claims";Assert.Equal(0L,(long)cmd.ExecuteScalar()!);
+    }
+
+    [Fact]
+    public void InvalidPerSharePolicyCannotAdmitAnyTrial()
+    {
+        var f = RawStudyDistributionTests.Fixture(); var entry = (RawStudyDividendSchedule)RawStudyEvidence.Actions(f.Actions)[0];
+        var actions = JsonSerializer.SerializeToUtf8Bytes<System.Collections.Immutable.ImmutableArray<RawActionSchedule>>(
+            [entry with { Delivery = entry.Delivery! with { WithheldPerShare = 9 } }], RawReplayJson.Options);
+        var plan = f.Plan with { ActionCatalogSha256 = Convert.ToHexStringLower(SHA256.HashData(actions)) };
+        Assert.Equal("raw-study-payment-policy", Assert.Throws<ResearchException>(() => RegisterFixture((plan, f.Dataset, f.Calendar, actions))).Code);
+        Assert.Empty(store.RawStudies()); Assert.Empty(store.ListRawTrials());
+    }
+
+    [Theory]
+    [InlineData("dividend",701.6)]
+    [InlineData("cash",700)]
+    [InlineData("zero",0)]
+    [InlineData("stock",700)]
+    public void RegisteredPerShareActionsUseRetainedInputsAndRecoverTheirExactReports(string kind,decimal expected)
+    {
+        var study = Register(distribution: kind);
+        store.StartRawStudy(study.Id, new(Guid.NewGuid().ToString("D"), study.PlanSha256));
+        Directory.Delete(Path.Combine(root, "imports"), true);
+        Assert.True(store.ProcessNextRawStudyRun("authored"));
+        var row = store.ListRawTrials().Single(t => t.Status == "succeeded");
+        var bytes = store.RawTrialReportBytes(row.Id);
+        var dataset = store.RawStudyOriginalBytes(study.Id, study.Originals.Single(o => o.Kind == "dataset").OriginalSha256);
+        var report = RawStudyDevelopmentRun.Verify(bytes, _ => dataset);
+        Assert.Equal(expected, report.Strategies.Single(s => s.Strategy == "momentum").EndingEquityGbp);
+        store.Dispose(); store = new(root);
+        Assert.Equal(bytes, store.RawTrialReportBytes(row.Id));
+    }
+
     [Fact]
     public void RegisteredWorkerConsumesTheRetainedSplitCatalogAndPublishesReplayableReports()
     {
@@ -86,8 +138,24 @@ public sealed class RawStudyWorkerTests : IDisposable
         Assert.Equal("development-complete", store.RawStudies().Single().Status);
         Assert.All(store.ListRawTrials(), t => Assert.Equal("succeeded", t.Status));
         var hashes = store.ListRawTrials().ToDictionary(t => t.Id, t => Convert.ToHexStringLower(SHA256.HashData(store.RawTrialReportBytes(t.Id))));
+        var first = store.ListRawTrials()[0]; var path = Path.Combine(root,"runs",first.Id,"raw-study-report.json");var original = File.ReadAllBytes(path);
+        var selectionRequest = new RawStudySelectionRequest(Guid.NewGuid().ToString("D"),study.PlanSha256);
+        try
+        {
+            File.WriteAllText(path,"{}");
+            Assert.Equal("raw-study-report-integrity",Assert.Throws<ResearchException>(()=>store.SelectRawStudy(study.Id,selectionRequest,"authored")).Code);
+            Assert.Null(store.RawStudies().Single().SelectionRequestId);
+        }
+        finally { File.WriteAllBytes(path,original); }
+        var selected = store.SelectRawStudy(study.Id,selectionRequest,"authored");
+        Assert.Equal("candidate-frozen",selected.Status);Assert.Equal("momentum:1",selected.SelectedCandidateId);
+        var selection = store.RawStudySelectionBytes(study.Id);
+        Assert.Equal("raw-study-selection-frozen",Assert.Throws<ResearchException>(()=>store.SelectRawStudy(study.Id,
+            selectionRequest with { RequestId=Guid.NewGuid().ToString("D") },"authored")).Code);
         store.Dispose(); store = new(root);
-        Assert.Equal("development-complete", store.StartRawStudy(study.Id, request).Status);
+        Assert.Equal("candidate-frozen", store.StartRawStudy(study.Id, request).Status);
+        Assert.Equal("candidate-frozen",store.SelectRawStudy(study.Id,selectionRequest,"authored").Status);
+        Assert.Equal(selection,store.RawStudySelectionBytes(study.Id));
         Assert.All(store.ListRawTrials(), t => Assert.Equal(hashes[t.Id], Convert.ToHexStringLower(SHA256.HashData(store.RawTrialReportBytes(t.Id)))));
     }
     [Fact]

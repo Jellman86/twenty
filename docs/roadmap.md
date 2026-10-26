@@ -16,6 +16,12 @@ Track delivery in the [public Twenty project](https://github.com/users/Jellman86
 
 - [M1 · Research workbench · #12: Keep secrets out of public source and container publication](https://github.com/Jellman86/twenty/issues/12)
 
+## Current delivery position (26 October 2026)
+
+The [initial-v1 acceptance contract](initial-v1-acceptance.md) remains authoritative; partial evidence gates are not converted into a completion percentage. The [registered raw worker](raw-study-development.md) now connects all eight declared candidate/cost trials to raw-share GBP accounting and independently reconstructed/replayed reports. [Per-share dividend and terminal policies](raw-study-distributions.md) add exact allocations, fixed per-entitled-account fees, pure zero/cash/stock consideration and verified no-holding dispositions. [Frozen development selection](raw-study-selection.md) retains all four scores and eight original artifact bindings without spending a final evaluation.
+
+The next application gates are a permanent one-time raw final pair with empty stage ledgers and the exact reserved deposits, pending-claim valuation across monthly decisions, raw-family paired diagnostics, graphical raw-workflow/report controls and paper-account integration. Those require their own tests and acceptance; the final endpoint remains unavailable. Data gates also remain: source-wide action discovery, genuine market/FX and inactive-stock coverage, retained historical availability, and consumption of reviewed dispositions. Full operational recovery and final combined acceptance remain partial. Live trading is outside this research roadmap.
+
 ## Research planning context
 
 # Research-driven roadmap

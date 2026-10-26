@@ -226,7 +226,12 @@ public sealed class RawStudyAdmissionTests : IDisposable
             Assert.Equal(8, stats.RootElement.GetProperty("total").GetInt32()); Assert.Equal(8, stats.RootElement.GetProperty("rawTrials").GetInt32());
             using var history = JsonDocument.Parse(await client.GetByteArrayAsync("/api/research/raw-studies"));
             Assert.True(history.RootElement.GetProperty("executionAvailable").GetBoolean());
+            Assert.True(history.RootElement.GetProperty("selectionAvailable").GetBoolean());
             Assert.False(history.RootElement.GetProperty("finalEvaluationAvailable").GetBoolean());
+            client.DefaultRequestHeaders.Remove("X-Twenty-Request");
+            using var refusedSelection = await client.PostAsJsonAsync("/api/research/raw-studies/"+id+"/select",
+                new RawStudySelectionRequest(Guid.NewGuid().ToString("D"),sha));
+            Assert.Equal(HttpStatusCode.Forbidden,refusedSelection.StatusCode);
         }
         finally { await app.StopAsync(); }
     }
