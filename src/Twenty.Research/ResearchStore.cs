@@ -68,6 +68,7 @@ public sealed partial class ResearchStore : IDisposable
         {
             if (Datasets().Count >= 20 && Datasets().All(x => x.Id != panel.Sha256)) throw new ResearchException("dataset-capacity");
             var directory = Path.Combine(Root, "datasets", panel.Sha256); Directory.CreateDirectory(directory);
+            EnsureNewArtifactFiles((Path.Combine(directory, "prices.csv"), csv), (Path.Combine(directory, "prices.metadata.json"), metadata));
             ImmutableWrite(Path.Combine(directory, "prices.csv"), csv); ImmutableWrite(Path.Combine(directory, "prices.metadata.json"), metadata);
             var entry = new DatasetEntry(panel.Sha256, name, panel.Sha256, panel.Synthetic, panel.Dates.Length, panel.Assets.Length, panel.Dates[0], panel.Dates[^1], this.clock.GetUtcNow(), panel.ResearchOnly, panel.ResearchOnlyReason);
             using var db = Open(); using var command = db.CreateCommand();
@@ -228,8 +229,30 @@ public sealed partial class ResearchStore : IDisposable
     }
     private void EnsureArtifactCapacity(byte[] bytes)
     {
-        if (bytes.Length > 8 * 1024 * 1024 || ArtifactBytes(Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories)
-            .Where(p => !p.EndsWith(".app.lock", StringComparison.Ordinal))) + bytes.Length > 256L * 1024 * 1024)
+        if (bytes.Length > 8 * 1024 * 1024) throw new ResearchException("artifact-capacity");
+        EnsureAdditionalArtifactCapacity(bytes.Length);
+    }
+    private void EnsureNewArtifactFiles(params (string Path, byte[] Bytes)[] files)
+    {
+        var additional = files.Where(f => !File.Exists(f.Path)).Sum(f => (long)f.Bytes.Length);
+        if (additional > 0) EnsureAdditionalArtifactCapacity(additional);
+    }
+    private void EnsureAdditionalArtifactCapacity(long additional, string? publicationOwner = null)
+    {
+        using var db = Open(); using var command = db.CreateCommand();
+        command.CommandText = "SELECT trial_id,bytes FROM raw_final_headroom";
+        using var reader = command.ExecuteReader(); long held = 0; var owned = publicationOwner is null;
+        while (reader.Read())
+        {
+            var amount = reader.GetInt64(1);
+            if (amount != 0 && amount != RawFinalHeadroomBytes) throw new ResearchException("raw-study-publication-reservation-integrity");
+            if (reader.GetString(0) == publicationOwner)
+            { if (amount != RawFinalHeadroomBytes) throw new ResearchException("raw-study-publication-reservation-integrity"); owned = true; }
+            else held = checked(held + amount);
+        }
+        if (!owned) throw new ResearchException("raw-study-publication-reservation-integrity");
+        if (additional < 0 || ArtifactBytes(Directory.EnumerateFiles(Root, "*", SearchOption.AllDirectories)
+            .Where(p => !p.EndsWith(".app.lock", StringComparison.Ordinal))) + additional + held > 256L * 1024 * 1024)
             throw new ResearchException("artifact-capacity");
     }
     private static long ArtifactBytes(IEnumerable<string> paths)
@@ -249,7 +272,7 @@ public sealed partial class ResearchStore : IDisposable
     {
         if (File.Exists(path))
         {
-            if (!File.ReadAllBytes(path).AsSpan().SequenceEqual(bytes)) throw new ResearchException("artifact-integrity");
+            if (new FileInfo(path).Length != bytes.Length || !File.ReadAllBytes(path).AsSpan().SequenceEqual(bytes)) throw new ResearchException("artifact-integrity");
             return;
         }
         var temp = path + ".tmp-" + Guid.NewGuid().ToString("N");

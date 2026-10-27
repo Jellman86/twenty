@@ -45,7 +45,7 @@ public static class ResearchModule
             var rawTrials = store.ListRawTrials().Count;
             return new { total = modelTrials + universeTrials + rawTrials, modelTrials, universeTrials, rawTrials, displayedLimit = 100 };
         });
-        api.MapGet("/raw-studies", () => Results.Json(new { executionAvailable = true, selectionAvailable = true, finalEvaluationAvailable = true, studies = store.RawStudies() }, RawReplayJson.Options));
+        api.MapGet("/raw-studies", () => Results.Json(new { executionAvailable = true, selectionAvailable = true, finalEvaluationAvailable = true, publicationRecoveryAvailable = true, studies = store.RawStudies() }, RawReplayJson.Options));
         api.MapPost("/raw-studies", (RawStudyInboxRequest request) => Results.Json(store.RegisterRawStudy(new(request.RequestId, request.Name, PlanSha256: request.PlanSha256), Commit()), RawReplayJson.Options));
         api.MapGet("/raw-studies/{id}", (string id) => store.RawStudies().SingleOrDefault(s => s.Id == id) is { } study
             ? Results.Json(study, RawReplayJson.Options) : Results.NotFound());
@@ -55,6 +55,7 @@ public static class ResearchModule
         api.MapPost("/raw-studies/{id}/select", (string id, RawStudySelectionRequest request) => Results.Json(store.SelectRawStudy(id, request, Commit()), RawReplayJson.Options));
         api.MapGet("/raw-studies/{id}/selection", (string id) => Results.Bytes(store.RawStudySelectionBytes(id), "application/json"));
         api.MapPost("/raw-studies/{id}/evaluate-final", (string id, StudyEvaluationRequest request) => Results.Json(store.EvaluateRawStudy(id, request, Commit()), RawReplayJson.Options));
+        api.MapPost("/raw-studies/{id}/recover-publication", (string id, StudyEvaluationRequest request, CancellationToken ct) => Results.Json(store.RecoverRawFinalPublication(id, request, ct), RawReplayJson.Options));
         api.MapPost("/raw-studies/{id}/start", (string id, RawStudyStartRequest request) => Results.Json(store.StartRawStudy(id, request), RawReplayJson.Options));
         api.MapGet("/raw-trials/{id}/report", (string id) => Results.Bytes(store.RawTrialReportBytes(id), "application/json"));
         api.MapPost("/raw-studies/{id}/cancel", (string id) => Results.Json(store.CancelRawStudy(id), RawReplayJson.Options));

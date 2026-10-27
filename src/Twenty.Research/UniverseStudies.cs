@@ -402,7 +402,7 @@ public sealed partial class ResearchStore
             {
                 AdvanceUniverseStudies(); entry = ListUniverseRuns().LastOrDefault(r => r.StudyId is not null && r.Status == "planned");
                 if (entry is null) return false;
-                if (ListRawTrials().Any(r => r.Status == "planned" && r.QueuedAt is not null && r.QueuedAt < entry.CreatedAt)) return false;
+                if (QueuedRawTrials(ListRawTrials()).Any(r => r.QueuedAt < entry.CreatedAt)) return false;
                 // Preserve admission/start order across worker queues.
                 if (ListRuns().Any(r => (r.Status is "queued" or "planned") && r.CreatedAt <= entry.CreatedAt)) return false;
                 try

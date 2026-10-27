@@ -9,7 +9,7 @@
     plan:{synthetic:boolean;purpose:string;codeSha256:string;datasetSha256:string;universeId:string;developmentStart:string;developmentEnd:string;
       reservedStart:string;reservedEnd:string;monthlyGbp:number;candidates:Candidate[];limitations:string[]} };
   type Trial = { id:string;studyId:string;trialId:string;candidateId:string;costScenario:string;status:string;errorCode?:string;
-    requestSha256:string;reportSha256?:string };
+    requestSha256:string;reportSha256?:string;publication?:{stageSha256:string;reportSha256:string;verifiedAt:string;workerCommit:string} };
   type Month = { decisionAt:string;endAt:string;contributionGbp:number;openingEquityAfterDepositGbp:number;endingEquityGbp:number;
     cashGbp:number;periodReturn:number;pendingClaimCount?:number;expectedClaimValueGbp?:number };
   type Report = {version:string;trialId:string;planSha256:string;datasetSha256:string;limitations:string[];
@@ -24,6 +24,7 @@
   const roles:Record<string,string>={momentum:'Momentum',equal_weight:'Equal-weight comparator',cash:'Zero-interest cash'};
   const messages:Record<string,string>={
     'study-code-changed':'This plan belongs to an older scientific build. Its artifacts remain inspectable; new work requires a compatible declaration.',
+    'raw-study-build':'This plan requires its recorded accounting build and runtime. Existing records remain inspectable.',
     'study-holdout-spent':'The permanent final claim is already spent. A replacement request cannot reopen it.',
     'raw-study-input-unavailable':'The prepared plan or one of its originals is missing from the server inbox.',
     'study-reserved-window-conflict':'Another study reserves these calendar outcomes.',
@@ -31,13 +32,24 @@
     'raw-study-selection-incomplete':'All eight declared development trials must succeed before selection.',
     'raw-study-plan-integrity':'The retained plan failed its integrity check.',
     'raw-study-report-integrity':'The retained report is unavailable or failed its integrity check.',
-    'raw-study-execution-refused':'The calculation refused its execution assumptions. Inspect the trial and original request.'
+    'raw-study-execution-refused':'The calculation refused its execution assumptions. Inspect the trial and original request.',
+    'raw-study-publication-capacity':'There is not enough artifact headroom for the final pair. This request did not spend the final evaluation.',
+    'raw-study-publication-stage-unavailable':'The exact verified stage is missing or unreadable. Recovery requires its originally verified bytes.',
+    'raw-study-publication-stage-integrity':'The staged result failed its original binding or hash. Recovery has retained the original claim and marker.',
+    'raw-study-publication-report-conflict':'An existing report conflicts with the verified stage. It has not been overwritten.',
+    'raw-study-publication-original-unavailable':'An exact dataset original needed to verify the staged receipts is unavailable.',
+    'raw-study-publication-write':'Publication could not finish. The original verified marker remains pending.',
+    'raw-study-publication-interrupted':'Verification or publication stopped. Recovery retains the original attempt.',
+    'raw-study-clock-regression':'The host clock predates a recorded research event. No new state transition was accepted.',
+    'research-worker-busy':'Another research calculation owns the worker. Try this operation after it finishes.',
+    'artifact-capacity':'The artifact quota is full. Original evidence remains retained.'
   };
   const family=$derived(selected?trials.filter(t=>t.studyId===selected?.id):[]);
   const historical=$derived(!!selected&&!!currentCode&&selected.plan.codeSha256!==currentCode);
   const isFinal=$derived(!!trial&&!!selected&&!selected.developmentTrialIds.includes(trial.id));
   const expectedBasis=$derived(report?.version==='raw-study-development-v4'||report?.version==='raw-study-final-v2');
   const active=$derived(studies.some(s=>s.status==='development'||s.status==='final-evaluation'));
+  const publications=$derived(family.filter(t=>t.status==='publishing'));
   function candidateLabel(row:Trial){const c=selected?.plan.candidates.find(c=>c.id===row.candidateId);return c?`${c.config.topK} target ${c.config.topK===1?'name':'names'}, ${c.config.maximumWeight*100}% cap`:row.candidateId;}
   async function api<T>(path:string,body?:unknown):Promise<T>{
     const response=await fetch(path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json','X-Twenty-Request':'1'},body:JSON.stringify(body)});
@@ -68,12 +80,12 @@
     }catch(e){if(revision===viewRevision)error=e instanceof Error?e.message:'Registration failed.';}
     finally{busy=false;}
   }
-  async function transition(operation:'start'|'select'|'evaluate-final'|'cancel'){
+  async function transition(operation:'start'|'select'|'evaluate-final'|'recover-publication'|'cancel'){
     if(!selected||operation==='evaluate-final'&&!acknowledged)return;
     const study=selected,revision=viewRevision,key=study.id+':'+operation;busy=true;error='';
     if(!requests.has(key))requests.set(key,crypto.randomUUID());
     try{
-      const result=await api<Study>(`/api/research/raw-studies/${study.id}/${operation}`,operation==='cancel'?{}:{requestId:requests.get(key),planSha256:study.planSha256});
+      const result=await api<Study>(`/api/research/raw-studies/${study.id}/${operation}`,operation==='cancel'?{}:{requestId:operation==='recover-publication'?study.finalRequestId:requests.get(key),planSha256:study.planSha256});
       onUpdated();
       if(revision===viewRevision){selected=result;acknowledged=false;}
       await refresh();
@@ -114,6 +126,14 @@
       {#if ['registered','development','development-complete','candidate-frozen','final-evaluation'].includes(selected.status)}<button class="secondary" disabled={busy} onclick={()=>void transition('cancel')}>Stop this study</button>{/if}
       <button class="secondary" disabled={busy} onclick={()=>void refresh().catch(e=>error=e.message)}>Refresh raw records</button>
     </div>
+    {#if selected.status==='final-evaluation'&&publications.length}
+      <p>A verified final result awaits publication. Recovery replays its frozen receipts to verify the original result before publishing the same bytes. The original claim, candidate and trial ids stay fixed. A missing stage requires exact restoration or stopping the study.</p>
+      {#each publications as pending}
+        {#if pending.errorCode}<p class="error" role="alert">{messages[pending.errorCode]??pending.errorCode}</p>{/if}
+        {#if pending.publication}<details><summary>Original verification · {pending.trialId}</summary><p class="dataset-note publication-proof">{stamp(pending.publication.verifiedAt)} · Worker {pending.publication.workerCommit}<br/>Expected report SHA-256: <code>{pending.publication.reportSha256}</code><br/>Expected stage SHA-256: <code>{pending.publication.stageSha256}</code></p></details>{/if}
+      {/each}
+      <button class="secondary" disabled={busy||historical||!currentCode||!selected.finalRequestId} onclick={()=>void transition('recover-publication')}>Publish the verified final result</button>
+    {/if}
     {#if selected.selectedCandidateId}<p>Frozen development candidate: {selected.selectedCandidateId}. This ending-wealth screen is not uncertainty adjustment or investment approval.</p>{/if}
     {#if selected.status==='candidate-frozen'&&!selected.finalRequestId}
       <div class="raw-final">
@@ -149,4 +169,6 @@
   .raw-final label {display:flex;align-items:flex-start;gap:10px;margin-bottom:14px}
   .raw-final input {flex-shrink:0;margin-top:4px}
   td button {display:block;margin-top:8px}
+  .publication-proof {overflow-wrap:anywhere}
+  .publication-proof code {word-break:break-all}
 </style>

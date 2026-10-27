@@ -1,6 +1,6 @@
 # Durable raw final publication — proposed contract
 
-Proposed at `37c749c`; unimplemented. The [actual killed-final rehearsal](recovery-acceptance-2026-10-27.md) leaves a verified result orphaned before registry commit. This work changes publication durability, not the selected candidate, accounting or permission to calculate a final.
+Original proposal committed at `b7d7836` from baseline `37c749c`. Implementation is now under validation; the [current contract](raw-final-publication.md) describes its precise replay, capacity and compatibility boundaries. No completed independent review or deployment is claimed here. The [actual killed-final rehearsal](recovery-acceptance-2026-10-27.md) leaves a verified result orphaned before registry commit. This work changes publication durability, not the selected candidate, accounting or permission to calculate a final.
 
 ## Admission and capacity
 

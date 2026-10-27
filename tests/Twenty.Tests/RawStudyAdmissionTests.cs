@@ -230,6 +230,7 @@ public sealed class RawStudyAdmissionTests : IDisposable
             Assert.True(history.RootElement.GetProperty("executionAvailable").GetBoolean());
             Assert.True(history.RootElement.GetProperty("selectionAvailable").GetBoolean());
             Assert.True(history.RootElement.GetProperty("finalEvaluationAvailable").GetBoolean());
+            Assert.True(history.RootElement.GetProperty("publicationRecoveryAvailable").GetBoolean());
             client.DefaultRequestHeaders.Remove("X-Twenty-Request");
             using var refusedSelection = await client.PostAsJsonAsync("/api/research/raw-studies/"+id+"/select",
                 new RawStudySelectionRequest(Guid.NewGuid().ToString("D"),sha));
@@ -237,6 +238,9 @@ public sealed class RawStudyAdmissionTests : IDisposable
             using var refusedFinal = await client.PostAsJsonAsync("/api/research/raw-studies/"+id+"/evaluate-final",
                 new StudyEvaluationRequest(Guid.NewGuid().ToString("D"),sha));
             Assert.Equal(HttpStatusCode.Forbidden, refusedFinal.StatusCode);
+            using var refusedRecovery = await client.PostAsJsonAsync("/api/research/raw-studies/"+id+"/recover-publication",
+                new StudyEvaluationRequest(Guid.NewGuid().ToString("D"),sha));
+            Assert.Equal(HttpStatusCode.Forbidden, refusedRecovery.StatusCode);
         }
         finally { await app.StopAsync(); }
     }

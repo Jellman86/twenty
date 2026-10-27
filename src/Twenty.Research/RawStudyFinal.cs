@@ -15,6 +15,8 @@ public sealed partial class ResearchStore
     private static void ValidateRawFinalMetadata(RawResearchStudy study)
     {
         var spent = study.FinalRequestId is not null;
+        if (study.FinalPublicationVersion is not null && (!spent || study.FinalPublicationVersion != RawFinalPublicationVersion))
+            throw new ResearchException("raw-study-final-integrity");
         var complete = study.Status is "engineering-complete" or "research-complete" or "research-rejected";
         if (spent != (study.FinalRequestedAt is not null) || spent != (study.FinalBaseTrialId is not null) ||
             spent != (study.FinalStressTrialId is not null) ||
@@ -74,6 +76,8 @@ public sealed partial class ResearchStore
                     { QueuedAt = at };
                 return (Row: row, Bytes: bytes);
             }).ToArray();
+            try { EnsureAdditionalArtifactCapacity(2 * RawFinalHeadroomBytes + rows.Sum(r => (long)r.Bytes.Length)); }
+            catch (ResearchException e) when (e.Code == "artifact-capacity") { throw new ResearchException("raw-study-publication-capacity"); }
             using var db = Open(); using var tx = db.BeginTransaction(); using var cmd = db.CreateCommand(); cmd.Transaction = tx;
             cmd.CommandText = "SELECT study_id FROM study_holdout_claims WHERE request_id=$request COLLATE NOCASE"; cmd.Parameters.AddWithValue("$request", request.RequestId);
             if (cmd.ExecuteScalar() is not null) throw new ResearchException("request-id-conflict");
@@ -89,10 +93,14 @@ public sealed partial class ResearchStore
                 using var insert = db.CreateCommand(); insert.Transaction = tx; insert.CommandText = "INSERT INTO raw_trials VALUES($id,$study,$json,'planned')";
                 insert.Parameters.AddWithValue("$id", item.Row.Id); insert.Parameters.AddWithValue("$study", id);
                 insert.Parameters.AddWithValue("$json", Encoding.UTF8.GetString(RawBytes(item.Row))); insert.ExecuteNonQuery();
-                EnsureArtifactCapacity(item.Bytes); var path = Path.Combine(Root, "runs", item.Row.Id); Directory.CreateDirectory(path);
+                using var reserve = db.CreateCommand(); reserve.Transaction = tx;
+                reserve.CommandText = "INSERT INTO raw_final_headroom VALUES($id,$study,$request,$bytes)";
+                reserve.Parameters.AddWithValue("$id", item.Row.Id); reserve.Parameters.AddWithValue("$study", id);
+                reserve.Parameters.AddWithValue("$request", request.RequestId); reserve.Parameters.AddWithValue("$bytes", RawFinalHeadroomBytes); reserve.ExecuteNonQuery();
+                var path = Path.Combine(Root, "runs", item.Row.Id); Directory.CreateDirectory(path);
                 ImmutableWrite(Path.Combine(path, "raw-study-request.json"), item.Bytes);
             }
-            study = study with { Status = "final-evaluation", FinalRequestId = request.RequestId, FinalRequestedAt = at, FinalRequestedCommit = commit,
+            study = study with { Status = "final-evaluation", FinalPublicationVersion = RawFinalPublicationVersion, FinalRequestId = request.RequestId, FinalRequestedAt = at, FinalRequestedCommit = commit,
                 FinalBaseTrialId = rows[0].Row.Id, FinalStressTrialId = rows[1].Row.Id };
             WriteRawFamily(db, tx, study, [], "holdout-spent-before-work"); tx.Commit(); return study;
         }

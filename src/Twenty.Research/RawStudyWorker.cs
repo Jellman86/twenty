@@ -13,7 +13,7 @@ public sealed partial class ResearchStore
     private static bool RawReservationActive(RawResearchStudy study) => study.Status is "registered" or "development" or "development-complete" or "candidate-frozen" or "final-evaluation";
     private static bool RawTrialStateValid(RawResearchStudy study, RawStudyTrialEntry row)
     {
-        if (row.Status is not ("planned" or "started" or "succeeded" or "failed" or "interrupted" or "cancelled")) return false;
+        if (row.Status is not ("planned" or "started" or "publishing" or "succeeded" or "failed" or "interrupted" or "cancelled") || !RawPublicationStateValid(study, row)) return false;
         if ((study.StartRequestId is null) != (study.StartRequestedAt is null) ||
             study.StartRequestId is not null && !Guid.TryParseExact(study.StartRequestId, "D", out _)) return false;
         if (study.StartRequestedAt is null) return study.Status is "registered" or "cancelled" &&
@@ -22,13 +22,13 @@ public sealed partial class ResearchStore
         if (row.QueuedAt != (final ? study.FinalRequestedAt : study.StartRequestedAt) || row.QueuedAt < row.CreatedAt ||
             row.StartedAt < row.QueuedAt || row.FinishedAt < row.StartedAt) return false;
         if (row.Status == "planned" && (row.StartedAt is not null || row.FinishedAt is not null)) return false;
-        if (row.Status is "started" or "succeeded" or "failed" or "interrupted" && (row.StartedAt is null || row.WorkerCommit is null)) return false;
-        if (row.Status == "started" && row.FinishedAt is not null || row.Status is "succeeded" or "failed" or "interrupted" or "cancelled" && row.FinishedAt is null) return false;
+        if (row.Status is "started" or "publishing" or "succeeded" or "failed" or "interrupted" && (row.StartedAt is null || row.WorkerCommit is null)) return false;
+        if (row.Status is "started" or "publishing" && row.FinishedAt is not null || row.Status is "succeeded" or "failed" or "interrupted" or "cancelled" && row.FinishedAt is null) return false;
         if ((row.Status == "succeeded") != (row.ReportSha256 is not null) || row.ReportSha256 is not null && !IsSha256(row.ReportSha256)) return false;
         if (!final && study.FinalRequestId is not null) return row.Status == "succeeded";
         return study.Status switch
         {
-            "development" or "final-evaluation" => row.Status is "planned" or "started" or "succeeded",
+            "development" or "final-evaluation" => row.Status is "planned" or "started" or "publishing" or "succeeded",
             "development-complete" or "candidate-frozen" or "no-candidate" or "engineering-complete" or "research-complete" or "research-rejected" => row.Status == "succeeded",
             "failed" or "final-failed" => row.Status is "succeeded" or "failed" or "interrupted" or "cancelled",
             "cancelled" => row.Status is "succeeded" or "failed" or "interrupted" or "cancelled" || row.Status == "started" && row.CancelRequested,
@@ -48,6 +48,7 @@ public sealed partial class ResearchStore
             update.CommandText = "UPDATE raw_trials SET json=$json,status=$status WHERE id=$id";
             update.Parameters.AddWithValue("$json", Encoding.UTF8.GetString(RawBytes(row))); update.Parameters.AddWithValue("$status", row.Status);
             update.Parameters.AddWithValue("$id", row.Id); if (update.ExecuteNonQuery() != 1) throw new ResearchException("raw-trial-integrity");
+            UpdateRawPublicationHeadroom(db, tx, study, row);
         }
         using var cmd = db.CreateCommand(); cmd.Transaction = tx;
         var bytes = RawBytes(study); cmd.CommandText = "UPDATE raw_studies SET json=$json,sha256=$sha WHERE id=$id";
@@ -91,7 +92,9 @@ public sealed partial class ResearchStore
             if (bytes.Length > RawStudyDevelopmentRun.MaximumReportBytes || RawHash(bytes) != row.ReportSha256) throw new ResearchException("raw-study-report-integrity");
             var report = JsonSerializer.Deserialize<RawStudyDevelopmentReport>(bytes, RawReplayJson.Options) ?? throw new ResearchException("raw-study-report-integrity");
             var study = RawStudies().Single(s => s.Id == row.StudyId);
-            if (IsRawFinalTrial(study, row) && report.Version is not ("raw-study-final-v1" or RawStudyFinalRun.Version) || report.PlanSha256 != study.PlanSha256 || report.TrialId != row.TrialId || report.DatasetSha256 != row.DatasetSha256)
+            if (IsRawFinalTrial(study, row) && (report.Version is not ("raw-study-final-v1" or RawStudyFinalRun.Version) ||
+                study.FinalPublicationVersion == RawFinalPublicationVersion && report.Version != RawStudyFinalRun.Version) ||
+                report.PlanSha256 != study.PlanSha256 || report.TrialId != row.TrialId || report.DatasetSha256 != row.DatasetSha256)
                 throw new ResearchException("raw-study-report-integrity");
             return bytes;
         }
@@ -111,18 +114,39 @@ public sealed partial class ResearchStore
     private void InterruptStaleRawRuns()
     {
         foreach (var row in ListRawTrials().Where(t => t.Status == "started")) FinishRawFailure(row.Id, "interrupted", "process-restarted");
+        foreach (var row in ListRawTrials().Where(t => t.Status == "publishing").OrderBy(t => t.QueuedAt).ThenBy(t => t.CreatedAt).ThenBy(t => t.TrialId, StringComparer.Ordinal))
+            rawPublicationRecovery.Enqueue(row.Id);
+    }
+    private static IEnumerable<RawStudyTrialEntry> QueuedRawTrials(IReadOnlyList<RawStudyTrialEntry> rows)
+    {
+        var publishing = rows.Where(r => r.Status == "publishing").Select(r => r.StudyId).ToHashSet(StringComparer.Ordinal);
+        return rows.Where(r => r.Status == "planned" && r.QueuedAt is not null && !publishing.Contains(r.StudyId));
+    }
+    private void FinishRawAttemptError(string id, Exception error)
+    {
+        lock (gate)
+        {
+            if (ListRawTrials().Single(t => t.Id == id).Status == "publishing") { RetainRawPublicationError(id, error); return; }
+            if (error is OperationCanceledException) FinishRawFailure(id, "interrupted", "cancelled-deadline-or-shutdown");
+            else FinishRawFailure(id, "failed", error is ResearchException re ? re.Code : "raw-study-execution-failed");
+        }
     }
     public bool ProcessNextRawStudyRun(string commit, CancellationToken ct = default)
     {
         if (!TryBeginComputation()) return false;
         try
         {
+            string? recovery = null;
+            lock (gate)
+                while (rawPublicationRecovery.TryDequeue(out var candidate))
+                    if (ListRawTrials().Any(r => r.Id == candidate && r.Status == "publishing")) { recovery = candidate; break; }
+            if (recovery is not null) { _ = RecoverRawPublication(recovery, ct, out _); return true; }
             RawStudyTrialEntry row; RawResearchStudy study;
             lock (gate)
             {
                 var pending = ListRawTrials();
                 if (pending.Any(t => t.Status == "started")) return false;
-                var next = pending.Where(t => t.Status == "planned" && t.QueuedAt is not null).OrderBy(t => t.QueuedAt)
+                var next = QueuedRawTrials(pending).OrderBy(t => t.QueuedAt)
                     .ThenBy(t => t.CreatedAt).ThenBy(t => t.TrialId, StringComparer.Ordinal).FirstOrDefault();
                 if (next is null) return false;
                 if (ListRuns().Any(r => r.Status is "queued" or "planned" && r.CreatedAt <= next.QueuedAt) ||
@@ -159,6 +183,13 @@ public sealed partial class ResearchStore
                     Checkpoint(); var current = ListRawTrials().Single(t => t.Id == row.Id);
                     var parent = RawStudies().Single(s => s.Id == study.Id);
                     if (parent.Status != (final ? "final-evaluation" : "development")) throw new OperationCanceledException();
+                    if (final && parent.FinalPublicationVersion == RawFinalPublicationVersion)
+                    {
+                        var prepared = PrepareRawPublication(parent, current, bytes);
+                        WriteRawPublicationFile(prepared.Row, RawPublicationPath(row.Id), prepared.Stage);
+                        PublishRawFinal(parent, prepared.Row, bytes, report, recovered: false);
+                        return true;
+                    }
                     EnsureArtifactCapacity(bytes); ImmutableWrite(RawReportPath(row.Id), bytes);
                     current = current with { Status = "succeeded", FinishedAt = clock.GetUtcNow(), ReportSha256 = RawHash(bytes) };
                     if (!final && ListRawTrials().Where(t => t.StudyId == study.Id && t.Id != row.Id).All(t => t.Status == "succeeded"))
@@ -167,9 +198,9 @@ public sealed partial class ResearchStore
                     SaveRawFamily(parent, [current], "trial-succeeded");
                 }
             }
-            catch (OperationCanceledException) { FinishRawFailure(row.Id, "interrupted", "cancelled-deadline-or-shutdown"); }
+            catch (OperationCanceledException error) { FinishRawAttemptError(row.Id, error); }
             catch (Exception error) when (error is ResearchException or IOException or UnauthorizedAccessException or InvalidDataException or JsonException or InvalidOperationException or OverflowException or Microsoft.Data.Sqlite.SqliteException)
-            { FinishRawFailure(row.Id, "failed", error is ResearchException re ? re.Code : "raw-study-execution-failed"); }
+            { FinishRawAttemptError(row.Id, error); }
             return true;
         }
         finally { EndComputation(); }

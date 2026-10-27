@@ -121,19 +121,23 @@ public sealed partial class RawStudyWorkerTests
             Assert.Equal("raw-study-final-integrity", Assert.Throws<ResearchException>(() => store.ListRawTrials()).Code);
         }
         finally { WriteAuthoredFinalIntegrityFixture(completed); }
-        // Authored coherent corruption: matching hashes do not allow a development-version final report.
+        // Authored coherent hash/marker corruption probes role/era checks rather than the outer hash gate.
         var finalRow = store.ListRawTrials().Single(t => t.Id == completed.FinalBaseTrialId);
         var reportPath = Path.Combine(root, "runs", finalRow.Id, "raw-study-report.json"); var original = File.ReadAllBytes(reportPath);
-        var wrong = JsonSerializer.SerializeToUtf8Bytes(JsonSerializer.Deserialize<RawStudyDevelopmentReport>(original, RawReplayJson.Options)! with
-            { Version = RawStudyDevelopmentRun.Version }, RawReplayJson.Options);
-        var wrongSha = Convert.ToHexStringLower(SHA256.HashData(wrong));
-        try
+        foreach (var version in new[] { RawStudyDevelopmentRun.Version, "raw-study-final-v1" })
         {
-            File.WriteAllBytes(reportPath, wrong);
-            WriteAuthoredFinalIntegrityFixture(completed with { FinalBaseReportSha256 = wrongSha }, finalRow with { ReportSha256 = wrongSha });
-            Assert.Equal("raw-study-report-integrity", Assert.Throws<ResearchException>(() => store.RawTrialReportBytes(finalRow.Id)).Code);
+            var wrong = JsonSerializer.SerializeToUtf8Bytes(JsonSerializer.Deserialize<RawStudyDevelopmentReport>(original, RawReplayJson.Options)! with
+                { Version = version }, RawReplayJson.Options);
+            var wrongSha = Convert.ToHexStringLower(SHA256.HashData(wrong));
+            try
+            {
+                File.WriteAllBytes(reportPath, wrong);
+                WriteAuthoredFinalIntegrityFixture(completed with { FinalBaseReportSha256 = wrongSha }, finalRow with
+                    { ReportSha256 = wrongSha, Publication = finalRow.Publication! with { ReportSha256 = wrongSha, ReportBytes = wrong.Length } });
+                Assert.Equal("raw-study-report-integrity", Assert.Throws<ResearchException>(() => store.RawTrialReportBytes(finalRow.Id)).Code);
+            }
+            finally { File.WriteAllBytes(reportPath, original); WriteAuthoredFinalIntegrityFixture(completed, finalRow); }
         }
-        finally { File.WriteAllBytes(reportPath, original); WriteAuthoredFinalIntegrityFixture(completed, finalRow); }
     }
     [Theory]
     [InlineData(false)]
@@ -169,16 +173,17 @@ public sealed partial class RawStudyWorkerTests
     }
 
     [Fact]
-    public void PublicationCapacityFailureRetainsPermanentExposureAndDoesNotRerunTheFinal()
+    public void ForeignCapacityGrowthAfterClaimCannotRerunAVerifiedFinalWithMissingStaging()
     {
         var study = FreezeRawCandidate(); var request = new StudyEvaluationRequest(Guid.NewGuid().ToString("D"), study.PlanSha256);
         store.EvaluateRawStudy(study.Id, request, "authored");
         var blocker = Path.Combine(root, "authored-quota-blocker");
         using (var file = File.Create(blocker)) file.SetLength(256L * 1024 * 1024); // Sparse authored file; no large download.
         Assert.True(store.ProcessNextRawStudyRun("authored")); File.Delete(blocker);
-        Assert.Equal("final-failed", store.RawStudies().Single().Status); Assert.Equal(1, RawFinalClaims());
-        var failed = Assert.Single(store.ListRawTrials(), t => t.Status == "failed"); Assert.Equal("artifact-capacity", failed.ErrorCode);
-        Assert.Contains("final-failed", JsonSerializer.Serialize(store.RawStudyEvents(study.Id)));
+        Assert.Equal("final-evaluation", store.RawStudies().Single().Status); Assert.Equal(1, RawFinalClaims());
+        var failed = Assert.Single(store.ListRawTrials(), t => t.Status == "publishing"); Assert.Equal("artifact-capacity", failed.ErrorCode);
+        Assert.Contains("final-publication-pending", JsonSerializer.Serialize(store.RawStudyEvents(study.Id)));
+        Assert.Equal("raw-study-publication-stage-unavailable", Assert.Throws<ResearchException>(() => RecoverPublication(study, request)).Code);
         Assert.False(store.ProcessNextRawStudyRun("authored"));
         Assert.Equal("study-holdout-spent", Assert.Throws<ResearchException>(() => store.EvaluateRawStudy(study.Id,
             request with { RequestId = Guid.NewGuid().ToString("D") }, "authored")).Code);

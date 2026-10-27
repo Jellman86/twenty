@@ -16,6 +16,7 @@ public sealed record RawStudyTrialEntry(string Id, string StudyId, string TrialI
     string Status, DateTimeOffset CreatedAt, string DatasetSha256, bool Synthetic, string ResearchSha256,
     string RequestSha256, DateTimeOffset InformationStartAt, DateTimeOffset InformationEndAt)
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public RawFinalPublication? Publication { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? QueuedAt { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? StartedAt { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? FinishedAt { get; init; }
@@ -30,6 +31,7 @@ public sealed record RawResearchStudy(string Id, string RequestId, string Reques
     ImmutableArray<PriorStudyTrial> PriorTrials, ImmutableArray<UniverseRunEntry> PriorUniverseTrials,
     ImmutableArray<RawStudyTrialEntry> PriorRawTrials, ImmutableArray<string> DevelopmentTrialIds, ImmutableArray<RawStudyOriginal> Originals)
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? FinalPublicationVersion { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? FinalRequestedCommit { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? FinalRequestId { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public DateTimeOffset? FinalRequestedAt { get; init; }
@@ -52,7 +54,8 @@ public sealed partial class ResearchStore
     private static void InitialiseRawStudies(SqliteConnection db) => Execute(db,
         "CREATE TABLE IF NOT EXISTS raw_studies(id TEXT PRIMARY KEY,request_id TEXT NOT NULL UNIQUE,json TEXT NOT NULL,sha256 TEXT NOT NULL);" +
         "CREATE TABLE IF NOT EXISTS raw_trials(id TEXT PRIMARY KEY,study_id TEXT NOT NULL,json TEXT NOT NULL,status TEXT NOT NULL);" +
-        "CREATE TABLE IF NOT EXISTS raw_study_events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,study_id TEXT NOT NULL,at TEXT NOT NULL,kind TEXT NOT NULL);");
+        "CREATE TABLE IF NOT EXISTS raw_study_events(sequence INTEGER PRIMARY KEY AUTOINCREMENT,study_id TEXT NOT NULL,at TEXT NOT NULL,kind TEXT NOT NULL);" +
+        "CREATE TABLE IF NOT EXISTS raw_final_headroom(trial_id TEXT PRIMARY KEY,study_id TEXT NOT NULL,request_id TEXT NOT NULL,bytes INTEGER NOT NULL);");
     private int RawReservedStudySlots()
     {
         _ = ListRawTrials(); // Missing/corrupt admitted rows cannot silently free budget.
@@ -136,6 +139,7 @@ public sealed partial class ResearchStore
                     throw new ResearchException("raw-study-final-integrity");
                 ValidateRawFinalClaim(db, study);
             }
+            ValidateRawPublicationHeadroom(db, studies, rows);
             return rows;
         }
     }
@@ -155,8 +159,9 @@ public sealed partial class ResearchStore
             var study = RawStudies().SingleOrDefault(s => s.Id == id) ?? throw new ResearchException("study-not-found");
             if (!RawReservationActive(study)) return study;
             var trials = ListRawTrials().Where(t => t.StudyId == id).ToArray();
+            if (trials.Any(t => t.Publication is { } p && p.VerifiedAt > clock.GetUtcNow())) throw new ResearchException("raw-study-clock-regression");
             study = study with { Status = "cancelled" };
-            SaveRawFamily(study, trials.Select(t => t.Status == "planned" ? t with { Status = "cancelled", FinishedAt = clock.GetUtcNow() } :
+            SaveRawFamily(study, trials.Select(t => t.Status is "planned" or "publishing" ? t with { Status = "cancelled", FinishedAt = clock.GetUtcNow() } :
                 t.Status == "started" ? t with { CancelRequested = true } : t), "cancelled-no-replacement");
             return study;
         }

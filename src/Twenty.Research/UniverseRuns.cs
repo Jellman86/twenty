@@ -55,6 +55,7 @@ public sealed partial class ResearchStore
             var directory = Path.Combine(Root, "universe-datasets"); Directory.CreateDirectory(directory);
             if (!File.Exists(UniverseDatasetPath(sha)) && Directory.EnumerateFiles(directory, "*.json").Count() >= 20)
                 throw new ResearchException("dataset-capacity");
+            EnsureNewArtifactFiles((UniverseDatasetPath(sha), bytes));
             ImmutableWrite(UniverseDatasetPath(sha), bytes);
         }
         return sha;
