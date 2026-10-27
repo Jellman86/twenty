@@ -3,6 +3,7 @@
   import SearchDiagnostics from './SearchDiagnostics.svelte';
   import StudyLab from './StudyLab.svelte';
   import UniverseLab from './UniverseLab.svelte';
+  import RawStudies from './RawStudies.svelte';
   type Dataset = { id: string; name: string; synthetic: boolean; researchOnly?: boolean; researchOnlyReason?: string; months: number; assets: number; start: string; end: string };
   type Run = { id: string; datasetId: string; datasetName: string; synthetic: boolean; status: string; createdAt: string; progress: number; errorCode: string | null; config: { hypothesis: string; topK: number; maximumWeight: number; monthlyGbp: number } };
   type Summary = { strategy: string; endingEquityGbp: number; contributionsGbp: number; profitGbp: number; tradingCostGbp: number; maxDrawdown: number; annualisedTimeWeightedReturn: number; tradedNotionalGbp: number };
@@ -80,6 +81,7 @@
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 <StudyLab {datasets} onInspect={(id)=>void inspectStudyRun(id)} onUpdated={()=>void refresh()}/>
 <UniverseLab />
+<RawStudies />
 {#if report && candidate}
 <section class="panel lab-results" aria-labelledby="results-title"><div class="panel-heading"><div><p class="eyebrow">{report.scope.replaceAll('_',' ').toUpperCase()}</p><h2 id="results-title">The result of the experiment</h2></div><span class="badge">{report.researchOnly?'NON-EXECUTABLE RESEARCH PORTFOLIOS':report.synthetic?'SYNTHETIC DATA':'EXPLORATORY IMPORT'}</span></div><p class="dataset-note">{report.evaluationStart}–{report.evaluationEnd} · {report.scope==='reserved_holdout'?'final evaluation window consumed from':'final data reserved from'} {report.reservedPeriodStart}. Policy: {report.config.allocationPolicy??'full-rebalance'}. End wealth includes contributions; returns below exclude deposits.</p>
 <div class="lab-metrics"><div><span>Candidate ending value</span><strong>{money(candidate.endingEquityGbp)}</strong></div><div><span>Money contributed</span><strong>{money(candidate.contributionsGbp)}</strong></div><div><span>Net investment profit</span><strong>{money(candidate.profitGbp)}</strong></div><div><span>Largest unit-value fall</span><strong>{pct(candidate.maxDrawdown)}</strong></div></div>
