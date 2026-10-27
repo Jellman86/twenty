@@ -1,6 +1,6 @@
 # Issue-based roadmap
 
-The [published plan-preparation checkpoint](raw-plan-deployment-2026-10-27.md) adds [metadata-only raw plan preparation](raw-study-plan-preparation.md), with separate exact-input admission and no trial authority from preparation. The [next raw-paper contract](raw-paper-account-design.md) is documented but unimplemented; raw paper accounts and the remaining initial-v1 data/operational gates stay open.
+The [published plan-preparation checkpoint](raw-plan-deployment-2026-10-27.md) adds [metadata-only raw plan preparation](raw-study-plan-preparation.md), with separate exact-input admission and no trial authority from preparation. A first [authored raw-paper batch account](raw-paper-accounts.md) is implemented under acceptance. The broader [raw-paper contract](raw-paper-account-design.md), action/claim and genuine-data integration, and the remaining initial-v1 operational gates stay open.
 
 Track delivery in the [public Twenty project](https://github.com/users/Jellman86/projects/1) and [repository issues](https://github.com/Jellman86/twenty/issues). Development stays on `dev`; `main` is releases only.
 

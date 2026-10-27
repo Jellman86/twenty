@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import SearchDiagnostics from './SearchDiagnostics.svelte';
   import RawStudyPlan from './RawStudyPlan.svelte';
+  import RawPaperAccounts from './RawPaperAccounts.svelte';
   let { onUpdated = () => {} }: { onUpdated?: () => void } = $props();
   type Candidate = { id:string; config:{topK:number;maximumWeight:number} };
   type Study = { id:string;name:string;status:string;planSha256:string;errorCode?:string;developmentTrialIds:string[];
@@ -161,6 +162,7 @@
   {/if}
   <a class="text-link" href="https://github.com/Jellman86/twenty/blob/dev/docs/raw-study-admission.md" target="_blank" rel="noreferrer">Prepared plan and input workflow ↗</a>
 </section>
+<RawPaperAccounts {currentCode} onUpdated={onUpdated} source={selected&&selected.plan.synthetic&&!historical&&selected.selectionReportSha256&&selected.selectedCandidateId&&['candidate-frozen','engineering-complete'].includes(selected.status)?{id:selected.id,name:selected.name,planSha256:selected.planSha256,selectionReportSha256:selected.selectionReportSha256,selectedCandidateId:selected.selectedCandidateId,monthlyGbp:selected.plan.monthlyGbp}:null}/>
 {#if trial&&selected&&selected.developmentTrialIds.includes(trial.id)&&trial.status==='succeeded'}{#key trial.id}<SearchDiagnostics anchorRunId={trial.id} family="raw"/>{/key}{/if}
 
 <style>

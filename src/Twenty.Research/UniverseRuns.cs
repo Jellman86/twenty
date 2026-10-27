@@ -38,7 +38,8 @@ public sealed partial class ResearchStore
 {
     private static void InitialiseUniverseRuns(SqliteConnection db) => Execute(db,
         "CREATE TABLE IF NOT EXISTS universe_runs(id TEXT PRIMARY KEY, request_id TEXT NOT NULL UNIQUE, dataset_sha TEXT NOT NULL, json TEXT NOT NULL, status TEXT NOT NULL);" +
-        "CREATE TABLE IF NOT EXISTS universe_events(sequence INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, at TEXT NOT NULL, kind TEXT NOT NULL);");
+        "CREATE TABLE IF NOT EXISTS universe_events(sequence INTEGER PRIMARY KEY AUTOINCREMENT, run_id TEXT NOT NULL, at TEXT NOT NULL, kind TEXT NOT NULL);" +
+        "CREATE TABLE IF NOT EXISTS universe_dataset_provenance(dataset_sha TEXT PRIMARY KEY,synthetic INTEGER NOT NULL,sha256 TEXT NOT NULL);");
 
     private string UniverseDatasetPath(string sha256) => Path.Combine(Root, "universe-datasets", sha256 + ".json");
 
@@ -57,10 +58,29 @@ public sealed partial class ResearchStore
                 throw new ResearchException("dataset-capacity");
             EnsureNewArtifactFiles((UniverseDatasetPath(sha), bytes));
             ImmutableWrite(UniverseDatasetPath(sha), bytes);
+            RecordUniverseProvenance(sha, file.Manifest.Synthetic);
         }
         return sha;
     }
 
+    // An explicit import has already validated these bytes. Legacy files are not
+    // scanned or silently attested during startup or paper-account admission.
+    private bool? UniverseProvenance(string sha)
+    {
+        using var db = Open(); using var cmd = db.CreateCommand(); cmd.CommandText = "SELECT synthetic,sha256 FROM universe_dataset_provenance WHERE dataset_sha=$sha";
+        cmd.Parameters.AddWithValue("$sha", sha); using var reader = cmd.ExecuteReader(); if (!reader.Read()) return null;
+        var flag = reader.GetInt64(0);
+        if (flag is not (0 or 1) || reader.GetString(1) != RawHash(RawBytes(new { DatasetSha256 = sha, Synthetic = flag == 1 }))) throw new ResearchException("dataset-integrity");
+        return flag == 1;
+    }
+    private void RecordUniverseProvenance(string sha, bool synthetic)
+    {
+        var prior = UniverseProvenance(sha); if (prior is not null) { if (prior != synthetic) throw new ResearchException("dataset-integrity"); return; }
+        EnsureAdditionalArtifactCapacity(4096);
+        using var db = Open(); using var cmd = db.CreateCommand(); cmd.CommandText = "INSERT INTO universe_dataset_provenance VALUES($sha,$flag,$hash)";
+        cmd.Parameters.AddWithValue("$sha", sha); cmd.Parameters.AddWithValue("$flag", synthetic ? 1 : 0);
+        cmd.Parameters.AddWithValue("$hash", RawHash(RawBytes(new { DatasetSha256 = sha, Synthetic = synthetic }))); cmd.ExecuteNonQuery();
+    }
     public string ImportUniverseDatasetInbox(UniverseDatasetImportRequest request)
     {
         if (!IsSha256(request.DatasetSha256)) throw new ResearchException("import-dataset-id");

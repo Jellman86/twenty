@@ -43,9 +43,11 @@ public sealed partial class ResearchStore : IDisposable
         InitialiseUniverseRuns(db);
         InitialiseUniverseStudies(db);
         InitialiseRawStudies(db);
+        InitialiseRawPaper(db);
         foreach (var run in ListRuns().Where(r => r.Status == "running")) Save(run with { Status = "interrupted", FinishedAt = this.clock.GetUtcNow(), ErrorCode = "process-restarted" }, "restart-interrupted");
         InterruptStaleUniverseRuns();
         InterruptStaleRawRuns();
+        InterruptRawPaper();
     }
     public void Dispose() => lease.Dispose();
     public DatasetEntry ImportInbox(InboxImportRequest request)
