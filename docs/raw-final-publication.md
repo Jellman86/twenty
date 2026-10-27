@@ -1,6 +1,6 @@
 # Durable publication of a raw final result
 
-Implementation under validation, 27 October 2026. This extends the [permanent final claim](raw-study-final.md) with an opt-in `raw-final-publication-v1` boundary for new claims. The candidate, claim, request and trial ids remain the original ones. Core accounting and selection rules are unchanged.
+Implemented and [deployed at the 27 October checkpoint](raw-publication-deployment-2026-10-27.md). This extends the [permanent final claim](raw-study-final.md) with an opt-in `raw-final-publication-v1` boundary for new claims. The candidate, claim, request and trial ids remain the original ones. Core accounting and selection rules are unchanged.
 
 ## Capacity before spending
 
@@ -31,3 +31,5 @@ Missing, unreadable, corrupt or mismatched stages, unavailable originals, change
 TDD initially demonstrates pre-claim quota failure and loss of the partner/result on a deterministic SQLite success-transaction fault. Additional red cases pin wrong report/receipt bindings reaching a dataset read, a blocked universe queue, historical report-era substitution and duplicate failed-retry journal growth. Focused tests cover exact publication/restoration, missing/corrupt/swapped/coherently forged evidence, existing-file conflict, constructor queuing, unavailable non-dataset originals, cancellation, clock rollback, single-worker ownership, headroom protection and legacy-orphan refusal. Authored browser checks cover the original UUID, errors/retry, fixed hashes, older-build controls and 390-pixel layout. Final suites, real-process/API acceptance and deployment are recorded separately when completed.
 
 The design review request to Big Pickle failed at its provider's free usage limit before inspection. No independent design/implementation verdict is claimed. Inputs are authored. Hash binding is not a vendor signature or an audit of real data quality. Retained stages have a storage cost; loss before durable staging, cross-build verification, independent durable/mounted restore and combined initial-v1 acceptance remain explicit limits. Raw paper integration is separate work.
+
+The [completed validation/review record](reviews/2026-10-27-raw-final-publication.md) and [CI/image/Dockhand receipt](raw-publication-deployment-2026-10-27.md) now retain 1,374 .NET / 45 Python checks, authored API and actual SIGKILL recovery, historical compatibility and unchanged production evidence. No independent review verdict is implied by those checks.
