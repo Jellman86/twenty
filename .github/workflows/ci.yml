@@ -36,7 +36,16 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
       - run: npm ci --prefix web && npm run check --prefix web && npm run build --prefix web
-      - run: dotnet restore Twenty.slnx --locked-mode && dotnet test Twenty.slnx -c Release --no-restore
+      - run: dotnet restore Twenty.slnx --locked-mode
+      # Non-vacuous evidence: refuses zero-match, skipped-as-passed, failed or source-changing runs.
+      - run: python3 scripts/checkpoint.py dotnet --project Twenty.slnx --min-passed 1000 --timeout-seconds 3600 --output-dir "$RUNNER_TEMP/checkpoint-dotnet"
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: dotnet-test-evidence
+          path: ${{ runner.temp }}/checkpoint-dotnet
+          if-no-files-found: error
+          retention-days: 14
       - run: python3 scripts/check_research_boundary.py
       - run: dotnet run --project src/Twenty.Data -c Release --no-restore -- validate fixtures/data/point-in-time.v1.json
       - run: dotnet run --project src/Twenty.Data -c Release --no-restore -- sec-inspect 1 fixtures/sec/submissions.synthetic.json

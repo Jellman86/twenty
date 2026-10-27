@@ -20,6 +20,15 @@
 - Keep datasets, account data, credentials, downloaded papers and generated runs out of Git. Commit original review notes and source metadata instead.
 - The user has authorised a research-only Quark web deployment through Git-backed Dockhand. Do not add live trading or deploy training jobs as an incidental consequence of web deployment.
 
+## Alignment-first testing
+
+Follow [docs/testing-process.md](docs/testing-process.md) for every checkpoint:
+
+- Before editing, run `scripts/checkpoint.py preflight` against the expected commit, and the deployed commit when deployment is involved. Inventory the contracts, artifacts and frozen studies the change touches. Check `~/.agents/ACCESS.md` and the docs before declaring anything blocked.
+- Write a failing cross-component case (next consumer, persisted format, API/UI or older artifact) alongside the unit regression.
+- Prove tests ran: use `scripts/checkpoint.py dotnet` with a `--min-passed` matching the expected selection, then `verify`. A zero-match or stale-source run is not evidence.
+- Completion needs a real workflow check and an explicit list of what was not verified. Handoffs carry evidence paths, and the next session reruns preflight.
+
 ## Validation
 
 ```sh

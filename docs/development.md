@@ -23,6 +23,10 @@ git commit -m "<describe the final change>"
 
 Generated data/runs, environment files, credentials and third-party full-text papers do not belong in Git. Cite papers and retain original review notes. The ignored `data/` and `runs/` folders are not durable backups or tamper-proof research records; arrange appropriate private storage before real research depends on them.
 
+## Checkpoint evidence
+
+Every checkpoint follows the [alignment-first testing process](testing-process.md): preflight before editing, non-vacuous test evidence through `scripts/checkpoint.py`, a real workflow check and an explicit list of what was not verified.
+
 ## Release procedure
 
 Release only when there is an actual release decision. On `dev`, finish validation, update package version/release notes, review remaining limitations and commit those changes. Verify the working tree is clean. Then, replacing `X.Y.Z` with the approved version:
