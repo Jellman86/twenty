@@ -1,0 +1,9 @@
+# Native Mac accounting checks — 27 October 2026
+
+After the Mac returned to SSH, a clean source archive of `b5ff58fe69f642739c89d5d60bf3cde63a86aeed` was copied into a separate private validation directory. Its archive SHA-256 matched on Quark and Mac. This is the application code deployed as `4751481`, plus its acceptance documentation. The existing Mac checkout remains clean on its original `dev` commit; it was neither updated nor used for these builds.
+
+On native Apple M5/arm64, .NET SDK 10.0.402 and runtime 10.0.13, locked dependency restore/build succeeded. All 23 `RawPaper` tests passed, covering the new authored account contract, persistence, CPU replay, decimal shares/FX/fees, provenance refusals, operation retries and restart/transaction controls. All six shared independent raw-accounting scenarios passed their C# checkpoints. An initial parity filter used the filename rather than the actual partial test-class method name and matched no tests; the corrected method filter executed all six. Both logs are retained.
+
+The Python suite ran 45 tests: 42 passed and three optional PyTorch-dependent cases were skipped because that extra was not installed. The independent Python accounting reference is included. No real or mocked accelerator was used. Every financial input in these checks is authored; this is bounded arithmetic and platform evidence, not genuine market performance or a new research candidate.
+
+Private source hashes, logs and verification are retained under `mac-paper-validation-20261027` on Quark's developer SSD and the separate Mac validation workspace. No production data, broker credentials or genuine holdout was transferred or opened. No deployment changed. This source-only check does not establish an independent data backup/restore, original-account login, storage-pressure acceptance, paper corporate actions or combined initial-v1 completion.

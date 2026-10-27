@@ -21,3 +21,7 @@ The [paper contract](raw-paper-accounts.md) supports independent empty-ledger, c
 The native browser originally lacked Fedora runtime libraries. A private SSD library prefix and browser-only launcher now run the native preview with its sandbox enabled; no desktop environment, system package or service restart was introduced. The owner subsequently authorized system runtime installation; sudo still requires their private authentication, so that installation is pending. This browser repair is host tooling, not application or market evidence.
 
 Corporate actions/pending claims in paper accounts, partial/asynchronous fills, genuine forward evaluation, genuine data/action/FX/inactive coverage, independent durable restore and combined initial-v1 acceptance remain open. Big Pickle's requested review failed at its provider quota before inspection; no independent verdict is claimed. This checkpoint is research software progress, not investment nomination or initial-v1 completion.
+
+## Subsequent Mac verification
+
+The [native Mac checks](mac-validation-2026-10-27.md) subsequently passed all 23 paper-account tests and six independent accounting scenarios on Apple M5/arm64. Python ran 45 cases, with three optional neural skips. This used a separate source archive and authored inputs; the deployed application and original Mac checkout were unchanged. It adds platform evidence without closing the independent restore or genuine-data gates.
