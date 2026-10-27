@@ -83,12 +83,13 @@
   {/if}
 </details>
 <style>
+  form {display:block;margin:16px 0}
   fieldset {border:0;padding:0;margin:0;min-width:0}
   .plan-fields {display:grid;grid-template-columns:repeat(auto-fit,minmax(min(230px,100%),1fr));gap:16px;margin:16px 0}
   label {display:block;min-width:0;font-size:14px}
   input:not([type=checkbox]),select,textarea {display:block;width:100%;min-width:0;border:1px solid #cbd7e1;border-radius:5px;padding:10px;background:white;font:inherit;color:var(--navy);margin-top:7px;box-sizing:border-box}
   textarea {resize:vertical}
   .plan-ack {display:flex;gap:10px;align-items:flex-start;margin:16px 0}
-  .plan-ack input {flex-shrink:0;margin-top:3px}
+  .plan-ack input {width:auto;height:auto;flex-shrink:0;margin-top:3px}
   .plan-hashes {overflow-wrap:anywhere;font-size:13px}
 </style>
