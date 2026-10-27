@@ -21,7 +21,7 @@ public sealed partial class DiagnosticStore
             Trials = models.Select(r => new DiagnosticTrial(r.Id, r.DatasetId, r.Status, r.ConfigSha256, r.ReportSha256,
                     r.EngineSha256, false, "different-research-engine"))
                 .Concat(universe.Select(r => UniverseTrial(r, "different-research-engine")))
-                .Concat(raw.Select(r => RawTrial(r, Reason(r)))).ToImmutableArray() };
+                .Concat(raw.Select(r => RawTrial(r, Reason(r), studies.Single(s => s.Id == r.StudyId).Plan))).ToImmutableArray() };
         Save(attempt); // Preserve the complete classifications before any artifact load/refusal.
         if (!study.DevelopmentTrialIds.Contains(anchor.Id) || anchor.Status != "succeeded" || anchor.ReportSha256 is null)
             throw new ResearchException("diagnostic-development-run-required");
@@ -37,8 +37,13 @@ public sealed partial class DiagnosticStore
             ct.ThrowIfCancellationRequested();
             // A mutable register cannot replace the immutable snapshot's input bindings.
             CheckRawSnapshot(row);
-            var request = research.RawTrialRequestBytes(row.Id);
-            var bytes = research.RawTrialReportBytes(row.Id);
+            byte[] request, bytes;
+            try { request = research.RawTrialRequestBytes(row.Id); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            { throw new ResearchException("raw-trial-request-integrity"); }
+            try { bytes = research.RawTrialReportBytes(row.Id); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            { throw new ResearchException("raw-study-report-integrity"); }
             if (RawDiagnosticHash(request) != row.RequestSha256 || RawDiagnosticHash(bytes) != row.ReportSha256)
                 throw new ResearchException("diagnostic-snapshot-changed");
             CheckRawSnapshot(row);
@@ -76,6 +81,18 @@ public sealed partial class DiagnosticStore
         if (bytes.Length > maximum || RawDiagnosticHash(bytes) != sha) throw new ResearchException("diagnostic-report-contract");
         return bytes;
     }
+    private static void RawDiagnosticVersion(byte[] bytes, string name, string expected)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(bytes, new() { MaxDepth = 32 });
+            if (document.RootElement.ValueKind != JsonValueKind.Object ||
+                !document.RootElement.TryGetProperty(name, out var value) || value.ValueKind != JsonValueKind.String)
+                throw new ResearchException("diagnostic-report-contract");
+            if (value.GetString() != expected) throw new ResearchException("raw-diagnostic-report-era");
+        }
+        catch (JsonException) { throw new ResearchException("diagnostic-report-contract"); }
+    }
 
     // Structural consistency of published evidence, not a replacement for worker ledger replay.
     // Only development receipts are parsed; no dataset original or final report is read.
@@ -90,20 +107,23 @@ public sealed partial class DiagnosticStore
         {
             ct.ThrowIfCancellationRequested();
             var receipt = strategy.Receipt ?? throw new ResearchException("diagnostic-report-contract");
-            if (receipt.Version != RawReplayArchive.Version) throw new ResearchException("diagnostic-report-contract");
-            var request = RawDiagnosticRead<RawReplayDocument>(RawDiagnosticDecode(receipt.RequestBase64, receipt.RequestSha256,
-                RawReplayArchive.MaximumRequestBytes), RawReplayArchive.MaximumRequestBytes);
-            var result = RawDiagnosticRead<RawEventReplayResult>(RawDiagnosticDecode(receipt.ResultBase64, receipt.ResultSha256,
-                RawReplayArchive.MaximumResultBytes), RawReplayArchive.MaximumResultBytes);
-            if (request.Version != RawReplayArchive.Version || request.EngineVersion != RawEventReplay.Version || request.Build != study.Plan.Build ||
+            if (receipt.Version != RawReplayArchive.Version) throw new ResearchException("raw-diagnostic-report-era");
+            var requestBytes = RawDiagnosticDecode(receipt.RequestBase64, receipt.RequestSha256, RawReplayArchive.MaximumRequestBytes);
+            var resultBytes = RawDiagnosticDecode(receipt.ResultBase64, receipt.ResultSha256, RawReplayArchive.MaximumResultBytes);
+            RawDiagnosticVersion(requestBytes, "version", RawReplayArchive.Version);
+            RawDiagnosticVersion(requestBytes, "engineVersion", RawEventReplay.Version);
+            RawDiagnosticVersion(resultBytes, "version", RawEventReplay.Version);
+            var request = RawDiagnosticRead<RawReplayDocument>(requestBytes, RawReplayArchive.MaximumRequestBytes);
+            var result = RawDiagnosticRead<RawEventReplayResult>(resultBytes, RawReplayArchive.MaximumResultBytes);
+            if (request.Build != study.Plan.Build ||
                 request.Study is not { } binding || binding.Version != report.Version || binding.PlanSha256 != study.PlanSha256 ||
                 binding.PlanBase64 != study.PlanBase64 || binding.TrialId != row.TrialId || binding.Strategy != strategy.Strategy ||
                 request.Events.IsDefaultOrEmpty || request.Events.Length > 10000 || request.Events.Any(e => e is null || e.Operation is null || e.DatasetSha256 != row.DatasetSha256) ||
-                result.Version != RawEventReplay.Version || result.Marks.IsDefault || result.Marks.Any(m => m is null || m.Valuation is null ||
+                result.Marks.IsDefault || result.Marks.Any(m => m is null || m.Valuation is null ||
                     m.Valuation.HoldingsAndCash is null || m.Valuation.DividendReceivables.IsDefault || m.Valuation.TerminalReceivables.IsDefault ||
                     m.Valuation.DividendReceivables.Any(c => c is null || c.Assumption is null) ||
                     m.Valuation.TerminalReceivables.Any(c => c is null || c.Assumption is null)) ||
-                strategy.Months.IsDefault || strategy.Months.Length != study.Plan.DevelopmentContributions.Length ||
+                strategy.Months.IsDefaultOrEmpty || strategy.Months.Length != study.Plan.DevelopmentContributions.Length ||
                 result.Marks.Length != 2 * strategy.Months.Length || strategy.ContributionsGbp != study.Plan.MonthlyGbp * strategy.Months.Length ||
                 strategy.ContributionsGbp != result.ContributionsGbp || strategy.FeesGbp != result.FeesGbp ||
                 strategy.EndingEquityGbp != strategy.Months[^1].EndingEquityGbp)

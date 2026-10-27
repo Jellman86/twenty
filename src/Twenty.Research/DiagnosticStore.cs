@@ -13,6 +13,19 @@ public sealed record DiagnosticTrial(string RunId, string DatasetId, string Stat
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? ResearchEngine { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? TrialId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? CandidateId { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? CostScenario { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public int? RawTopK { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public decimal? RawMaximumWeight { get; init; }
+}
+public sealed record DiagnosticHistoryEntry(string Id, string AnchorRunId, string Status, DateTimeOffset CreatedAt,
+    DateTimeOffset? FinishedAt, string? ErrorCode, int Registered, int Included, int? Months)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? FamilyEngine { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? RawPlanSha256 { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? RawCostScenario { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? RawReportVersion { get; init; }
 }
 public sealed record DiagnosticAttempt(string Id, string RequestId, string AnchorRunId, string Status,
     DateTimeOffset CreatedAt, DateTimeOffset? FinishedAt, string? ErrorCode, string WorkerCommit,
@@ -73,8 +86,10 @@ public sealed partial class DiagnosticStore
         while (reader.Read())
         {
             var a = Read(reader.GetString(0), reader.GetString(1));
-            result.Add(new { a.Id, a.AnchorRunId, a.Status, a.CreatedAt, a.FinishedAt, a.ErrorCode,
-                registered = a.Trials.Length, included = a.Trials.Count(t => t.Included), months = a.Report?.Months });
+            result.Add(new DiagnosticHistoryEntry(a.Id, a.AnchorRunId, a.Status, a.CreatedAt, a.FinishedAt, a.ErrorCode,
+                a.Trials.Length, a.Trials.Count(t => t.Included), a.Report?.Months)
+                { FamilyEngine = a.FamilyEngine, RawPlanSha256 = a.RawPlanSha256,
+                  RawCostScenario = a.RawCostScenario, RawReportVersion = a.RawReportVersion });
         }
         return new { total, displayedLimit = 20, attempts = result };
     }
@@ -155,7 +170,7 @@ public sealed partial class DiagnosticStore
             var trials = snapshot.Select(run => new DiagnosticTrial(run.Id, run.DatasetId, run.Status, run.ConfigSha256, run.ReportSha256, run.EngineSha256,
                 Reason(run, anchor) == "included", Reason(run, anchor)))
                 .Concat(registry.Universes.Select(run => UniverseTrial(run, "different-research-engine"))).Concat(registry.Raw.Select(RawTrial)).ToImmutableArray();
-            attempt = attempt with { Trials = trials, DatasetId = anchor.DatasetId, Synthetic = anchor.Synthetic }; Save(attempt);
+            attempt = attempt with { Trials = trials, DatasetId = anchor.DatasetId, Synthetic = anchor.Synthetic, FamilyEngine = "model" }; Save(attempt);
             if (trials.Count(t => t.Included) > SearchDiagnostics.MaximumCandidates) throw new ResearchException("diagnostic-candidate-count");
             var streams = new List<DiagnosticReturns>();
             // Reports are read one at a time so the private 512 MiB deployment need not retain all artifacts in memory.

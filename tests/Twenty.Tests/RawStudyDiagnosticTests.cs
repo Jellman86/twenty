@@ -30,7 +30,22 @@ public sealed partial class RawStudyWorkerTests
         Assert.All(result.Trials.Where(t => t.Included), t => Assert.Equal(cost, rows.Single(r => r.Id == t.RunId).CostScenario));
         Assert.Equal(4, result.Trials.Count(t => t.Reason == "different-cost-scenario"));
         Assert.Equal(8, result.Trials.Count(t => t.Reason == "different-registered-family"));
-        foreach (var trial in result.Trials) Assert.Equal(rows.Single(r => r.Id == trial.RunId).ReportSha256, trial.ReportSha256);
+        foreach (var trial in result.Trials)
+        {
+            var original = rows.Single(r => r.Id == trial.RunId);
+            Assert.Equal(original.ReportSha256, trial.ReportSha256); Assert.Equal(original.TrialId, trial.TrialId);
+            Assert.Equal(original.CandidateId, trial.CandidateId); Assert.Equal(original.CostScenario, trial.CostScenario);
+        }
+        foreach (var trial in result.Trials.Where(t => t.Included))
+        {
+            var config = study.Plan.Candidates.Single(c => c.Id == trial.CandidateId).Config;
+            Assert.Equal(config.TopK, trial.RawTopK); Assert.Equal(config.MaximumWeight, trial.RawMaximumWeight);
+        }
+        using var listing = JsonDocument.Parse(JsonSerializer.SerializeToUtf8Bytes(service.History(), ResearchStore.Json));
+        var summary = listing.RootElement.GetProperty("attempts").EnumerateArray().Single(a => a.GetProperty("id").GetString() == result.Id);
+        Assert.Equal("raw-universe", summary.GetProperty("familyEngine").GetString());
+        Assert.Equal(cost, summary.GetProperty("rawCostScenario").GetString());
+        Assert.Equal(RawStudyDevelopmentRun.Version, summary.GetProperty("rawReportVersion").GetString());
         Assert.Equal("stationary-raw-active-mean-v1", result.Report!.MethodVersion);
         Assert.Equal(4, result.Report.Candidates); Assert.Equal(8, result.Report.Comparisons); Assert.Equal(35, result.Report.Months);
         Assert.All(result.Report.Sensitivities, s => Assert.Equal(new[] { "cash", "equal_weight" }, s.Intervals.Select(i => i.Comparator).Distinct().Order()));
@@ -79,19 +94,44 @@ public sealed partial class RawStudyWorkerTests
     [InlineData("report-grid", "diagnostic-report-contract")]
     [InlineData("report-era", "raw-diagnostic-report-era")]
     [InlineData("receipt-hash", "diagnostic-report-contract")]
+    [InlineData("missing-request", "raw-trial-request-integrity")]
+    [InlineData("missing-report", "raw-study-report-integrity")]
+    [InlineData("receipt-era", "raw-diagnostic-report-era")]
+    [InlineData("request-era", "raw-diagnostic-report-era")]
+    [InlineData("request-archive-era", "raw-diagnostic-report-era")]
+    [InlineData("request-shape", "diagnostic-report-contract")]
+    [InlineData("result-era", "raw-diagnostic-report-era")]
     public async Task RawDiagnosticRetainsItsCompleteSnapshotWhenAnOriginalOrReportFails(string change, string code)
     {
         var study = CompleteRawDiagnosticFamily();
         var rows = store.ListRawTrials(); var anchor = rows.Single(r => r.TrialId == "momentum:1:base");
         var target = rows.First(r => r.CostScenario == "base" && r.Id != anchor.Id);
         if (change == "request") File.WriteAllText(Path.Combine(root, "runs", target.Id, "raw-study-request.json"), "{}");
+        else if (change == "missing-request") File.Delete(Path.Combine(root, "runs", target.Id, "raw-study-request.json"));
+        else if (change == "missing-report") File.Delete(Path.Combine(root, "runs", target.Id, "raw-study-report.json"));
         else
         {
             var path = Path.Combine(root, "runs", target.Id, "raw-study-report.json");
             var report = JsonSerializer.Deserialize<RawStudyDevelopmentReport>(File.ReadAllBytes(path), RawReplayJson.Options)!;
             var strategy = report.Strategies[0];
+            if (change is "request-era" or "request-archive-era" or "request-shape" or "result-era")
+            {
+                var receipt = strategy.Receipt;
+                var document = JsonSerializer.Deserialize<RawReplayDocument>(Convert.FromBase64String(receipt.RequestBase64), RawReplayJson.Options)!;
+                var body = change == "request-shape" ? "[]"u8.ToArray() : change.StartsWith("request-", StringComparison.Ordinal)
+                    ? JsonSerializer.SerializeToUtf8Bytes(change == "request-archive-era" ? document with { Version = "raw-replay-archive-v0" }
+                        : document with { EngineVersion = "raw-event-replay-v2" }, RawReplayJson.Options)
+                    : JsonSerializer.SerializeToUtf8Bytes(JsonSerializer.Deserialize<RawEventReplayResult>(
+                        Convert.FromBase64String(receipt.ResultBase64), RawReplayJson.Options)! with { Version = "raw-event-replay-v2" }, RawReplayJson.Options);
+                var hash = Convert.ToHexStringLower(SHA256.HashData(body));
+                strategy = strategy with { Receipt = change.StartsWith("request-", StringComparison.Ordinal) ? receipt with { RequestBase64 = Convert.ToBase64String(body), RequestSha256 = hash }
+                    : receipt with { ResultBase64 = Convert.ToBase64String(body), ResultSha256 = hash } };
+                report = report with { Strategies = report.Strategies.SetItem(0, strategy) };
+            }
             report = change switch
             {
+                "request-era" or "request-archive-era" or "request-shape" or "result-era" => report,
+                "receipt-era" => report with { Strategies = report.Strategies.SetItem(0, strategy with { Receipt = strategy.Receipt with { Version = "raw-replay-archive-v0" } }) },
                 "report-era" => report with { Version = "raw-study-development-v3" },
                 "receipt-hash" => report with { Strategies = report.Strategies.SetItem(0, strategy with
                     { Receipt = strategy.Receipt with { ResultSha256 = new string('f', 64) } }) },
@@ -148,6 +188,26 @@ public sealed partial class RawStudyWorkerTests
         Assert.Equal(target.ReportSha256, result.Trials.Single(t => t.RunId == target.Id).ReportSha256);
         Assert.Equal(new string('f',64), store.ListRawTrials().Single(r => r.Id == target.Id).ReportSha256);
         Assert.Equal(0, RawFinalClaims());
+    }
+
+    [Fact]
+    public async Task RawDiagnosticRefusesEstimatedLiabilitiesOutsideTheKernelsReturnBounds()
+    {
+        var f = RawStudyPendingClaimTests.Fixture(); var entry = (RawStudyDividendSchedule)RawStudyEvidence.Actions(f.Actions)[0];
+        var actions = JsonSerializer.SerializeToUtf8Bytes<System.Collections.Immutable.ImmutableArray<RawActionSchedule>>(
+            [entry with { MarkPolicy = entry.MarkPolicy! with { ExpectedFeeGbp = 25 } }], RawReplayJson.Options);
+        var study = RegisterFixture((f.Plan with { ActionCatalogSha256 = Convert.ToHexStringLower(SHA256.HashData(actions)),
+            BaseExecution = f.Plan.BaseExecution with { Fills = f.Plan.BaseExecution.Fills with { MinimumOrderValue = .01m } } }, f.Dataset, f.Calendar, actions));
+        store.StartRawStudy(study.Id, new(Guid.NewGuid().ToString("D"), study.PlanSha256));
+        for (var i = 0; i < 8; i++) Assert.True(store.ProcessNextRawStudyRun("authored"), string.Join(";", store.ListRawTrials().Select(r => r.TrialId+":"+r.Status+":"+r.ErrorCode)));
+        var anchor = store.ListRawTrials().Single(r => r.TrialId == "momentum:1:base");
+        var report = JsonSerializer.Deserialize<RawStudyDevelopmentReport>(store.RawTrialReportBytes(anchor.Id), RawReplayJson.Options)!;
+        Assert.Equal(-3.8m, report.Strategies[0].Months[0].EndingEquityGbp); Assert.Equal(-1.19m, report.Strategies[0].Months[0].PeriodReturn);
+        Assert.Equal(701.1m, report.Strategies[0].EndingEquityGbp);
+        var result = await new DiagnosticStore(store).Create(new(Guid.NewGuid().ToString("D"), anchor.Id));
+        Assert.Equal("failed", result.Status); Assert.Equal("diagnostic-return-stream", result.ErrorCode);
+        Assert.Equal(8, result.Trials.Length); Assert.Equal(4, result.Trials.Count(t => t.Included));
+        Assert.Null(result.Report); Assert.Equal(0, RawFinalClaims());
     }
 
 }

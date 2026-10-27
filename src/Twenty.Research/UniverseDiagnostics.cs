@@ -23,9 +23,12 @@ public sealed partial class DiagnosticStore
 {
     private static DiagnosticTrial RawTrial(RawStudyTrialEntry run) =>
         RawTrial(run, "different-research-engine");
-    private static DiagnosticTrial RawTrial(RawStudyTrialEntry run, string reason) =>
+    private static DiagnosticTrial RawTrial(RawStudyTrialEntry run, string reason, RawUniverseStudyPlan? plan = null) =>
         new(run.Id, run.DatasetSha256, run.Status, run.RequestSha256, run.ReportSha256, run.ResearchSha256,
-            reason == "included", reason) { ResearchEngine = "raw-universe" };
+            reason == "included", reason) { ResearchEngine = "raw-universe", TrialId = run.TrialId,
+                CandidateId = run.CandidateId, CostScenario = run.CostScenario,
+                RawTopK = plan?.Candidates.Single(c => c.Id == run.CandidateId).Config.TopK,
+                RawMaximumWeight = plan?.Candidates.Single(c => c.Id == run.CandidateId).Config.MaximumWeight };
     private static DiagnosticTrial UniverseTrial(UniverseRunEntry run, string reason) =>
         new(run.Id, run.DatasetId, run.Status, run.RequestSha256, run.ReportSha256, run.ResearchSha256,
             reason == "included", reason) { ResearchEngine = "changing-universe" };

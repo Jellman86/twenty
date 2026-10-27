@@ -101,7 +101,7 @@ public static class ResearchModule
             registeredStudyFinalEvaluation = true,
             registeredStudy = new { protocol = StudyProtocol.Version, codeSha256 = ResearchStore.StudyCodeSha256, identityScheme = ResearchIdentity.Scheme, finalWindowRequestRequired = true },
             researchIdentity = ResearchIdentity.Current,
-            searchDiagnostics = new { method = SearchDiagnostics.Version, universeMethod = SearchDiagnostics.UniverseVersion,
+            searchDiagnostics = new { method = SearchDiagnostics.Version, universeMethod = SearchDiagnostics.UniverseVersion, rawMethod = SearchDiagnostics.RawVersion,
                 pairedCalendarResampling = true, completeTrialRegistrySnapshot = true, preregisteredPromotion = false },
             changingUniverse = new { panel = ChangingUniversePanel.BuilderVersion, backtest = UniverseBacktest.Version,
                 registeredTrials = true, retrospectiveDiagnostics = true, registeredCandidateSelection = true,
