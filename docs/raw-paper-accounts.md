@@ -1,6 +1,6 @@
 # Authored raw paper batches
 
-Status: implemented first scope, undergoing acceptance. This is an independent persistent raw-share/GBP paper ledger, rather than playback of a study report or the existing model simulator. It deliberately supports authored inputs and complete offline batches only. Corporate actions, pending claims, asynchronous/partial fills, genuine forward evaluation and broker execution remain outside this scope. The initial-v1 paper gate remains partial.
+Status: first scope implemented and [deployed with authored acceptance](raw-paper-deployment-2026-10-27.md). This is an independent persistent raw-share/GBP paper ledger, rather than playback of a study report or the existing model simulator. It deliberately supports authored inputs and complete offline batches only. Corporate actions, pending claims, asynchronous/partial fills, genuine forward evaluation and broker execution remain outside this scope. The initial-v1 paper gate remains partial.
 
 ## Frozen account and independent capital
 
@@ -34,4 +34,4 @@ There are at most 20 accounts, 120 admitted attempts per account, 10,000 cumulat
 
 Focused tests cover exact earlier-event preservation, fixed dates/configuration/costs/deposits, complete fills/marks, two-currency shares and fees, UUID aliases/conflicts, stale heads, retained terminal failures, unique accounts, worker/quota refusal, stopping/completion and restart after a publication transaction fault. In the hand-calculated example, £20 with a £0.25 fee buys 0.246875 shares at USD 100 and GBP 0.80 per USD, giving £19.75 marked equity and zero cash. Two batches give £40 contributions, £0.50 fees, 0.49375 shares and £39.50 marked equity. These values are authored accounting examples, not market performance.
 
-Native API/browser, actual killed-process, compatibility and full-suite acceptance are recorded only after execution. Big Pickle's requested design review was blocked by its provider's free usage limit before inspection; no independent review verdict is claimed. The broader [raw-paper design](raw-paper-account-design.md), genuine-data/coverage gates, independent restore and combined initial-v1 acceptance remain open.
+[Executed acceptance](raw-paper-deployment-2026-10-27.md) records native API/browser, actual killed-process, four older-artifact compatibility and full-suite checks against application source `4751481`. Big Pickle's requested design review was blocked by its provider's free usage limit before inspection; no independent review verdict is claimed. The broader [raw-paper design](raw-paper-account-design.md), genuine-data/coverage gates, independent restore and combined initial-v1 acceptance remain open.
