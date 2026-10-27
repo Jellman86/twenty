@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import SearchDiagnostics from './SearchDiagnostics.svelte';
+  let { onUpdated = () => {} }: { onUpdated?: () => void } = $props();
   type Candidate = { id:string; config:{topK:number;maximumWeight:number} };
   type Study = { id:string;name:string;status:string;planSha256:string;errorCode?:string;developmentTrialIds:string[];
     selectedCandidateId?:string;selectionReportSha256?:string;finalRequestId?:string;finalPassed?:boolean;finalWorstMarginGbp?:number;
@@ -62,6 +63,7 @@
       const payload={name,planSha256:planSha};const signature=JSON.stringify(payload);
       if(signature!==registerSignature||!registerRequestId){registerSignature=signature;registerRequestId=crypto.randomUUID();}
       const study=await api<Study>('/api/research/raw-studies',{requestId:registerRequestId,...payload});
+      onUpdated();
       await refresh();if(revision===viewRevision)inspect(study);
     }catch(e){if(revision===viewRevision)error=e instanceof Error?e.message:'Registration failed.';}
     finally{busy=false;}
@@ -72,6 +74,7 @@
     if(!requests.has(key))requests.set(key,crypto.randomUUID());
     try{
       const result=await api<Study>(`/api/research/raw-studies/${study.id}/${operation}`,operation==='cancel'?{}:{requestId:requests.get(key),planSha256:study.planSha256});
+      onUpdated();
       if(revision===viewRevision){selected=result;acknowledged=false;}
       await refresh();
     }catch(e){if(revision===viewRevision)error=e instanceof Error?e.message:'Study request failed.';}
