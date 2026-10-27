@@ -14,7 +14,7 @@ using Twenty.Research;
 namespace Twenty.Tests;
 
 // False synthetic flags exercise guards with authored fixtures, not historical evidence.
-public sealed class RawStudyAdmissionTests : IDisposable
+public sealed partial class RawStudyAdmissionTests : IDisposable
 {
     private readonly string root = Path.Combine(Path.GetTempPath(), "twenty-raw-study-" + Guid.NewGuid().ToString("N"));
     private ResearchStore store;
@@ -215,9 +215,25 @@ public sealed class RawStudyAdmissionTests : IDisposable
         try
         {
             using var client = new HttpClient { BaseAddress = new Uri(app.Urls.Single()), Timeout = TimeSpan.FromSeconds(30) };
+            var preparation = Preparation(RawUniverseStudyProtocol.Decode(planBytes));
+            using var deniedPreparation = await client.PostAsJsonAsync("/api/research/raw-study-plans", preparation);
+            Assert.Equal(HttpStatusCode.Forbidden, deniedPreparation.StatusCode);
             using var denied = await client.PostAsJsonAsync("/api/research/raw-studies", inboxRequest);
             Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode); Assert.Empty(store.RawStudies());
             client.DefaultRequestHeaders.Add("X-Twenty-Request", "1");
+            using var preparedResponse = await client.PostAsJsonAsync("/api/research/raw-study-plans", preparation);
+            Assert.Equal(HttpStatusCode.OK, preparedResponse.StatusCode);
+            var prepared = await preparedResponse.Content.ReadFromJsonAsync<RawPreparedStudyPlan>();
+            Assert.Equal(sha, prepared!.PlanSha256); Assert.Equal(planBytes, Convert.FromBase64String(prepared.PlanBase64));
+            Assert.Empty(store.RawStudies()); Assert.Empty(store.ListRawTrials());
+            var wire = JsonSerializer.SerializeToNode(preparation, RawReplayJson.Options)!;
+            wire["execution"]!.AsObject().Remove("feePerFillGbp");
+            using var incomplete = await client.PostAsJsonAsync("/api/research/raw-study-plans", wire);
+            Assert.Equal(HttpStatusCode.BadRequest, incomplete.StatusCode);
+            client.DefaultRequestHeaders.Add("Sec-Fetch-Site", "cross-site");
+            using var crossSite = await client.PostAsJsonAsync("/api/research/raw-study-plans", preparation);
+            Assert.Equal(HttpStatusCode.Forbidden, crossSite.StatusCode);
+            client.DefaultRequestHeaders.Remove("Sec-Fetch-Site");
             using var admitted = await client.PostAsJsonAsync("/api/research/raw-studies", inboxRequest);
             Assert.Equal(HttpStatusCode.OK, admitted.StatusCode);
             using var body = JsonDocument.Parse(await admitted.Content.ReadAsByteArrayAsync()); var id = body.RootElement.GetProperty("id").GetString();
@@ -231,6 +247,7 @@ public sealed class RawStudyAdmissionTests : IDisposable
             Assert.True(history.RootElement.GetProperty("selectionAvailable").GetBoolean());
             Assert.True(history.RootElement.GetProperty("finalEvaluationAvailable").GetBoolean());
             Assert.True(history.RootElement.GetProperty("publicationRecoveryAvailable").GetBoolean());
+            Assert.True(history.RootElement.GetProperty("planPreparationAvailable").GetBoolean());
             client.DefaultRequestHeaders.Remove("X-Twenty-Request");
             using var refusedSelection = await client.PostAsJsonAsync("/api/research/raw-studies/"+id+"/select",
                 new RawStudySelectionRequest(Guid.NewGuid().ToString("D"),sha));

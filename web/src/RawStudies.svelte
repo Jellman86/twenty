@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import SearchDiagnostics from './SearchDiagnostics.svelte';
+  import RawStudyPlan from './RawStudyPlan.svelte';
   let { onUpdated = () => {} }: { onUpdated?: () => void } = $props();
   type Candidate = { id:string; config:{topK:number;maximumWeight:number} };
   type Study = { id:string;name:string;status:string;planSha256:string;errorCode?:string;developmentTrialIds:string[];
@@ -15,7 +16,7 @@
   type Report = {version:string;trialId:string;planSha256:string;datasetSha256:string;limitations:string[];
     strategies:{strategy:string;endingEquityGbp:number;contributionsGbp:number;feesGbp:number;months:Month[]}[]};
   let studies=$state<Study[]>([]),trials=$state<Trial[]>([]),selected=$state<Study|null>(null),trial=$state<Trial|null>(null),report=$state<Report|null>(null);
-  let name=$state('Raw GBP study'),planSha=$state(''),busy=$state(false),error=$state(''),loading=$state(true),acknowledged=$state(false),currentCode=$state('');
+  let name=$state('Raw GBP study'),planSha=$state(''),busy=$state(false),error=$state(''),loading=$state(true),acknowledged=$state(false),currentCode=$state(''),planPreparationAvailable=$state(false);
   let wanted='',viewRevision=0,reportRevision=0,refreshRevision=0,registerSignature='',registerRequestId='';
   const requests=new Map<string,string>();
   const money=(value:number)=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP',maximumFractionDigits:2}).format(value);
@@ -58,9 +59,9 @@
   }
   async function refresh(){
     const revision=++refreshRevision;
-    const [register,rows]=await Promise.all([api<{studies:Study[]}>('/api/research/raw-studies'),api<Trial[]>('/api/research/raw-trials')]);
+    const [register,rows]=await Promise.all([api<{studies:Study[];planPreparationAvailable?:boolean}>('/api/research/raw-studies'),api<Trial[]>('/api/research/raw-trials')]);
     if(revision!==refreshRevision)return;
-    studies=register.studies;trials=rows;loading=false;
+    planPreparationAvailable=register.planPreparationAvailable===true;studies=register.studies;trials=rows;loading=false;
     if(wanted){const updated=studies.find(s=>s.id===wanted);if(updated)selected=updated;}
   }
   function inspect(study:Study){wanted=study.id;viewRevision++;reportRevision++;selected=study;trial=null;report=null;acknowledged=false;error='';}
@@ -101,10 +102,11 @@
 </script>
 
 <section class="panel lab-results" aria-labelledby="raw-study-title">
-  <div class="panel-heading"><div><p class="eyebrow">RAW SHARES AND GBP ACCOUNTING</p><h2 id="raw-study-title">Inspect and run a prepared raw study</h2></div><span class="badge">RESEARCH ONLY</span></div>
+  <div class="panel-heading"><div><p class="eyebrow">RAW SHARES AND GBP ACCOUNTING</p><h2 id="raw-study-title">Prepare and run a raw study</h2></div><span class="badge">RESEARCH ONLY</span></div>
   <p>Four declared momentum candidates each run under base and stressed costs, with their own equal-weight and cash accounts. Contributions, raw shares, labelled FX, fees and corporate-action claims remain separate. These are bounded research assumptions, with no investment nomination or broker execution.</p>
-  <details><summary>Register a prepared plan</summary>
-    <p class="dataset-note">Prepare the frozen plan, calendar, action catalog and dataset in the server’s raw-study inbox using the documented workflow. Registration retains all eight trial requests before work starts. This form admits an existing plan; it does not author market inputs or upload files.</p>
+  {#if planPreparationAvailable}<RawStudyPlan disabled={busy} onPrepared={sha=>{planSha=sha;error='';}}/>{/if}
+  <details open={!!planSha}><summary>Register a prepared plan</summary>
+    <p class="dataset-note">Prepare a plan above or supply its exact bytes in the server’s inbox. The reviewed calendar, action catalog and dataset still require the documented input workflow. Registration retains all eight trial requests before work starts. This form admits an existing plan; it does not author market inputs or upload files.</p>
     <form class="signal-form" onsubmit={e=>{e.preventDefault();void register();}}>
       <label>Study name<input bind:value={name} maxlength="80" required disabled={busy}/></label>
       <label>Prepared plan SHA-256<input bind:value={planSha} pattern={'[0-9a-f]{64}'} minlength="64" maxlength="64" required spellcheck="false" autocomplete="off" disabled={busy}/></label>

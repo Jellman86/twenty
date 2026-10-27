@@ -1,5 +1,7 @@
 # Issue-based roadmap
 
+Current implementation work adds [metadata-only raw plan preparation](raw-study-plan-preparation.md), with separate exact-input admission and no trial authority from preparation. Raw paper accounts and the remaining initial-v1 data/operational gates stay open.
+
 Track delivery in the [public Twenty project](https://github.com/users/Jellman86/projects/1) and [repository issues](https://github.com/Jellman86/twenty/issues). Development stays on `dev`; `main` is releases only.
 
 - [M1 · Research workbench · #1: Ship the .NET 10 and Svelte 5 research workbench](https://github.com/Jellman86/twenty/issues/1)

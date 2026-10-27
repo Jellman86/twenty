@@ -45,7 +45,8 @@ public static class ResearchModule
             var rawTrials = store.ListRawTrials().Count;
             return new { total = modelTrials + universeTrials + rawTrials, modelTrials, universeTrials, rawTrials, displayedLimit = 100 };
         });
-        api.MapGet("/raw-studies", () => Results.Json(new { executionAvailable = true, selectionAvailable = true, finalEvaluationAvailable = true, publicationRecoveryAvailable = true, studies = store.RawStudies() }, RawReplayJson.Options));
+        api.MapGet("/raw-studies", () => Results.Json(new { executionAvailable = true, selectionAvailable = true, finalEvaluationAvailable = true, publicationRecoveryAvailable = true, planPreparationAvailable = true, studies = store.RawStudies() }, RawReplayJson.Options));
+        api.MapPost("/raw-study-plans", (RawStudyPlanPreparationRequest request) => Results.Json(store.PrepareRawStudyPlan(request), RawReplayJson.Options));
         api.MapPost("/raw-studies", (RawStudyInboxRequest request) => Results.Json(store.RegisterRawStudy(new(request.RequestId, request.Name, PlanSha256: request.PlanSha256), Commit()), RawReplayJson.Options));
         api.MapGet("/raw-studies/{id}", (string id) => store.RawStudies().SingleOrDefault(s => s.Id == id) is { } study
             ? Results.Json(study, RawReplayJson.Options) : Results.NotFound());

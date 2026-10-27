@@ -21,3 +21,7 @@ The extended rehearsal at `/mnt/apps/developer/jellman86/artifacts/twenty/raw-wo
 The [27 October CI/image/Dockhand checkpoint](raw-workbench-deployment-2026-10-27.md) now records publication, state preservation and live read-only desktop/mobile checks for `81f88b5`.
 
 [Verified publication recovery](raw-final-publication.md) now shows pending results and their original verification hashes, and submits the original final UUID when publishing. Its receipt replay uses the shared worker and preserves candidate/trial identity. Missing or conflicting bytes produce retained errors; explicit stop stays terminal. See the [published checkpoint](raw-publication-deployment-2026-10-27.md).
+
+## Metadata plan preparation (27 October 2026)
+
+The [plan preparation form](raw-study-plan-preparation.md) now freezes the month-end UTC grid and explicit execution assumptions using the server’s identity. It shows a reviewable plan before copying its hash into separate registration. Dataset/calendar/action originals still require independent preparation and admission validation. Existing prepared-plan admission remains available; no paper account or final authority is created by this form.
