@@ -17,3 +17,7 @@ twenty = "twenty.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/twenty"]
+
+[tool.uv]
+# Security floors for optional torch's transitive dependencies; neither adds a core dependency.
+constraint-dependencies = ["filelock>=4.2.1", "setuptools>=84.1.0"]

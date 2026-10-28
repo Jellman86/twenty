@@ -37,6 +37,8 @@ The rule: **check alignment before editing, and prove that tests actually ran.**
 8. **Exercise the real workflow.** Unit tests are not completion. Run the actual CLI, API or UI path the change affects (deployed, or a private clone) and record what was checked.
 9. **State the gaps.** The checkpoint note says what was *not* verified: hosts not tested, mocked devices, synthetic versus historical inputs, review not performed.
 
+When dependency manifests or locks change, inspect the repository's open dependency advisories and the upstream patched-version information. Compare the entire resolved package delta, then test the core environment and each affected optional extra separately. Record installed versions and skipped cases: base-only CI does not exercise an optional runtime. Retain justified resolver floors, keep numerical dependencies fixed where possible, and check remote alert closure after indexing. Record secret scanning and dependency-advisory review as separate checks.
+
 ## Handoffs
 
 A handoff passes on evidence paths and receipts, not only conclusions: the preflight and verification JSON, the commits on each host and any open assumptions. The receiving session reruns `preflight` before editing, rather than trusting the summary.
