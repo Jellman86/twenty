@@ -18,6 +18,7 @@ of the sealed fixture) and one prepare/apply in that copy.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 import sys
@@ -171,6 +172,9 @@ def main() -> int:
             checks.run(f"{width}: demo account labelled", lambda: (page.locator("[data-account-kind=demo]").count() > 0, None))
             checks.run(f"{width}: no research/diagnostic narrative on Portfolio", lambda: (not re.search(r"What we have bought|\bSHA(-256)?\b|UUID|Speculative growth|[0-9a-f]{32,64}", body), None))
             checks.run(f"{width}: portfolio has no horizontal overflow", lambda: (no_overflow(page), None))
+            checks.run(f"{width}: every main navigation link is visible without scrolling", lambda: (page.evaluate("""[...document.querySelectorAll('nav[aria-label=Main] a')].every(a => {
+                const r = a.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.width > 0;
+            })"""), None))
             page.screenshot(path=str(out / f"portfolio-{width}.png"), full_page=True)
             page.get_by_role("button", name=re.compile("Simulated")).click()
             sim = text(page)
@@ -194,6 +198,30 @@ def main() -> int:
                 page.screenshot(path=str(out / f"route-{route[1:]}-{width}.png"), full_page=True)
             checks.run(f"{width}: loading these pages issued no side-effecting request", lambda: (not posts, posts))
             page.close()
+
+        # Reconciliation phases remain visible even after some shares have filled.
+        # A cancellation request is an actual broker-journal phase, not a completed cancellation.
+        review_broker = copy.deepcopy(SYNTHETIC_BROKER)
+        partial = review_broker["accounts"][0]["intents"][0]
+        partial.update(id="cancel-partial", phase="cancel_requested")
+        partial["progress"].update(filled=10, debitGbp=4.82, status="partially_filled", remainingReserve=15.08)
+        unknown = copy.deepcopy(partial)
+        unknown.update(id="unknown-partial", phase="unknown", errorCode="broker-reconciliation-required")
+        unknown["intent"]["symbol"] = "CHECK"
+        review_broker["accounts"][0]["intents"].append(unknown)
+        review_broker["accounts"][0]["intents"][1]["phase"] = "cancel_requested"
+        page = new_page(390)
+        page.route("**/api/execution/broker", fulfil(review_broker))
+        page.route("**/api/execution/paper", fulfil(SYNTHETIC_PAPER))
+        page.goto(args.base + "/#activity")
+        page.get_by_text("CHECK", exact=True).wait_for(timeout=5000)
+        checks.run("partial fill does not hide cancellation request", lambda: ("Cancellation requested" in page.locator("tr", has_text="LLOY").inner_text(), None))
+        checks.run("partial fill does not hide unknown order state", lambda: ("Needs check" in page.locator("tr", has_text="CHECK").inner_text(), None))
+        page.get_by_role("button", name="Open", exact=True).click()
+        checks.run("open activity includes cancellation and reconciliation", lambda: (page.get_by_text("LLOY", exact=True).count() == 1 and page.get_by_text("CHECK", exact=True).count() == 1, None))
+        checks.run("unfilled cancellation remains in open activity", lambda: (page.get_by_text("AAPL", exact=True).count() == 1, None))
+        page.screenshot(path=str(out / "activity-reconciliation-390.png"), full_page=True)
+        page.close()
 
         page = new_page(1280)
         for old in ["#workbench", "#roadmap", "#evidence", "#unknown", ""]:

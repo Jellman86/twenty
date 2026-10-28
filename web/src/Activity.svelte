@@ -12,14 +12,15 @@
   let filter = $state<'all' | 'filled' | 'open'>('all');
   const labels: Record<string, string> = {
     planned: 'Planned', submitting: 'Submitting', pending: 'Open', partially_filled: 'Part filled', filled: 'Filled',
-    cancelled: 'Cancelled', rejected: 'Rejected', expired: 'Expired', unknown: 'Needs check',
+    cancel_requested: 'Cancellation requested', cancelled: 'Cancelled', rejected: 'Rejected', expired: 'Expired', unknown: 'Needs check',
   };
-  const open = new Set(['planned', 'submitting', 'pending', 'partially_filled', 'unknown']);
+  const open = new Set(['planned', 'submitting', 'pending', 'partially_filled', 'cancel_requested', 'unknown']);
   const money = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n);
   const shares = (n: number) => n.toLocaleString('en-GB', { maximumFractionDigits: 6 });
   const day = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  // The broker progress status is authoritative once the order reached the broker; before that, the journal phase.
-  const brokerStatus = (i: BrokerIntent) => (['filled', 'cancelled', 'rejected', 'partially_filled'].includes(i.progress.status) ? i.progress.status : i.phase);
+  // A prior fill must not hide an outstanding cancellation or a reconciliation problem.
+  // Only an ordinary pending order uses progress to distinguish partial fills.
+  const brokerStatus = (i: BrokerIntent) => i.phase === 'pending' ? i.progress.status : i.phase;
   const shown = $derived(rows.filter((r) => filter === 'all' || (filter === 'filled' ? r.filled > 0 : open.has(r.status))));
   async function load() {
     loading = true;
