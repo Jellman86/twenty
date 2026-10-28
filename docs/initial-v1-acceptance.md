@@ -21,6 +21,8 @@ No gate is marked complete without a linked test, retained private acceptance re
 
 The [28 October recovery-bundle checkpoint](recovery-bundle-acceptance-2026-10-28.md) adds a portable offline verifier and a fresh 211-file native restore/cold-start comparison, including damaged-copy and authored-authentication controls. V1-07 remains partial: the Mac was offline, and independent durable/mounted restore and final combined acceptance are still unverified.
 
+[Authored paper preparation](raw-paper-preparation.md) adds actual HTTP preview/application and historical-account compatibility evidence. This removes manual replay construction for the supported frozen no-action batch, but does not close V1-05/V1-06: browser interaction, action/claim paper integration, genuine inputs and combined acceptance remain unverified.
+
 For substantive behaviour, first write a regression that fails for the intended reason; implement the smallest coherent change, then verify the case and related accounting/timing/integrity tests. Use authored inputs for engineering regressions and label genuine samples separately. Keep every admitted research trial and discarded candidate; do not consume a genuine final evaluation to test application plumbing.
 
 Each checkpoint records effects on: historical availability and universe selection; contributions/fees/FX/corporate actions; request replay and old artifact compatibility; cancellation/restart/concurrency/storage; scientific code identity and reserved studies; UI wording and release/deployment state. Existing artifacts remain immutable. Scientific identity changes must not silently reopen or reinterpret a frozen study. A local statistical family diagnostic cannot claim to correct every search in the programme.

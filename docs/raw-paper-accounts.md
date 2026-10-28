@@ -12,6 +12,8 @@ Explicit imports record a hash-checked provenance assertion in SQLite. Paper adm
 
 ## Applying a batch
 
+[Server preparation](raw-paper-preparation.md) can now generate and check the next authored batch from the frozen account and its retained inputs. Preparation returns a projection without changing accepted balances; application remains a separate explicit action. Manual inbox replay submission is retained.
+
 `POST /api/research/raw-paper-accounts/{id}/advance` accepts `{requestId, expectedReceiptSha256, replaySha256}`. The cumulative canonical `RawReplayDocument` must already exist as `imports/<sha>.raw-paper.json`; the HTTP API accepts a hash, not a file path/upload. `expectedReceiptSha256` is null for the first period and the exact accepted receipt hash thereafter.
 
 Each request preserves every previously accepted event exactly and appends one deposit, an explicit empty-claim opening mark, the frozen strategy-bound decision, every ordered modelled fill and a closing mark. The exact account grid fixes the signal history, decision and closing instants. No assumed fill, study binding, action, partial batch, extra deposit, changed price/FX convention or changed policy is accepted. A complete batch uses one reviewed calendar and one booking instant. No batch completion is inferred after a cancellation or partial fill.

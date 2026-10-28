@@ -1,0 +1,31 @@
+# Preparing authored paper batches
+
+Checkpoint contract inventory (baseline `af7746d`, 28 October 2026): preparation adds an API response and a separate workbench action. It retains `raw-paper-batches-v1`, archive v1, replay engine v3, account/operation JSON and Core accounting. Existing receipt bytes and UUID retries remain inspectable. Research assembly identity changes: prior frozen studies/accounts remain readable but cannot admit work requiring their original scientific code. No source-study or final report is needed after account creation.
+
+Preparation is deterministic from the frozen account, accepted event prefix and retained authored dataset/calendars. It writes one content-addressed cumulative request and returns projected balances; it does not apply fills, change accepted balances, register an operation or spend a final claim. Separate explicit application uses the existing expected-head and UUID guards. Corporate actions, partial fills, genuine forward evidence and broker execution remain outside this scope.
+
+## API and workbench
+
+`POST /api/research/raw-paper-accounts/{id}/prepare` accepts exactly `{ "expectedReceiptSha256": null }` for the first batch, or the exact accepted receipt SHA thereafter. The property is required; unknown tuning fields are refused. The existing authentication, origin/header guard and 16 KiB host body limit apply. The response contains `accountId`, `expectedReceiptSha256`, one-based `period`, `decisionAt`, `nextDecisionAt`, `replaySha256`, `replayBytes`, and `projectedBalance`. No allocation, cost, deposit, date or fill override is accepted. Repeated preparation against the same account/head returns the same canonical replay and projection, rather than another candidate or attempt.
+
+`GET /api/research/raw-paper-accounts` adds `preparationAvailable: true`. The workbench offers **Prepare next authored batch**, labels the projection as awaiting application, and provides a separate **Apply prepared batch** action using the existing `/advance` endpoint. Accepted balance remains separate. Switching accounts or accepting a changed head invalidates the preview; late responses cannot populate a different inspected account. The manual inbox/hash workflow remains available, including against older servers without the flag. Preparation can extend an already accepted manual prefix without rewriting its event IDs or calendar tables.
+
+## Reconstruction and limits
+
+Preparation checks status, expected head and scientific identity before opening retained inputs. It hash-checks the original dataset and calendar files, then separately checks the calendar's semantic session-table hash against its pin. These are distinct hashes. It independently verifies the previous receipt and request, compares its replayed balance to the accepted account, and reconstructs a fresh ledger from verified deposits/fills. Saved balances are never injected as starting capital.
+
+Only the next period is generated: deposit, opening mark, frozen 13-date momentum allocation, raw-share decision, complete modelled fills, closing mark. The event prefix stays byte-equivalent. All orders share one reviewed calendar and booking instant; unavailable, partial, unfunded or late fills refuse. The independent CPU archive rederives the complete generated document before its canonical bytes are retained as `imports/<sha>.raw-paper.json`.
+
+The shared computation lease, two-minute cancellation deadline, existing archive limits, 2 MiB request and 8 MiB receipt bounds apply. Construction separately charges at most 500,000 event/history observation units; long cumulative accounts can therefore refuse before reaching the 120-attempt bound. A conservative 2 MiB unreserved-space preflight also applies to repeated preparation; the final write charges only new bytes. Existing final-publication reservations remain protected. Preparation adds at most one deterministic file per accepted head; files remain quota-charged even if never applied. It provides no deletion or garbage-collection authority.
+
+Busy, quota, input, cancellation, arithmetic and execution refusals leave accepted state and the operation journal unchanged. Apply rechecks the head and executes the retained bytes independently. A projection cannot guarantee later application if inputs or storage are damaged; an admitted apply failure retains the existing terminal-failure semantics. No asynchronous or automatic application is added.
+
+## Evidence and remaining work
+
+The HTTP regression first failed with 404 at the missing endpoint. The first development run then caught the wire-hash/session-table-hash mismatch; the corrected initial 31-test paper selection passed. The final selection adds older-identity and grid-completion controls. Checkpoint execution counts and source binding are retained in the final `tests/tests.json` and `verified/verification.json`; the required full-suite floor is 1,419, with no skips counted as passes.
+
+Private evidence: `/mnt/apps/developer/jellman86/artifacts/twenty/paper-prepare-20261028`. `workflow-verification.json` records actual native HTTP preparation/application, unchanged state between those steps, exact deterministic retries, two accepted periods and cold restart. Source reports were made unavailable during preparation; all eight report bytes and the source study were subsequently compared unchanged. Hand-calculated results are £20 → £19.75 equity, then £40 cumulative contributions, £0.50 fees, 0.49375 USD shares and £39.50 equity. No genuine final claim, production write or broker call was made.
+
+The historical clone preserves older report/receipt/UUID bytes and refuses new preparation under changed Research identity before opening missing originals. The prior Core archive also reexecutes unchanged with request SHA `871ad6847480a8c559e10878ffc728f6bbbbb34a36f6b986dc9a2634e1564cd1` and result SHA `3a2427cb4a331610223c899c9aa61f5fd8cee5eb522759d32091d8f08c96ab71`.
+
+Svelte checking/building is separate from browser acceptance: this checkpoint has no browser or accessibility interaction proof. No fresh independent review, Mac run, production deployment, real-market data, corporate-action integration or combined initial-v1 acceptance is claimed. Big Pickle's earlier provider quota failure remains unresolved. The wider paper and operational gates remain partial.

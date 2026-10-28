@@ -4,7 +4,7 @@ The [published plan-preparation checkpoint](raw-plan-deployment-2026-10-27.md) a
 
 Track delivery in the [public Twenty project](https://github.com/users/Jellman86/projects/1) and [repository issues](https://github.com/Jellman86/twenty/issues). Development stays on `dev`; `main` is releases only.
 
-The [28 October offline recovery bundle](recovery-bundle-acceptance-2026-10-28.md) adds a reusable pre-start verifier and fresh full-store/cold-restart evidence. Cross-host restore remains pending while the Mac is offline; this does not close the operational acceptance gate.
+The [28 October offline recovery bundle](recovery-bundle-acceptance-2026-10-28.md) adds a reusable pre-start verifier and fresh full-store/cold-restart evidence. Cross-host restore remains pending while the Mac is offline; this does not close the operational acceptance gate. [Authored paper preparation](raw-paper-preparation.md) now generates the next deterministic batch and projection, with separate explicit application; action/claim integration, genuine forward evidence and combined UI acceptance remain open.
 
 - [M1 · Research workbench · #1: Ship the .NET 10 and Svelte 5 research workbench](https://github.com/Jellman86/twenty/issues/1)
 - [M1 · Research workbench · #2: Deploy Twenty through Git-backed Dockhand with private HTTPS](https://github.com/Jellman86/twenty/issues/2)

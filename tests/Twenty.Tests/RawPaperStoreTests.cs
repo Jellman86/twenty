@@ -77,7 +77,7 @@ public sealed class RawPaperFixture : IDisposable
     }
     public void Dispose() => Directory.Delete(Root, true);
 }
-public sealed class RawPaperStoreTests : IClassFixture<RawPaperFixture>, IDisposable
+public sealed partial class RawPaperStoreTests : IClassFixture<RawPaperFixture>, IDisposable
 {
     private readonly RawPaperFixture fixture;
     private readonly string root = Path.Combine(Path.GetTempPath(), "twenty-paper-" + Guid.NewGuid().ToString("N"));

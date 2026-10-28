@@ -45,10 +45,11 @@ public static class ResearchModule
             var rawTrials = store.ListRawTrials().Count;
             return new { total = modelTrials + universeTrials + rawTrials, modelTrials, universeTrials, rawTrials, displayedLimit = 100 };
         });
-        api.MapGet("/raw-paper-accounts", () => Results.Json(new { authoredOnly=true, corporateActions=false, asynchronousFills=false, accounts=store.RawPaperAccounts() }, RawReplayJson.Options));
+        api.MapGet("/raw-paper-accounts", () => Results.Json(new { authoredOnly=true, corporateActions=false, asynchronousFills=false, preparationAvailable=true, accounts=store.RawPaperAccounts() }, RawReplayJson.Options));
         api.MapPost("/raw-paper-accounts", (RawPaperCreateRequest request) => Results.Json(store.CreateRawPaperAccount(request),RawReplayJson.Options));
         api.MapGet("/raw-paper-accounts/{id}/operations", (string id) => Results.Json(store.RawPaperOperations(id),RawReplayJson.Options));
         api.MapPost("/raw-paper-accounts/{id}/advance", (string id,RawPaperAdvanceRequest request,CancellationToken ct) => Results.Json(store.AdvanceRawPaperAccount(id,request,ct),RawReplayJson.Options));
+        api.MapPost("/raw-paper-accounts/{id}/prepare", (string id,RawPaperPrepareRequest request,CancellationToken ct) => Results.Json(store.PrepareRawPaperBatch(id,request,ct),RawReplayJson.Options));
         api.MapPost("/raw-paper-accounts/{id}/stop", (string id) => Results.Json(store.StopRawPaperAccount(id),RawReplayJson.Options));
         api.MapGet("/raw-paper-operations/{id}/receipt", (string id) => Results.Bytes(store.RawPaperReceiptBytes(id),"application/json"));
         api.MapGet("/raw-studies", () => Results.Json(new { executionAvailable = true, selectionAvailable = true, finalEvaluationAvailable = true, publicationRecoveryAvailable = true, planPreparationAvailable = true, studies = store.RawStudies() }, RawReplayJson.Options));

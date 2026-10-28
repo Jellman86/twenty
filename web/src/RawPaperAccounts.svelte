@@ -5,9 +5,11 @@
     headReceiptSha256?:string;codeSha256:string;balance:{equityGbp:number;valuedAt?:string;cashGbp:number;contributionsGbp:number;feesGbp:number;holdings:Record<string,{quantity:number}>};
     policy:{firstDecisionAt:string;decisions:string[];datasetSha256:string;execution:unknown}};
   type Operation={id:string;status:string;startedAt:string;receiptSha256?:string;errorCode?:string};
+  type Prepared={accountId:string;expectedReceiptSha256:string|null;period:number;decisionAt:string;nextDecisionAt:string;replaySha256:string;replayBytes:number;projectedBalance:Account['balance']};
   let {source=null,currentCode='',onUpdated=()=>{}}:{source?:Source|null;currentCode?:string;onUpdated?:()=>void}=$props();
   let accounts=$state<Account[]>([]),selected=$state<Account|null>(null),operations=$state<Operation[]>([]),busy=$state(false),error=$state(''),ready=$state(false);
   let dataset=$state(''),calendars=$state(''),dates=$state(''),scenario=$state('base'),replaySha=$state('');
+  let preparationAvailable=$state(false),prepared=$state<Prepared|null>(null);
   let wanted='',revision=0;const requests=new Map<string,string>();
   const money=(v:number)=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP'}).format(v);
   const stamp=(s:string)=>new Date(s).toISOString().slice(0,16).replace('T',' ')+' UTC';
@@ -29,6 +31,9 @@
     'raw-paper-integrity':'A retained input, receipt or account record failed its hash/binding check.',
     'raw-paper-calendar':'The submitted calendars differ from the frozen reviewed tables.',
     'raw-paper-capacity':'The account, operation or artifact bound has been reached.',
+    'raw-paper-execution-refused':'The frozen execution assumptions cannot produce a complete next batch. Accepted balances are unchanged.',
+    'raw-ledger-cash':'The modelled opening fill would exceed available cash. Preparation leaves the account unchanged.',
+    'raw-paper-arithmetic':'The frozen inputs exceeded the decimal arithmetic bounds. Accepted balances are unchanged.',
     'process-restarted':'The process stopped before this attempt committed. The earlier accepted balance is retained.',
     'study-code-changed':'This account uses older scientific code. Its records remain inspectable.',
     'research-worker-busy':'Another calculation owns the shared worker. Retry after it finishes.',
@@ -40,15 +45,23 @@
     return response.json();
   }
   async function refresh(){
-    const result=await api<{accounts?:Account[]}>('/api/research/raw-paper-accounts');accounts=result.accounts??[];ready=true;
+    const result=await api<{accounts?:Account[];preparationAvailable?:boolean}>('/api/research/raw-paper-accounts');accounts=result.accounts??[];preparationAvailable=result.preparationAvailable===true;ready=true;
     if(wanted)selected=accounts.find(a=>a.id===wanted)??null;
+    if(prepared&&(!selected||selected.id!==prepared.accountId||(selected.headReceiptSha256??null)!==prepared.expectedReceiptSha256||!['ready','active'].includes(selected.status)))prepared=null;
   }
   async function inspect(account:Account){
-    const r=++revision;wanted=account.id;selected=account;operations=[];error='';
+    const r=++revision;wanted=account.id;selected=account;operations=[];error='';prepared=null;replaySha='';
     try{const rows=await api<Operation[]>(`/api/research/raw-paper-accounts/${account.id}/operations`);if(r===revision)operations=rows;}
     catch(e){if(r===revision)error=e instanceof Error?e.message:'Operations unavailable.';}
   }
   function requestId(key:string){if(!requests.has(key))requests.set(key,crypto.randomUUID());return requests.get(key)!;}
+  async function prepare(){
+    if(!selected)return;const account=selected,r=revision;busy=true;error='';prepared=null;
+    try{
+      const result=await api<Prepared>(`/api/research/raw-paper-accounts/${account.id}/prepare`,{expectedReceiptSha256:account.headReceiptSha256??null});
+      if(r===revision&&wanted===account.id&&selected&&(selected.headReceiptSha256??null)===result.expectedReceiptSha256){prepared=result;replaySha=result.replaySha256;}
+    }catch(e){if(r===revision)error=e instanceof Error?e.message:'Preparation failed.';}finally{busy=false;}
+  }
   async function create(){
     if(!source)return;busy=true;error='';
     try{
@@ -70,7 +83,7 @@
   }
   async function stop(){
     if(!selected)return;const id=selected.id;busy=true;error='';
-    try{await api(`/api/research/raw-paper-accounts/${id}/stop`,{});await refresh();onUpdated();}
+    try{await api(`/api/research/raw-paper-accounts/${id}/stop`,{});prepared=null;await refresh();onUpdated();}
     catch(e){error=e instanceof Error?e.message:'Stop failed.';}finally{busy=false;}
   }
   onMount(()=>{void refresh().catch(e=>error=e.message);return()=>{revision++;};});
@@ -100,8 +113,20 @@
     <details><summary>Frozen paper policy and original bindings</summary><p class="proof">Source study <code>{selected.studyId}</code><br/>Frozen plan <code>{selected.planSha256}</code><br/>Frozen selection <code>{selected.selectionSha256}</code><br/>Dataset <code>{selected.policy.datasetSha256}</code><br/>Scientific build <code>{selected.codeSha256}</code><br/>Accepted head <code>{selected.headReceiptSha256??'No accepted batch'}</code></p><pre>{JSON.stringify(selected.policy.execution,null,2)}</pre><p class="dataset-note">{selected.policy.decisions.length} frozen history/decision dates; first deposit {stamp(selected.policy.firstDecisionAt)}. Receipts retain the full original decimal accounting.</p></details>
     {#if selected.codeSha256!==currentCode}<p class="dataset-note">This account belongs to an older or unavailable scientific build. Its receipts and accepted state remain inspectable.</p>{/if}
     {#if (selected.status==='ready'||selected.status==='active')&&currentCode===selected.codeSha256}
-      <p class="dataset-note">Prepare the cumulative replay in the server inbox as &lt;SHA&gt;.raw-paper.json. It must retain the exact earlier event sequence and add one complete batch on this account’s date grid. A refused admitted attempt stops further batches and retains the earlier accepted balance.</p>
-      <form onsubmit={e=>{e.preventDefault();void advance();}}><label>Prepared cumulative paper replay SHA-256<input bind:value={replaySha} pattern={'[0-9a-f]{64}'} minlength="64" maxlength="64" required disabled={busy} spellcheck="false"/></label><button class="secondary" disabled={busy}>{busy?'Checking batch…':'Apply one complete paper batch'}</button></form>
+      {#if preparationAvailable}
+        <p class="dataset-note">Prepare one next batch using the frozen candidate and retained authored inputs. Preparation checks the cumulative replay and leaves accepted balances unchanged. Apply it separately to record the batch.</p>
+        <button class="secondary" disabled={busy} onclick={()=>void prepare()}>Prepare next authored batch</button>
+        {#if prepared}
+          <h4>Projected batch {prepared.period} · awaiting application</h4>
+          <p>{stamp(prepared.decisionAt)} to {stamp(prepared.nextDecisionAt)}. Projected closing equity {money(prepared.projectedBalance.equityGbp)}, cash {money(prepared.projectedBalance.cashGbp)}, cumulative contributions {money(prepared.projectedBalance.contributionsGbp)} and booked fees {money(prepared.projectedBalance.feesGbp)}.</p>
+          <p class="proof">Prepared replay <code>{prepared.replaySha256}</code> · {prepared.replayBytes} bytes.</p>
+          <button class="secondary" disabled={busy} onclick={()=>void advance()}>Apply prepared batch</button>
+        {/if}
+      {/if}
+      <details><summary>Apply a manually prepared replay</summary>
+      <p class="dataset-note">Supply the cumulative replay in the server inbox as &lt;SHA&gt;.raw-paper.json. It must retain the exact earlier event sequence and add one complete batch on this account’s date grid. A refused admitted attempt stops further batches and retains the earlier accepted balance.</p>
+      <form onsubmit={e=>{e.preventDefault();void advance();}}><label>Prepared cumulative paper replay SHA-256<input bind:value={replaySha} oninput={()=>prepared=null} pattern={'[0-9a-f]{64}'} minlength="64" maxlength="64" required disabled={busy} spellcheck="false"/></label><button class="secondary" disabled={busy}>{busy?'Checking batch…':'Apply one complete paper batch'}</button></form>
+      </details>
     {/if}
     {#if selected.status==='ready'||selected.status==='active'}<button class="secondary" disabled={busy} onclick={()=>void stop()}>Stop future paper batches</button>{/if}
     <div class="table-scroll"><table><caption>Immutable attempts; uncommitted fills do not change accepted balances</caption><thead><tr><th>Recorded UTC</th><th>Status / refusal</th><th>Evidence</th></tr></thead><tbody>{#each operations as operation}<tr><td>{stamp(operation.startedAt)}</td><td>{operation.status}{operation.errorCode?` · ${operation.errorCode}`:''}</td><td>{#if operation.status==='succeeded'}<a class="text-link" href={`/api/research/raw-paper-operations/${operation.id}/receipt`} target="_blank" rel="noreferrer">Original receipt ↗</a>{/if}</td></tr>{/each}</tbody></table></div>
