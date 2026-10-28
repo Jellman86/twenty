@@ -46,11 +46,10 @@
 
 <div class="auth-screen">
   <section class="panel auth-card" aria-labelledby="auth-title">
-    <span class="brand-mark auth-mark">20<span>·</span></span>
-    <p class="eyebrow">{setupRequired ? 'FIRST RUN' : 'TWENTY'}</p>
-    <h1 id="auth-title">{setupRequired ? 'Create the operator account.' : 'Sign in.'}</h1>
+    <span class="mark" aria-hidden="true">20<i>·</i><span>twenty</span></span>
+    <h1 id="auth-title">{setupRequired ? 'Create your account' : 'Sign in'}</h1>
     {#if setupRequired}
-      <p class="dataset-note">Enter the one-time setup code from the container log (or your private <code>TWENTY_SETUP_CODE</code>), then choose a username and a password of at least 12 characters. Only a hash of the password is stored.</p>
+      <p class="dataset-note">Enter the one-time setup code from the container log (or <code>TWENTY_SETUP_CODE</code>), then choose a password of at least 12 characters.</p>
     {/if}
     <form class="auth-form" onsubmit={submit}>
       {#if setupRequired}

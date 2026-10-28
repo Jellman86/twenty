@@ -1,58 +1,82 @@
 <script lang="ts">
   import {onMount} from 'svelte';
   type Source={id:string;name:string;planSha256:string;selectionReportSha256:string;selectedCandidateId:string;monthlyGbp:number};
-  type Account={id:string;studyId:string;planSha256:string;selectionSha256:string;candidateId:string;costScenario:string;status:string;acceptedPeriods:number;attempts:number;
-    headReceiptSha256?:string;codeSha256:string;balance:{equityGbp:number;valuedAt?:string;cashGbp:number;contributionsGbp:number;feesGbp:number;holdings:Record<string,{quantity:number}>};
-    policy:{firstDecisionAt:string;decisions:string[];datasetSha256:string;execution:unknown}};
+  type Holding={quantity:number;denomination?:{currency:string;unit:string}};
+  type Balance={equityGbp:number;valuedAt?:string;cashGbp:number;contributionsGbp:number;feesGbp:number;holdings:Record<string,Holding>};
+  type Account={id:string;version:string;studyId:string;planSha256:string;selectionSha256:string;candidateId:string;costScenario:string;status:string;acceptedPeriods:number;attempts:number;
+    headReceiptSha256?:string;codeSha256:string;balance:Balance;
+    policy:{firstDecisionAt:string;decisions:string[];datasetSha256:string;execution:unknown;actionMode?:string}};
   type Operation={id:string;status:string;startedAt:string;receiptSha256?:string;errorCode?:string};
-  type Prepared={accountId:string;expectedReceiptSha256:string|null;period:number;decisionAt:string;nextDecisionAt:string;replaySha256:string;replayBytes:number;projectedBalance:Account['balance']};
-  let {source=null,currentCode='',onUpdated=()=>{}}:{source?:Source|null;currentCode?:string;onUpdated?:()=>void}=$props();
+  type Prepared={accountId:string;expectedReceiptSha256:string|null;period:number;decisionAt:string;nextDecisionAt:string;replaySha256:string;replayBytes:number;projectedBalance:Balance};
+  type Support={pureSplits?:boolean;dividends?:boolean;terminals?:boolean;pendingClaims?:boolean};
+  let {sources=[],currentCode='',studyNames={},standalone=false,onUpdated=()=>{}}:{sources?:Source[];currentCode?:string;studyNames?:Record<string,string>;standalone?:boolean;onUpdated?:()=>void}=$props();
   let accounts=$state<Account[]>([]),selected=$state<Account|null>(null),operations=$state<Operation[]>([]),busy=$state(false),error=$state(''),ready=$state(false);
-  let dataset=$state(''),calendars=$state(''),dates=$state(''),scenario=$state('base'),replaySha=$state('');
-  let preparationAvailable=$state(false),prepared=$state<Prepared|null>(null);
+  let sourceId=$state(''),dataset=$state(''),calendars=$state(''),dates=$state(''),scenario=$state('base'),replaySha=$state(''),splits=$state(false);
+  let preparationAvailable=$state(false),pureSplitsAvailable=$state(false),support=$state<Support|null>(null),prepared=$state<Prepared|null>(null);
   let wanted='',revision=0;const requests=new Map<string,string>();
+  const source=$derived(sources.find(s=>s.id===sourceId)??sources[0]??null);
   const money=(v:number)=>new Intl.NumberFormat('en-GB',{style:'currency',currency:'GBP'}).format(v);
+  const day=(s:string)=>new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'});
   const stamp=(s:string)=>new Date(s).toISOString().slice(0,16).replace('T',' ')+' UTC';
+  const statusLabel:Record<string,string>={ready:'Ready',active:'Active',stopped:'Stopped',failed:'Failed',succeeded:'Applied',running:'Running',refused:'Refused'};
+  // Frozen at creation: legacy accounts omit actionMode; split accounts carry pure-splits-v1. Anything else is read-only.
+  const KNOWN:Record<string,string|undefined>={'raw-paper-batches-v1':undefined,'raw-paper-split-batches-v1':'pure-splits-v1'};
+  const known=(a:Account)=>a.version in KNOWN&&KNOWN[a.version]===a.policy.actionMode;
+  const modeLabel=(a:Account)=>!known(a)?'Unsupported mode':a.policy.actionMode==='pure-splits-v1'?'Stock splits':'No corporate actions';
+  const name=(a:Account)=>studyNames[a.studyId]??`Study ${a.studyId.slice(0,8)}`;
+  const writable=(a:Account)=>known(a)&&a.codeSha256===currentCode&&['ready','active'].includes(a.status);
   const messages:Record<string,string>={
-    'raw-paper-dataset-unattested':'Explicitly reimport the exact authored dataset to record its manifest provenance before paper admission. This request did not open its market original.',
-    'raw-paper-authored-only':'This first paper workflow accepts authored datasets and authored source studies only.',
-    'raw-paper-source-selection':'The source must have a frozen development candidate and its exact selection artifact.',
-    'raw-paper-information-window':'The entire new history/date grid must follow the source study’s reserved window.',
-    'raw-paper-already-created':'This study and cost scenario already has a paper account. Open its retained account below.',
-    'raw-paper-head-conflict':'The account has advanced. Refresh its records before submitting the next batch.',
-    'raw-paper-actions-unsupported':'This paper workflow refuses corporate actions. Action integration remains separate work.',
-    'raw-paper-stopped':'This account no longer accepts batches. Its accepted balances and attempts remain recorded.',
-    'raw-paper-history':'The submitted replay changed an earlier accepted event.',
-    'raw-paper-batch':'Supply exactly one complete batch on the frozen date grid, retaining every earlier event.',
-    'raw-paper-policy':'The submitted deposit, signal dates, strategy or execution assumptions differ from the frozen account.',
-    'raw-paper-request-contract':'The submitted replay does not match this paper-account contract.',
-    'raw-paper-canonical':'The prepared replay must contain its exact canonical JSON bytes.',
-    'raw-paper-input-unavailable':'An exact prepared input or retained original is missing or unreadable.',
-    'raw-paper-integrity':'A retained input, receipt or account record failed its hash/binding check.',
-    'raw-paper-calendar':'The submitted calendars differ from the frozen reviewed tables.',
-    'raw-paper-capacity':'The account, operation or artifact bound has been reached.',
-    'raw-paper-execution-refused':'The frozen execution assumptions cannot produce a complete next batch. Accepted balances are unchanged.',
-    'raw-ledger-cash':'The modelled opening fill would exceed available cash. Preparation leaves the account unchanged.',
-    'raw-paper-arithmetic':'The frozen inputs exceeded the decimal arithmetic bounds. Accepted balances are unchanged.',
-    'process-restarted':'The process stopped before this attempt committed. The earlier accepted balance is retained.',
-    'study-code-changed':'This account uses older scientific code. Its records remain inspectable.',
-    'research-worker-busy':'Another calculation owns the shared worker. Retry after it finishes.',
-    'artifact-capacity':'Insufficient unreserved artifact space; no new calculation was admitted.'
+    'raw-paper-dataset-unattested':'Re-import the exact authored dataset to record its provenance first.',
+    'raw-paper-authored-only':'Paper accounts accept authored datasets and studies only.',
+    'raw-paper-source-selection':'The study needs a frozen candidate and its selection record.',
+    'raw-paper-information-window':'All history and dates must follow the study’s reserved window.',
+    'raw-paper-already-created':'This study already has a paper account for these costs. Open it from the list.',
+    'raw-paper-head-conflict':'The account has moved on. Refresh and prepare again.',
+    'raw-paper-actions-unsupported':'This account cannot process that corporate action. Only authored pure stock splits are supported, in split-enabled accounts.',
+    'raw-paper-split-vintage':'Split inputs must come from a single original action record.',
+    'raw-paper-split-ambiguous':'Two splits share an effective or booking time; the batch was refused.',
+    'raw-paper-action-during-batch':'A split falls inside the fill batch; the batch was refused.',
+    'raw-paper-action-binding':'The split record does not match the frozen account inputs.',
+    'raw-paper-split-price':'The split price data is inconsistent with the share ratio.',
+    'raw-price-share-units':'A price predates a known split, so it is in old share units. Refused rather than showing a false gain.',
+    'raw-paper-action-history':'The corporate-action history changed from the frozen account.',
+    'raw-ledger-action-history':'The ledger’s action history changed from the accepted record.',
+    'raw-paper-stopped':'This account is stopped. Its balances and attempts are kept.',
+    'raw-paper-history':'The replay changed an earlier accepted event.',
+    'raw-paper-batch':'Supply exactly one complete batch on the frozen date grid.',
+    'raw-paper-policy':'The deposit, dates, strategy or costs differ from the frozen account.',
+    'raw-paper-request-contract':'The replay does not match this account’s contract.',
+    'raw-paper-canonical':'The prepared replay must be the exact canonical batch.',
+    'raw-paper-input-unavailable':'A required prepared input is missing or unreadable.',
+    'raw-paper-integrity':'A stored input, receipt or record failed its integrity check.',
+    'raw-paper-calendar':'The calendars differ from the frozen reviewed tables.',
+    'raw-paper-capacity':'The account or storage limit has been reached.',
+    'raw-paper-execution-refused':'The frozen costs cannot produce a complete next batch. Balances are unchanged.',
+    'raw-paper-action-mode':'Unknown corporate-action mode. Create the account without it, or with stock splits.',
+    'raw-ledger-cash':'The opening fill would exceed available cash. Nothing changed.',
+    'raw-paper-arithmetic':'The inputs exceeded the decimal arithmetic limits. Balances are unchanged.',
+    'process-restarted':'The server restarted before this attempt finished. The earlier balance is kept.',
+    'study-code-changed':'This account uses an older build and is read-only.',
+    'research-worker-busy':'Another calculation is running. Try again shortly.',
+    'artifact-capacity':'Not enough storage space; nothing was started.'
   };
   async function api<T>(path:string,body?:unknown):Promise<T>{
     const response=await fetch(path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json','X-Twenty-Request':'1'},body:JSON.stringify(body)});
-    if(!response.ok){let code='Raw paper request failed.';try{code=(await response.json()).error??code;}catch{}throw new Error(messages[code]??code);}
+    if(!response.ok){let code='Paper account request failed.';try{code=(await response.json()).error??code;}catch{}throw new Error(messages[code]??code);}
     return response.json();
   }
   async function refresh(){
-    const result=await api<{accounts?:Account[];preparationAvailable?:boolean}>('/api/research/raw-paper-accounts');accounts=result.accounts??[];preparationAvailable=result.preparationAvailable===true;ready=true;
+    const result=await api<{accounts?:Account[];preparationAvailable?:boolean;pureSplitsAvailable?:boolean;actionSupport?:Support}>('/api/research/raw-paper-accounts');
+    accounts=result.accounts??[];preparationAvailable=result.preparationAvailable===true;pureSplitsAvailable=result.pureSplitsAvailable===true;support=result.actionSupport??null;ready=true;
+    if(!pureSplitsAvailable)splits=false;
     if(wanted)selected=accounts.find(a=>a.id===wanted)??null;
+    else if(standalone&&accounts.length&&!selected)void inspect(accounts[0]);
     if(prepared&&(!selected||selected.id!==prepared.accountId||(selected.headReceiptSha256??null)!==prepared.expectedReceiptSha256||!['ready','active'].includes(selected.status)))prepared=null;
   }
   async function inspect(account:Account){
     const r=++revision;wanted=account.id;selected=account;operations=[];error='';prepared=null;replaySha='';
     try{const rows=await api<Operation[]>(`/api/research/raw-paper-accounts/${account.id}/operations`);if(r===revision)operations=rows;}
-    catch(e){if(r===revision)error=e instanceof Error?e.message:'Operations unavailable.';}
+    catch(e){if(r===revision)error=e instanceof Error?e.message:'Attempts unavailable.';}
   }
   function requestId(key:string){if(!requests.has(key))requests.set(key,crypto.randomUUID());return requests.get(key)!;}
   async function prepare(){
@@ -67,7 +91,8 @@
     try{
       let pins:unknown,grid:unknown;try{pins=JSON.parse(calendars);grid=JSON.parse(dates);}catch{throw new Error('Calendar pins and decision dates must be JSON arrays.');}
       if(!Array.isArray(grid)||grid.length<14||grid.length>133||grid.some(d=>typeof d!=='string'))throw new Error('Supply 14–133 ordered UTC decision dates, including the 13-date signal history.');
-      const payload={studyId:source.id,planSha256:source.planSha256,selectionSha256:source.selectionReportSha256,costScenario:scenario,datasetSha256:dataset,calendars:pins,firstDecisionAt:grid[12],decisions:grid};
+      // Omit actionMode entirely unless explicitly opted in, so legacy requests keep their exact bytes.
+      const payload={studyId:source.id,planSha256:source.planSha256,selectionSha256:source.selectionReportSha256,costScenario:scenario,datasetSha256:dataset,calendars:pins,firstDecisionAt:grid[12],decisions:grid,...(splits&&pureSplitsAvailable?{actionMode:'pure-splits-v1'}:{})};
       const account=await api<Account>('/api/research/raw-paper-accounts',{requestId:requestId(JSON.stringify(payload)),...payload});
       await refresh();await inspect(account);onUpdated();
     }catch(e){error=e instanceof Error?e.message:'Account creation failed.';}finally{busy=false;}
@@ -77,66 +102,130 @@
     try{
       const payload={expectedReceiptSha256:account.headReceiptSha256??null,replaySha256:replaySha};
       const operation=await api<Operation>(`/api/research/raw-paper-accounts/${account.id}/advance`,{requestId:requestId(account.id+JSON.stringify(payload)),...payload});
-      await refresh();if(wanted===account.id&&selected)await inspect(selected);onUpdated();
+      prepared=null;await refresh();if(wanted===account.id&&selected)await inspect(selected);onUpdated();
       if(operation.errorCode)error=messages[operation.errorCode]??operation.errorCode;
     }catch(e){error=e instanceof Error?e.message:'Batch unavailable.';}finally{busy=false;}
   }
   async function stop(){
-    if(!selected)return;const id=selected.id;busy=true;error='';
+    if(!selected||!confirm('Stop this paper account? It will accept no further batches. Balances and attempts are kept.'))return;
+    const id=selected.id;busy=true;error='';
     try{await api(`/api/research/raw-paper-accounts/${id}/stop`,{});prepared=null;await refresh();onUpdated();}
     catch(e){error=e instanceof Error?e.message:'Stop failed.';}finally{busy=false;}
   }
-  onMount(()=>{void refresh().catch(e=>error=e.message);return()=>{revision++;};});
+  onMount(()=>{void refresh().catch(e=>{error=e.message;ready=true;});return()=>{revision++;};});
 </script>
-<section class="panel lab-results" aria-labelledby="raw-paper-title">
-  <div class="panel-heading"><div><p class="eyebrow">INDEPENDENT RAW PAPER LEDGERS</p><h2 id="raw-paper-title">Authored paper batches</h2></div><span class="badge">ENGINEERING REHEARSAL</span></div>
-  <p>Rehearse new raw-share fills and GBP cash from an empty ledger using a frozen candidate. These accounts use authored inputs and complete offline batches. Corporate actions, pending claims, asynchronous or partial fills and genuine forward evaluation remain unsupported.</p>
-  {#if source}
-    <details><summary>Create an authored account from {source.name}</summary>
-      <p class="dataset-note">Candidate {source.selectedCandidateId}; monthly deposit {money(source.monthlyGbp)}; the selected base/stress execution policy stays fixed. Supply a separate authored dataset, reviewed calendar pins and the complete date grid. All history must follow the source’s reserved window. One account per study/cost scenario; stopping or failure retains the account and attempts.</p>
-      <form onsubmit={e=>{e.preventDefault();void create();}}><fieldset disabled={busy}>
-        <label>Paper dataset SHA-256<input bind:value={dataset} pattern={'[0-9a-f]{64}'} minlength="64" maxlength="64" required spellcheck="false"/></label>
-        <label>Frozen paper costs<select bind:value={scenario}><option value="base">Base costs</option><option value="stress">Stressed costs</option></select></label>
-        <label>Paper calendar pins (JSON array)<textarea bind:value={calendars} rows="3" maxlength="6000" required spellcheck="false"></textarea></label>
-        <label>Frozen UTC decision dates (JSON array)<textarea bind:value={dates} rows="4" maxlength="6000" required spellcheck="false"></textarea></label>
-        <button class="secondary" disabled={busy}>Create empty authored account</button>
-      </fieldset></form>
-    </details>
-  {:else}<p class="dataset-note">Open a current authored study with a frozen development candidate to create an account. Existing accounts remain inspectable below.</p>{/if}
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
-  {#if ready&&!accounts.length}<p class="dataset-note">No raw paper accounts are recorded. Existing model paper accounts use their separate simulator.</p>{/if}
-  {#if accounts.length}<div class="table-scroll"><table><caption>All retained raw paper accounts</caption><thead><tr><th>Source study</th><th>Candidate / costs</th><th>Status</th><th>Periods</th><th>Contributions</th><th>Inspect</th></tr></thead><tbody>{#each accounts as account}<tr><td>{account.studyId.slice(0,8)}</td><td>{account.candidateId} · {account.costScenario}</td><td>{account.status}</td><td>{account.acceptedPeriods}</td><td>{money(account.balance.contributionsGbp)}</td><td><button class="secondary small-button" disabled={busy} onclick={()=>void inspect(account)} aria-label={`Inspect raw paper ${account.id.slice(0,8)}`}>Open</button></td></tr>{/each}</tbody></table></div>{/if}
-  {#if selected}
-    <h3>Raw paper account · {selected.id.slice(0,8)}</h3>
-    <p>Candidate {selected.candidateId} · {selected.costScenario} costs · source study {selected.studyId.slice(0,8)}. Marked equity {money(selected.balance.equityGbp)}{selected.balance.valuedAt?` at ${stamp(selected.balance.valuedAt)}`:''}. Accepted cash {money(selected.balance.cashGbp)} · contributions {money(selected.balance.contributionsGbp)} · booked fees {money(selected.balance.feesGbp)}. {selected.acceptedPeriods} accepted periods; {selected.attempts} retained attempts.</p>
-    <div class="table-scroll"><table><caption>Delivered holdings from accepted fills</caption><thead><tr><th>Listing</th><th>Raw quantity</th></tr></thead><tbody>{#each Object.entries(selected.balance.holdings) as [id,holding]}<tr><td>{id}</td><td>{holding.quantity}</td></tr>{/each}</tbody></table></div>
-    <details><summary>Frozen paper policy and original bindings</summary><p class="proof">Source study <code>{selected.studyId}</code><br/>Frozen plan <code>{selected.planSha256}</code><br/>Frozen selection <code>{selected.selectionSha256}</code><br/>Dataset <code>{selected.policy.datasetSha256}</code><br/>Scientific build <code>{selected.codeSha256}</code><br/>Accepted head <code>{selected.headReceiptSha256??'No accepted batch'}</code></p><pre>{JSON.stringify(selected.policy.execution,null,2)}</pre><p class="dataset-note">{selected.policy.decisions.length} frozen history/decision dates; first deposit {stamp(selected.policy.firstDecisionAt)}. Receipts retain the full original decimal accounting.</p></details>
-    {#if selected.codeSha256!==currentCode}<p class="dataset-note">This account belongs to an older or unavailable scientific build. Its receipts and accepted state remain inspectable.</p>{/if}
-    {#if (selected.status==='ready'||selected.status==='active')&&currentCode===selected.codeSha256}
-      {#if preparationAvailable}
-        <p class="dataset-note">Prepare one next batch using the frozen candidate and retained authored inputs. Preparation checks the cumulative replay and leaves accepted balances unchanged. Apply it separately to record the batch.</p>
-        <button class="secondary" disabled={busy} onclick={()=>void prepare()}>Prepare next authored batch</button>
-        {#if prepared}
-          <h4>Projected batch {prepared.period} · awaiting application</h4>
-          <p>{stamp(prepared.decisionAt)} to {stamp(prepared.nextDecisionAt)}. Projected closing equity {money(prepared.projectedBalance.equityGbp)}, cash {money(prepared.projectedBalance.cashGbp)}, cumulative contributions {money(prepared.projectedBalance.contributionsGbp)} and booked fees {money(prepared.projectedBalance.feesGbp)}.</p>
-          <p class="proof">Prepared replay <code>{prepared.replaySha256}</code> · {prepared.replayBytes} bytes.</p>
-          <button class="secondary" disabled={busy} onclick={()=>void advance()}>Apply prepared batch</button>
+
+{#if standalone}
+  <div class="page-head"><h1>Paper accounts</h1><button class="secondary small-button" disabled={busy} onclick={()=>void refresh().catch(e=>error=e.message)}>Refresh</button></div>
+{:else}
+  <div class="panel-heading"><h2>Paper accounts</h2></div>
+{/if}
+{#if error}<p class="error" role="alert">{error}</p>{/if}
+{#if !ready}<p class="loading" role="status">Loading paper accounts…</p>{/if}
+{#if ready&&!accounts.length}<section class="panel empty"><h3>No paper accounts</h3><p>Create one below from a study with a frozen candidate.</p></section>{/if}
+
+{#if accounts.length}
+  <div class="accts" role="group" aria-label="Paper accounts">
+    {#each accounts as account}
+      <button class="acct" aria-pressed={selected?.id===account.id} disabled={busy} onclick={()=>void inspect(account)}>
+        <span class="row"><strong>{name(account)} · {account.costScenario} costs</strong><span class="badge">{statusLabel[account.status]??account.status}</span></span>
+        <span class="num">{money(account.balance.equityGbp)}</span>
+        <span class="muted">{account.acceptedPeriods} {account.acceptedPeriods===1?'period':'periods'} · {modeLabel(account)}</span>
+      </button>
+    {/each}
+  </div>
+{/if}
+
+{#if selected}
+  {@const a=selected}
+  <div class="paper">
+    <div class="col">
+      <section class="panel" aria-labelledby="paper-balance-title">
+        <div class="panel-heading"><h2 id="paper-balance-title">{name(a)} · {a.costScenario} costs</h2><span class="pill sim"><span class="d"></span>Paper · {modeLabel(a)}</span></div>
+        <div class="big"><b>{money(a.balance.equityGbp)}</b><span class="muted">{a.balance.valuedAt?`at ${day(a.balance.valuedAt)}`:'not yet valued'}</span></div>
+        <div class="kvs"><div class="kv"><span>Contributed</span><b>{money(a.balance.contributionsGbp)}</b></div><div class="kv"><span>Cash</span><b>{money(a.balance.cashGbp)}</b></div><div class="kv"><span>Fees</span><b>{money(a.balance.feesGbp)}</b></div><div class="kv"><span>Accepted</span><b>{a.acceptedPeriods} {a.acceptedPeriods===1?'period':'periods'}</b></div></div>
+        <h3>Holdings</h3>
+        {#if Object.keys(a.balance.holdings).length}
+          <div class="table-scroll"><table class="stack"><thead><tr><th>Listing</th><th>Shares</th><th>Quoted in</th></tr></thead><tbody>{#each Object.entries(a.balance.holdings) as [id,holding]}<tr><td><strong>{id}</strong></td><td data-label="Shares">{holding.quantity}</td><td data-label="Quoted in">{holding.denomination?`${holding.denomination.currency}${holding.denomination.unit==='major'?'':` (${holding.denomination.unit})`}`:'—'}</td></tr>{/each}</tbody></table></div>
+        {:else}<p class="dataset-note">No shares yet.</p>{/if}
+      </section>
+      <section class="panel" aria-labelledby="paper-attempts-title">
+        <h2 id="paper-attempts-title">Batches</h2>
+        {#if operations.length}
+          <div class="table-scroll"><table class="stack"><thead><tr><th>Recorded</th><th>Result</th><th>Receipt</th></tr></thead><tbody>{#each operations as operation}<tr><td>{stamp(operation.startedAt)}</td><td data-label="Result" class:loss={!!operation.errorCode}>{statusLabel[operation.status]??operation.status}{#if operation.errorCode}<small>{messages[operation.errorCode]??operation.errorCode}</small>{/if}</td><td data-label="Receipt">{#if operation.status==='succeeded'}<a class="text-link" href={`/api/research/raw-paper-operations/${operation.id}/receipt`} download={`paper-receipt-${operation.id}.json`}>Download</a>{:else}—{/if}</td></tr>{/each}</tbody></table></div>
+        {:else}<p class="dataset-note">No batches yet.</p>{/if}
+      </section>
+    </div>
+    <div class="col">
+      <section class="panel" aria-labelledby="paper-next-title">
+        <h2 id="paper-next-title">Next batch</h2>
+        {#if !known(a)}<p class="dataset-note">This account uses an unsupported mode. It is read-only.</p>
+        {:else if a.codeSha256!==currentCode}<p class="dataset-note">Created with an older build. Read-only.</p>
+        {:else if !['ready','active'].includes(a.status)}<p class="dataset-note">This account is {statusLabel[a.status]?.toLowerCase()??a.status} and accepts no more batches.</p>{/if}
+        {#if writable(a)&&preparationAvailable}
+          <p class="dataset-note">Prepare previews the next month. Nothing changes until you apply it.</p>
+          <button class="secondary" disabled={busy} onclick={()=>void prepare()}>{busy&&!prepared?'Preparing…':'Prepare next batch'}</button>
+          {#if prepared}
+            <div class="proj" aria-live="polite">
+              <h3>Projected batch {prepared.period} · Not yet applied</h3>
+              <p class="dataset-note">{day(prepared.decisionAt)} to {day(prepared.nextDecisionAt)}</p>
+              <dl><dt>Equity</dt><dd>{money(prepared.projectedBalance.equityGbp)}</dd><dt>Cash</dt><dd>{money(prepared.projectedBalance.cashGbp)}</dd><dt>Contributed</dt><dd>{money(prepared.projectedBalance.contributionsGbp)}</dd><dt>Fees</dt><dd>{money(prepared.projectedBalance.feesGbp)}</dd>
+                {#each Object.entries(prepared.projectedBalance.holdings) as [id,holding]}<dt>{id} shares</dt><dd>{holding.quantity}</dd>{/each}</dl>
+              <button disabled={busy} onclick={()=>void advance()}>{busy?'Applying…':'Apply batch'}</button>
+            </div>
+          {/if}
         {/if}
-      {/if}
-      <details><summary>Apply a manually prepared replay</summary>
-      <p class="dataset-note">Supply the cumulative replay in the server inbox as &lt;SHA&gt;.raw-paper.json. It must retain the exact earlier event sequence and add one complete batch on this account’s date grid. A refused admitted attempt stops further batches and retains the earlier accepted balance.</p>
-      <form onsubmit={e=>{e.preventDefault();void advance();}}><label>Prepared cumulative paper replay SHA-256<input bind:value={replaySha} oninput={()=>prepared=null} pattern={'[0-9a-f]{64}'} minlength="64" maxlength="64" required disabled={busy} spellcheck="false"/></label><button class="secondary" disabled={busy}>{busy?'Checking batch…':'Apply one complete paper batch'}</button></form>
+        {#if a.status==='ready'||a.status==='active'}{#if known(a)}<div class="actions"><button class="secondary small-button" disabled={busy} onclick={()=>void stop()}>Stop account</button></div>{/if}{/if}
+      </section>
+      <details class="panel">
+        <summary>Account details</summary>
+        <dl class="capabilities">
+          <div><dt>Corporate actions</dt><dd>{modeLabel(a)}</dd></div>
+          <div><dt>Candidate</dt><dd>{a.candidateId}</dd></div>
+          <div><dt>Decision dates</dt><dd>{a.policy.decisions.length}, first deposit {day(a.policy.firstDecisionAt)}</dd></div>
+          <div><dt>Attempts</dt><dd>{a.attempts}</dd></div>
+        </dl>
+        {#if support}
+          <p class="eyebrow">Server action support</p>
+          <div class="matrix">
+            {#each [['Stock splits',support.pureSplits],['Dividends',support.dividends],['Delistings / terminal proceeds',support.terminals],['Pending claims',support.pendingClaims]] as [label,ok]}<div><span>{label}</span><span class:gain={ok===true} class:muted={ok!==true}>{ok===true?'Supported':'Not supported'}</span></div>{/each}
+          </div>
+        {/if}
+        <p class="proof">version {a.version}{a.policy.actionMode?` · mode ${a.policy.actionMode}`:''}<br/>account {a.id}<br/>study {a.studyId}<br/>plan {a.planSha256}<br/>selection {a.selectionSha256}<br/>dataset {a.policy.datasetSha256}<br/>build {a.codeSha256}<br/>head {a.headReceiptSha256??'none'}{#if prepared}<br/>prepared replay {prepared.replaySha256} · {prepared.replayBytes} bytes{/if}</p>
+        <pre>{JSON.stringify(a.policy.execution,null,2)}</pre>
+        {#if writable(a)}
+          <details><summary>Apply a manually prepared replay</summary>
+            <p class="dataset-note">Place the cumulative replay in the server inbox as &lt;SHA&gt;.raw-paper.json. It must keep every earlier event and add one complete batch.</p>
+            <form onsubmit={e=>{e.preventDefault();void advance();}}><label>Replay SHA-256<input bind:value={replaySha} oninput={()=>prepared=null} pattern={'[0-9a-f]{64}'} minlength="64" maxlength="64" required disabled={busy} spellcheck="false"/></label><div class="actions"><button class="secondary" disabled={busy}>Apply replay</button></div></form>
+          </details>
+        {/if}
       </details>
-    {/if}
-    {#if selected.status==='ready'||selected.status==='active'}<button class="secondary" disabled={busy} onclick={()=>void stop()}>Stop future paper batches</button>{/if}
-    <div class="table-scroll"><table><caption>Immutable attempts; uncommitted fills do not change accepted balances</caption><thead><tr><th>Recorded UTC</th><th>Status / refusal</th><th>Evidence</th></tr></thead><tbody>{#each operations as operation}<tr><td>{stamp(operation.startedAt)}</td><td>{operation.status}{operation.errorCode?` · ${operation.errorCode}`:''}</td><td>{#if operation.status==='succeeded'}<a class="text-link" href={`/api/research/raw-paper-operations/${operation.id}/receipt`} target="_blank" rel="noreferrer">Original receipt ↗</a>{/if}</td></tr>{/each}</tbody></table></div>
+    </div>
+  </div>
+{/if}
+
+<details class="panel">
+  <summary>New paper account</summary>
+  {#if source}
+    <form onsubmit={e=>{e.preventDefault();void create();}}><fieldset disabled={busy}>
+      {#if sources.length>1}<label>Study<select bind:value={sourceId}>{#each sources as s}<option value={s.id}>{s.name}</option>{/each}</select></label>{/if}
+      <p class="dataset-note">{source.name} · candidate {source.selectedCandidateId} · {money(source.monthlyGbp)} a month. One account per study and cost level.</p>
+      <label>Costs<select bind:value={scenario}><option value="base">Base costs</option><option value="stress">Stressed costs</option></select></label>
+      <label>Dataset SHA-256<input bind:value={dataset} pattern={'[0-9a-f]{64}'} minlength="64" maxlength="64" required spellcheck="false"/></label>
+      <label>Calendar pins (JSON)<textarea bind:value={calendars} rows="3" maxlength="6000" required spellcheck="false"></textarea></label>
+      <label>Decision dates (JSON)<textarea bind:value={dates} rows="4" maxlength="6000" required spellcheck="false"></textarea></label>
+      {#if pureSplitsAvailable}
+        <label class="check"><input type="checkbox" bind:checked={splits}/><span>Process authored stock splits<small>Fixed permanently when the account is created. Dividends, delistings and pending claims are not supported.</small></span></label>
+      {/if}
+      <div class="actions"><button disabled={busy}>Create account</button></div>
+    </fieldset></form>
+  {:else}
+    <p class="dataset-note">Needs a current authored study with a frozen candidate. Prepare one in <a class="text-link" href="#research">Research</a>.</p>
   {/if}
-</section>
+</details>
+
 <style>
-  form,fieldset {display:block;min-width:0;border:0;padding:0;margin:16px 0}
-  label {display:block;min-width:0;font-size:14px;margin:12px 0}
-  input,select,textarea {display:block;width:100%;min-width:0;box-sizing:border-box;border:1px solid #cbd7e1;border-radius:5px;padding:10px;background:white;font:inherit;color:var(--navy);margin-top:7px}
+  form,fieldset {display:grid;gap:12px;min-width:0;border:0;padding:0;margin:12px 0 0}
   textarea {resize:vertical}
-  form button {margin:8px 0}
-  .proof,pre {overflow-wrap:anywhere;white-space:pre-wrap;font-size:12px}
+  details.panel > summary {font-weight:600;color:var(--text)}
 </style>

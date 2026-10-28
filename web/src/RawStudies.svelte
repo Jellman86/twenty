@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import SearchDiagnostics from './SearchDiagnostics.svelte';
   import RawStudyPlan from './RawStudyPlan.svelte';
-  import RawPaperAccounts from './RawPaperAccounts.svelte';
   let { onUpdated = () => {} }: { onUpdated?: () => void } = $props();
   type Candidate = { id:string; config:{topK:number;maximumWeight:number} };
   type Study = { id:string;name:string;status:string;planSha256:string;errorCode?:string;developmentTrialIds:string[];
@@ -162,14 +161,14 @@
   {/if}
   <a class="text-link" href="https://github.com/Jellman86/twenty/blob/dev/docs/raw-study-admission.md" target="_blank" rel="noreferrer">Prepared plan and input workflow ↗</a>
 </section>
-<RawPaperAccounts {currentCode} onUpdated={onUpdated} source={selected&&selected.plan.synthetic&&!historical&&selected.selectionReportSha256&&selected.selectedCandidateId&&['candidate-frozen','engineering-complete'].includes(selected.status)?{id:selected.id,name:selected.name,planSha256:selected.planSha256,selectionReportSha256:selected.selectionReportSha256,selectedCandidateId:selected.selectedCandidateId,monthlyGbp:selected.plan.monthlyGbp}:null}/>
+<p class="dataset-note">Paper accounts for frozen candidates are in <a class="text-link" href="#paper">Paper accounts</a>.</p>
 {#if trial&&selected&&selected.developmentTrialIds.includes(trial.id)&&trial.status==='succeeded'}{#key trial.id}<SearchDiagnostics anchorRunId={trial.id} family="raw"/>{/key}{/if}
 
 <style>
   form label {min-width:0}
-  form input {display:block;width:100%;min-width:0;height:42px;border:1px solid #cbd7e1;border-radius:5px;padding:0 10px;background:white;font:inherit;color:var(--navy);margin-top:7px}
+  form input {display:block;width:100%;min-width:0;height:42px;border:1px solid var(--line2);border-radius:10px;padding:0 10px;background:var(--ink0);font:inherit;color:var(--text);margin-top:7px}
   .raw-controls,.raw-links {display:flex;flex-wrap:wrap;gap:12px;margin:16px 0}
-  .raw-final {border:1px solid #d2ac62;padding:16px;margin:20px 0;border-radius:5px}
+  .raw-final {border:1px solid rgba(233,194,122,.5);padding:16px;margin:20px 0;border-radius:5px}
   .raw-final label {display:flex;align-items:flex-start;gap:10px;margin-bottom:14px}
   .raw-final input {flex-shrink:0;margin-top:4px}
   td button {display:block;margin-top:8px}

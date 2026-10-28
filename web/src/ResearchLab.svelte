@@ -56,7 +56,7 @@
   });
 </script>
 
-<div class="page-heading"><div><p class="eyebrow">SPECULATIVE GROWTH RESEARCH</p><h1>Find the upside.<br/><em>Measure what can go wrong.</em></h1><p class="intro">Train a model. Test its stock choices. Compare concentration and costs.<br/>Every attempt stays in the experiment record.</p></div><div class="mode-stamp"><span>WORKING RESEARCH LAB</span><strong>Native CPU<br/>model training</strong><small>Backtest accounting: simulation</small></div></div>
+
 <div class="lab-layout">
 <section class="panel lab-config" aria-labelledby="experiment-title"><p class="eyebrow">NEW EXPERIMENT</p><h2 id="experiment-title">Put a hypothesis to work.</h2>
 <form onsubmit={(e)=>{e.preventDefault();void start();}}>

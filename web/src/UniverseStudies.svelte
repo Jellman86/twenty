@@ -143,5 +143,5 @@
 
 <style>
   form label { min-width: 0; }
-  input, select { display: block; width: 100%; min-width: 0; height: 42px; border: 1px solid #cbd7e1; border-radius: 5px; padding: 0 10px; background: white; font: inherit; color: var(--navy); margin-top: 7px; }
+  input, select { display: block; width: 100%; min-width: 0; height: 42px; border: 1px solid var(--line2); border-radius: 10px; padding: 0 10px; background: var(--ink0); font: inherit; color: var(--text); margin-top: 7px; }
 </style>

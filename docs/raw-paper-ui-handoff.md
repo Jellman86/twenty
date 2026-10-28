@@ -27,3 +27,9 @@ The subsequent [shared quote-unit guard](raw-price-share-units.md) changes Core 
 5. Keep production research registers unchanged. No genuine holdout, vendor/broker call, live trading or production-authored experiment is authorised as incidental UI testing.
 
 The original no-action hand calculation remains £19.75 / £39.50 equity after one/two £20 deposits and £0.25 per-fill fees. With one authored 2:1 split and raw price USD 100 → USD 50, the same equities correspond to 0.49375 / 0.9875 shares. These are accounting fixtures, not returns evidence. Backend source-bound tests and actual API receipts are recorded under `paper-splits-20261028` outside Git. A draft UI patch is retained there only as a reference, not as accepted UI work.
+
+## Operational UI, 28 October 2026
+
+The web app now lands on Portfolio and has a top navigation: Portfolio, Activity, Orders, Paper accounts, Research and Settings. Old `#workbench`, `#roadmap`, `#evidence` and `#execution` links still resolve. Paper accounts (`#paper`) consume the contract above: split opt-in only when `pureSplitsAvailable`, `actionMode` omitted otherwise, projected preparation shown separately from accepted balances, unknown modes and older builds read-only, receipts as explicit downloads, and identity hashes inside a collapsed details panel.
+
+`scripts/ui_workflow_check.py` drives the rendered app with Playwright against a private loopback fixture copy. Broker, journal and simulated-ledger responses in it are synthetic intercepted fixtures; raw paper checks use the real backend.
