@@ -230,6 +230,12 @@ def main() -> int:
             heading = page.locator("main h1").first.inner_text()
             expected = {"#workbench": "Scenarios", "#roadmap": "Roadmap", "#evidence": "Evidence"}.get(old, "Portfolio")
             checks.run(f"deep link '{old or '/'}' resolves", lambda: (heading == expected, heading))
+        # A hash navigation reuses ResearchExtras; mounting directly at Scenarios
+        # alone would miss a page that stays stuck calculating after changing tabs.
+        page.goto(args.base + "/#evidence")
+        page.wait_for_selector("main h1:has-text('Evidence')", timeout=5000)
+        page.get_by_role("navigation", name="Research", exact=True).get_by_role("link", name="Scenarios").click()
+        checks.run("research tab navigation loads the contribution scenario", lambda: (page.wait_for_selector(".scenario-summary", timeout=5000) is not None, None))
         page.close()
 
         page = new_page(1280)

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { untrack } from 'svelte';
   let { view }: { view: string } = $props();
   type Point = { year: number; contributions: number; balance: number };
   type Scenario = { assumptions: { monthly: number; years: number; annualReturn: number; target: number }; points: Point[]; requiredAnnualReturn: number | null };
@@ -9,6 +9,7 @@
   let monthly = $state(20), years = $state(30), annualPercent = $state(7);
   let result = $state<Scenario | null>(null), busy = $state(false), error = $state('');
   let issues = $state<Issue[]>([]), roadmapError = $state(false), roadmapLoaded = false;
+  let scenarioLoaded = $state(false);
   const final = $derived(result?.points.at(-1));
   const max = $derived(Math.max(1, ...(result?.points.flatMap((p) => [p.balance, p.contributions]) ?? [1])));
   const plot = (key: 'balance' | 'contributions') =>
@@ -37,7 +38,12 @@
       fetch('/api/roadmap').then((r) => { if (!r.ok) throw new Error(); return r.json(); }).then((data) => (issues = data)).catch(() => (roadmapError = true));
     }
   });
-  onMount(() => { if (view === 'workbench') void calculate(); });
+  $effect(() => {
+    if (view === 'workbench' && !scenarioLoaded) {
+      scenarioLoaded = true;
+      untrack(() => void calculate());
+    }
+  });
 </script>
 
 {#if view === 'workbench'}

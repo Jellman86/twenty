@@ -6,6 +6,8 @@ Activity reads the existing broker and simulated journals. Orders retains the ex
 
 Opus implemented `5c8e106`. Parent review added a visible two-row navigation on phones and kept cancellation/reconciliation phases visible when an order has earlier partial fills. Unfilled cancellation requests remain in the Open filter. These corrections change display only; no backend accounting, scientific identity, persisted format or execution authority changed.
 
+The Scenarios screen also initializes on navigation from another Research tab, rather than only when its shared component first mounts. The regression uses an actual Evidence → Scenarios click, so a page-heading-only check cannot pass while the calculation remains stuck loading.
+
 ## Verification
 
 Private evidence root: `/mnt/apps/developer/jellman86/artifacts/twenty/opus-operational-ui-20261028`.
@@ -15,7 +17,9 @@ Private evidence root: `/mnt/apps/developer/jellman86/artifacts/twenty/opus-oper
 - `ui-final/ui-checks.json`: Opus's 78 checks passed.
 - `parent-red/ui/ui-checks.json`: 80 passed / three failed before the review fixes: phone navigation clipped links, and partial fills masked cancellation/unknown phases.
 - `parent-green/ui/ui-checks.json`: 84 passed / zero failed after the fixes, including a further unfilled-cancellation regression. Screenshots cover the actual rendered Svelte app at 1280 and 390 pixels.
-- `parent-svelte-check.log` and `parent-svelte-build.log`: zero Svelte errors/warnings and a successful production build. Ruff and `git diff --check` passed.
+- `parent-routing-red/ui/ui-checks.json`: 84 passed / one failed before fixing the Evidence → Scenarios transition.
+- `parent-final-green/ui/ui-checks.json`: all 85 passed. `source-before.json`, `source-after.json` and `run.json` bind the frontend, served build assets and local backend binaries, unchanged throughout the workflow run.
+- `parent-final-svelte-check.log` and `parent-final-svelte-build.log`: zero Svelte errors/warnings and a successful production build. Ruff and `git diff --check` passed.
 
 The committed `scripts/ui_workflow_check.py` exercises company names, GBX versus USD quotes, GBP values, gain signs, managed shares, missing/empty/error states, navigation, read-only page loading, login and session expiry. Broker positions and journal responses are explicitly synthetic intercepted HTTP fixtures; no genuine broker was called.
 
