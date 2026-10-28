@@ -30,8 +30,9 @@
 
 <BrokerExecution />
 
-<section class="panel" aria-labelledby="sim-orders-title">
-  <div class="panel-heading"><h2 id="sim-orders-title">Simulated orders</h2><span class="pill sim"><span class="d"></span>Simulated money</span></div>
+<details class="panel" aria-labelledby="sim-orders-title">
+  <summary id="sim-orders-title">Simulated orders</summary>
+  <p class="dataset-note">Simulated money</p>
   <form class="signal-form" onsubmit={(e)=>{e.preventDefault();void rehearse();}}>
     <label>Strategy run<select bind:value={runId} required>{#each runs as r}<option value={r.id}>{r.config.hypothesis} · {r.datasetName}</option>{/each}</select></label>
     <label>Month<input type="month" bind:value={month} required min="2000-01" max="2200-12"/></label>
@@ -49,12 +50,12 @@
     {/if}
     <details><summary>How simulated orders work</summary><p class="dataset-note">Uses the last model targets of a completed run; it is not a current forecast. Shares round down, fees are reserved, and fills happen at the limit price. Reconciling twice cannot double-charge.</p>{#each account.decisions as decision}<p class="dataset-note"><strong>{decision.month}</strong> · signal {decision.signalDate} · {Object.entries(decision.weights).map(([symbol,weight])=>`${symbol} ${(weight*100).toFixed(1)}%`).join(' · ')||'All cash'}</p>{/each}</details>
   {/if}
-</section>
+</details>
 
-<section class="panel" aria-labelledby="broker-setup-title">
-  <div class="panel-heading"><h2 id="broker-setup-title">Broker connection</h2><span class="badge">{capabilities?.broker.mode??'…'}</span></div>
+<details class="panel" aria-labelledby="broker-setup-title">
+  <summary id="broker-setup-title">Broker connection</summary>
   <div class="lab-metrics"><div><span>Credentials</span><strong>{capabilities?(capabilities.broker.credentialsConfigured?'Configured':'Missing'):'…'}</strong></div><div><span>Automatic purchases</span><strong>{capabilities?.broker.automaticPurchases?'On':'Off'}</strong></div></div>
   <button class="secondary small-button" disabled={busy||!capabilities?.broker.credentialsConfigured} onclick={()=>void readBroker()}>Read account summary</button>
   {#if summary}<p class="dataset-note">{summary}</p>{/if}
   <details><summary>Still required before real automatic orders</summary><ul class="limitations">{#each capabilities?.broker.gates??[] as gate}<li>{gate}</li>{/each}</ul><a class="text-link" href="https://github.com/Jellman86/twenty/blob/dev/docs/trading212-setup.md" target="_blank" rel="noreferrer">Setup instructions ↗</a></details>
-</section>
+</details>

@@ -1,29 +1,28 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  // Read-only: this page only GETs the existing broker journal and simulated ledger.
+  import { brokerCompany, loadBrokerNames, openOrderStatuses, orderDisplayStatus, orderStatusLabels } from './broker-display';
+  import type { BrokerAccountRef, BrokerNames } from './broker-display';
+  // Read-only journals, with optional company names from the current portfolio.
   type Progress = { filled: number; debitGbp: number; remainingReserve: number; status: string };
-  type BrokerIntent = { id: string; batchId: string; phase: string; submittedAt?: string | null; errorCode: string | null; intent: { symbol: string; quantity: number; limitPrice: number; quoteCurrency: string }; progress: Progress };
+  type BrokerIntent = { id: string; batchId: string; phase: string; submittedAt?: string | null; errorCode: string | null; intent: { symbol: string; brokerTicker?: string; quantity: number; limitPrice: number; quoteCurrency: string }; progress: Progress };
   type BrokerAccount = { key: string; environment: string; account: string; batches: { id: string; month: string; createdAt: string }[]; intents: BrokerIntent[] };
   type PaperAccount = { id: string; runId: string; orders: { id: string; period: string; intent: { symbol: string; quantity: number; limitPrice: number }; progress: Progress }[] };
-  type Row = { id: string; when: string; sortKey: string; symbol: string; account: string; kind: 'live' | 'demo' | 'sim'; ordered: number; filled: number; amount: number; status: string; detail: string | null };
+  type Row = { id: string; when: string; sortKey: string; symbol: string; brokerTicker?: string; brokerAccount?: BrokerAccountRef; account: string; kind: 'live' | 'demo' | 'sim'; ordered: number; filled: number; amount: number; status: string; detail: string | null };
   let rows = $state<Row[]>([]);
   let loading = $state(true);
   let errors = $state<string[]>([]);
   let filter = $state<'all' | 'filled' | 'open'>('all');
-  const labels: Record<string, string> = {
-    planned: 'Planned', submitting: 'Submitting', pending: 'Open', partially_filled: 'Part filled', filled: 'Filled',
-    cancel_requested: 'Cancellation requested', cancelled: 'Cancelled', rejected: 'Rejected', expired: 'Expired', unknown: 'Needs check',
-  };
-  const open = new Set(['planned', 'submitting', 'pending', 'partially_filled', 'cancel_requested', 'unknown']);
+  let names = $state<BrokerNames | null>(null);
+  let nameRequest: AbortController | undefined;
   const money = (n: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(n);
   const shares = (n: number) => n.toLocaleString('en-GB', { maximumFractionDigits: 6 });
   const day = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-  // A prior fill must not hide an outstanding cancellation or a reconciliation problem.
-  // Only an ordinary pending order uses progress to distinguish partial fills.
-  const brokerStatus = (i: BrokerIntent) => i.phase === 'pending' ? i.progress.status : i.phase;
-  const shown = $derived(rows.filter((r) => filter === 'all' || (filter === 'filled' ? r.filled > 0 : open.has(r.status))));
+  const shown = $derived(rows.filter((r) => filter === 'all' || (filter === 'filled' ? r.filled > 0 : openOrderStatuses.has(r.status))));
   async function load() {
     loading = true;
+    nameRequest?.abort();
+    const request = nameRequest = new AbortController();
+    names = null;
     const failed: string[] = [];
     const next: Row[] = [];
     const [broker, paper] = await Promise.allSettled([
@@ -36,9 +35,10 @@
         for (const i of a.intents) {
           const batch = batches.get(i.batchId);
           const at = i.submittedAt ?? batch?.createdAt ?? '';
-          next.push({ id: i.id, when: at ? day(at) : batch?.month ?? '—', sortKey: at || batch?.month || '', symbol: i.intent.symbol,
+          next.push({ id: i.id, when: at ? day(at) : batch?.month ?? '—', sortKey: at || batch?.month || '', symbol: i.intent.symbol, brokerTicker: i.intent.brokerTicker,
+            brokerAccount: { environment: a.environment, account: a.account },
             account: `${a.environment === 'live' ? 'Live' : 'Demo'} ${a.account}`, kind: a.environment === 'live' ? 'live' : 'demo',
-            ordered: i.intent.quantity, filled: i.progress.filled, amount: i.progress.debitGbp, status: brokerStatus(i), detail: i.errorCode });
+            ordered: i.intent.quantity, filled: i.progress.filled, amount: i.progress.debitGbp, status: orderDisplayStatus(i), detail: i.errorCode });
         }
       }
     } else failed.push('broker orders');
@@ -53,8 +53,13 @@
     rows = next.sort((a, b) => b.sortKey.localeCompare(a.sortKey));
     errors = failed;
     loading = false;
+    if (next.some((r) => r.brokerAccount) && !request.signal.aborted) {
+      void loadBrokerNames(request.signal).then((result) => {
+        if (request === nameRequest && !request.signal.aborted) names = result;
+      });
+    }
   }
-  onMount(() => void load());
+  onMount(() => { void load(); return () => nameRequest?.abort(); });
 </script>
 
 <div class="page-head">
@@ -80,14 +85,15 @@
         <thead><tr><th>Stock</th><th>Date</th><th>Account</th><th>Shares</th><th>Filled</th><th>Paid</th><th>Status</th></tr></thead>
         <tbody>
           {#each shown as r (r.kind + r.id)}
+            {@const company = brokerCompany(names, r.brokerAccount, r)}
             <tr>
-              <td><strong>{r.symbol}</strong></td>
+              <td><strong>{company ?? r.symbol}</strong>{#if company}<small>{r.symbol}</small>{/if}</td>
               <td data-label="Date">{r.when}</td>
               <td data-label="Account"><span class="pill {r.kind}"><span class="d"></span>{r.account}</span></td>
               <td data-label="Shares">{shares(r.ordered)}</td>
               <td data-label="Filled">{shares(r.filled)}</td>
               <td data-label="Paid">{r.filled > 0 ? money(r.amount) : '—'}</td>
-              <td data-label="Status" class:loss={['rejected', 'unknown'].includes(r.status)}>{labels[r.status] ?? r.status}{#if r.detail}<small>{r.detail}</small>{/if}</td>
+              <td data-label="Status" class:loss={['rejected', 'unknown'].includes(r.status)}>{orderStatusLabels[r.status] ?? r.status}{#if r.detail}<small>{r.detail}</small>{/if}</td>
             </tr>
           {/each}
         </tbody>

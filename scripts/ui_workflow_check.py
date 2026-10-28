@@ -134,6 +134,12 @@ def text(page: Page) -> str:
     return page.locator("main").inner_text(timeout=5000)
 
 
+def company_names(page: Page, scope: str = "main") -> tuple[bool, object]:
+    area = page.locator(scope)
+    area.get_by_text("Lloyds Banking Group", exact=True).first.wait_for(timeout=5000)
+    return area.get_by_text("Apple Inc.", exact=True).count() == 1, None
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", required=True)
@@ -186,6 +192,8 @@ def main() -> int:
             page.get_by_text("LLOY").first.wait_for(timeout=5000)
             act = text(page)
             checks.run(f"{width}: activity lists fills and statuses", lambda: (all(s in act for s in ["LLOY", "Filled", "£19.28", "AAPL", "Open", "AAA"]), act[:600]))
+            checks.run(f"{width}: activity resolves broker tickers to company names", lambda: company_names(page))
+            checks.run(f"{width}: company names do not replace order symbols", lambda: (page.get_by_text("LLOY", exact=True).count() == 1 and page.get_by_text("AAPL", exact=True).count() == 1, None))
             checks.run(f"{width}: activity has no horizontal overflow", lambda: (no_overflow(page), None))
             page.screenshot(path=str(out / f"activity-{width}.png"), full_page=True)
 
@@ -193,6 +201,14 @@ def main() -> int:
                 page.goto(args.base + "/" + route)
                 page.wait_for_selector("main h1", timeout=8000)
                 page.wait_for_timeout(600)
+                if route == "#execution":
+                    checks.run(f"{width}: broker orders show company names", lambda: company_names(page, 'section[aria-labelledby="broker-ledger-title"]'))
+                    checks.run(f"{width}: advanced order tools start collapsed", lambda: (all(not page.get_by_role("button", name=n, exact=True).is_visible() for n in ["Record signal", "Create simulated orders", "Read account summary"]), None))
+                    for title, action in [("Signals", "Record signal"), ("Simulated orders", "Create simulated orders"), ("Broker connection", "Read account summary")]:
+                        toggle = page.locator("summary").filter(has_text=re.compile(f"^{re.escape(title)}$"))
+                        toggle.click()
+                        checks.run(f"{width}: {title} tools remain accessible", lambda: (page.get_by_role("button", name=action, exact=True).is_visible(), None))
+                        toggle.click()
                 checks.run(f"{width}: {route} has no horizontal overflow", lambda: (no_overflow(page), page.evaluate("document.documentElement.scrollWidth")))
                 checks.run(f"{width}: {route} nav marks current page", lambda: (page.locator("nav[aria-label=Main] a[aria-current=page]").count() == 1, None))
                 page.screenshot(path=str(out / f"route-{route[1:]}-{width}.png"), full_page=True)
@@ -215,12 +231,68 @@ def main() -> int:
         page.route("**/api/execution/paper", fulfil(SYNTHETIC_PAPER))
         page.goto(args.base + "/#activity")
         page.get_by_text("CHECK", exact=True).wait_for(timeout=5000)
-        checks.run("partial fill does not hide cancellation request", lambda: ("Cancellation requested" in page.locator("tr", has_text="LLOY").inner_text(), None))
+        checks.run("partial fill does not hide cancellation request", lambda: ("Cancellation requested" in page.locator("tr").filter(has=page.get_by_text("LLOY", exact=True)).inner_text(), None))
         checks.run("partial fill does not hide unknown order state", lambda: ("Needs check" in page.locator("tr", has_text="CHECK").inner_text(), None))
         page.get_by_role("button", name="Open", exact=True).click()
         checks.run("open activity includes cancellation and reconciliation", lambda: (page.get_by_text("LLOY", exact=True).count() == 1 and page.get_by_text("CHECK", exact=True).count() == 1, None))
         checks.run("unfilled cancellation remains in open activity", lambda: (page.get_by_text("AAPL", exact=True).count() == 1, None))
         page.screenshot(path=str(out / "activity-reconciliation-390.png"), full_page=True)
+        page.goto(args.base + "/#execution")
+        page.get_by_text("CHECK", exact=True).wait_for(timeout=5000)
+        checks.run("broker orders also label outstanding cancellations", lambda: ("Cancellation requested" in page.locator("tr").filter(has=page.get_by_text("LLOY", exact=True)).inner_text(), None))
+        checks.run("broker orders also label reconciliation problems", lambda: ("Needs check" in page.locator("tr", has_text="CHECK").inner_text(), None))
+        page.close()
+
+        for label, portfolio, status in [
+            ("lookup unavailable", None, 503),
+            ("different account", {**SYNTHETIC_PORTFOLIO, "broker": {**SYNTHETIC_PORTFOLIO["broker"], "account": "…9999"}}, 200),
+            ("different environment", {**SYNTHETIC_PORTFOLIO, "broker": {**SYNTHETIC_PORTFOLIO["broker"], "environment": "live"}}, 200),
+            ("logical symbol is not broker ticker", {**SYNTHETIC_PORTFOLIO, "broker": {**SYNTHETIC_PORTFOLIO["broker"], "holdings": [
+                {**SYNTHETIC_PORTFOLIO["broker"]["holdings"][0], "symbol": "AAPL"},
+                {**SYNTHETIC_PORTFOLIO["broker"]["holdings"][1], "symbol": "LLOY"},
+            ]}}, 200),
+            ("conflicting names for one broker ticker", {**SYNTHETIC_PORTFOLIO, "broker": {**SYNTHETIC_PORTFOLIO["broker"], "holdings": [
+                *SYNTHETIC_PORTFOLIO["broker"]["holdings"],
+                *[{**h, "name": "Conflicting company"} for h in SYNTHETIC_PORTFOLIO["broker"]["holdings"]],
+            ]}}, 200),
+        ]:
+            page = new_page(390)
+            mock_broker(page, portfolio, status)
+            page.goto(args.base + "/#activity")
+            page.get_by_text("LLOY", exact=True).wait_for(timeout=5000)
+            page.wait_for_timeout(400)
+            checks.run(f"company lookup {label}: orders stay visible with symbols", lambda: ("£19.28" in text(page) and "Apple Inc." not in text(page) and "Lloyds Banking Group" not in text(page), text(page)[:300]))
+            checks.run(f"company lookup {label}: no metadata failure hides the journal", lambda: (page.get_by_role("alert").count() == 0, None))
+            page.close()
+
+        page = new_page(390)
+        mock_broker(page)
+        # Leave the optional lookup pending until the page closes. Orders must
+        # render independently, rather than awaiting a broker position response.
+        held_names: list[Route] = []
+        page.route("**/api/portfolio", lambda r: held_names.append(r))
+        page.goto(args.base + "/#activity")
+        checks.run("slow company lookup never blocks order activity", lambda: (page.get_by_text("LLOY", exact=True).wait_for(timeout=3000) is None and "£19.28" in text(page), None))
+        for pending in held_names:
+            pending.abort()
+        page.wait_for_timeout(50)
+        page.close()
+
+        page = new_page(390)
+        held_orders: list[Route] = []
+        name_requests: list[str] = []
+        page.route("**/api/execution/broker", lambda r: held_orders.append(r))
+        page.route("**/api/execution/paper", fulfil(SYNTHETIC_PAPER))
+        page.route("**/api/portfolio", fulfil(SYNTHETIC_PORTFOLIO))
+        page.on("request", lambda r: name_requests.append(r.url) if r.url.endswith("/api/portfolio") else None)
+        with page.expect_request("**/api/execution/broker"):
+            page.goto(args.base + "/#execution")
+        page.goto(args.base + "/#paper")
+        page.wait_for_selector("main h1:has-text('Paper accounts')", timeout=5000)
+        for pending in held_orders:
+            pending.fulfill(status=200, content_type="application/json", body=json.dumps(SYNTHETIC_BROKER))
+        page.wait_for_timeout(300)
+        checks.run("leaving Orders stops late company lookups", lambda: (not name_requests, name_requests))
         page.close()
 
         page = new_page(1280)
