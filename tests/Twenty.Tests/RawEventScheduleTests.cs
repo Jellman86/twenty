@@ -77,11 +77,13 @@ public sealed partial class RawGbpLedgerTests
     {
         var inputs = new Dictionary<string, byte[]>(); var at = BuyAt.AddHours(1);
         var split = Split() with { EffectiveAt = at, Evidence = Known(at) };
-        var initial = ScheduleData(inputs, Market(BuyAt)); var changed = ScheduleData(inputs, Market(at, price: 50, actions: [split]));
+        // The post-split close is available two minutes later; mark only after that publication.
+        var markAt = at.AddMinutes(3);
+        var initial = ScheduleData(inputs, Market(BuyAt)); var changed = ScheduleData(inputs, Market(markAt, price: 50, actions: [split], priceCloseAt: at));
         var plan = new RawSchedulePlan(RawEventSchedule.Version, RawEventReplay.Version, RawReplayBuildIdentity.Current, Age.Ticks, Age.Ticks, FxPurpose.Executable,
             [new(new("opening", 0, initial), BuyAt, new RawReplayDeposit(300)),
              new(new("buy", 1, initial), BuyAt, new RawReplayAssumedFill("listing-a", 2, 100, PriceBasis.Raw, 0)),
-             new(new("closing", 1, changed), at, new RawReplayMark([], []))],
+             new(new("closing", 1, changed), markAt, new RawReplayMark([], []))],
             [new RawSplitSchedule(split.ListingId, split.ActionId, split.Id, new("split", 0, changed))]);
         var result = RunSchedule(plan, inputs);
         Assert.Equal(300, result.Marks[0].Valuation.ExpectedEquityGbp); Assert.Equal(4, result.Holdings["listing-a"].Quantity);
@@ -253,9 +255,10 @@ public sealed partial class RawGbpLedgerTests
     {
         var (plan, inputs) = ScheduleFixture(TerminalOutcome.Stock); var after = TerminalAt.AddDays(2);
         var split = Split() with { ListingId = "successor", EffectiveAt = after, Evidence = Known(after) };
-        var data = ScheduleData(inputs, TerminalMarket(after, Terminal(TerminalOutcome.Stock), ended: true, successorPrice: 40, extra: [Dividend(), split]));
+        var markAt = after.AddMinutes(3);
+        var data = ScheduleData(inputs, TerminalMarket(markAt, Terminal(TerminalOutcome.Stock), ended: true, successorPrice: 40, extra: [Dividend(), split], priceCloseAt: after));
         plan = plan with { Actions = plan.Actions.Add(new RawSplitSchedule("successor", split.ActionId, split.Id, new("successor-split", 0, data))),
-            Timeline = plan.Timeline.SetItem(0, plan.Timeline[0] with { At = after, Point = new("closing", 1, data) }) };
+            Timeline = plan.Timeline.SetItem(0, plan.Timeline[0] with { At = markAt, Point = new("closing", 1, data) }) };
         var result = RunSchedule(plan, inputs);
         Assert.Equal(6, result.Holdings["successor"].Quantity); Assert.Equal(321.55m, result.Marks[0].Valuation.ExpectedEquityGbp);
         Assert.Equal(3, result.TerminalEntitlements[0].SuccessorQuantity); Assert.Equal(2, result.DividendEntitlements[0].Quantity);

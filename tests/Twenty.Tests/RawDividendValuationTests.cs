@@ -118,7 +118,8 @@ public sealed partial class RawGbpLedgerTests
         var ledger = DividendBook(); var action = Dividend(); var at = BuyAt.AddHours(1);
         var market = Market(at, actions: [action]); ledger.CaptureDividend("claim", market, "listing-a", action.ActionId, EntitlementEvidence(action));
         ledger.Fill("sell", market, "listing-a", -1, 100, PriceBasis.Raw, 0, Age);
-        var split = Split(effectiveHours: 2); var next = Market(BuyAt.AddHours(2), price: 50, actions: [action, split]);
+        var split = Split(effectiveHours: 2);
+        var next = Market(split.EffectiveAt.AddMinutes(3), price: 50, actions: [action, split], priceCloseAt: split.EffectiveAt);
         ledger.ApplySplit("split", next, "listing-a", split.ActionId);
         var mark = ledger.ValueWithDividendReceivables(next, Age, Age, FxPurpose.Executable, [DividendMark(action)]);
         Assert.Equal(2, mark.DividendReceivables[0].Entitlement.Quantity); Assert.Equal(2, ledger.Holdings["listing-a"].Quantity);

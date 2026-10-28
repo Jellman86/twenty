@@ -227,7 +227,7 @@ public sealed partial class RawGbpLedgerTests
         var closing = payment;
         if (outcome == TerminalOutcome.Stock)
         {
-            closing = TerminalMarket(after, terminal, ended: true, successorPrice: 40, extra: [dividend, split]);
+            closing = TerminalMarket(after.AddMinutes(3), terminal, ended: true, successorPrice: 40, extra: [dividend, split], priceCloseAt: after);
             events.Add(new("split", events.Count, closing, new RawReplaySplit("successor", split.ActionId)));
         }
         events.Add(new("closing", events.Count, closing, new RawReplayMark([], [])));

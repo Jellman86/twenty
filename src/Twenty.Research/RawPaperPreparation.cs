@@ -133,7 +133,7 @@ public sealed partial class ResearchStore
         void CheckSplitPrices(DataSlice slice, IEnumerable<string> subjects)
         {
             var ids = subjects.ToHashSet(StringComparer.Ordinal);
-            foreach (var group in splits.Where(s => SplitBooking(s) <= slice.DecisionAt && ids.Contains(s.ListingId)).GroupBy(s => s.ListingId))
+            foreach (var group in splits.Where(s => s.SplitRatio != 1 && SplitBooking(s) <= slice.DecisionAt && ids.Contains(s.ListingId)).GroupBy(s => s.ListingId))
             {
                 token.ThrowIfCancellationRequested();
                 if ((work += slice.Observations.Length) > RawReplayArchive.MaximumEventObservationWork) throw new ResearchException("raw-replay-work");

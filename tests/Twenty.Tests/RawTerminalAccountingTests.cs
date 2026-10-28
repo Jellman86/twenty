@@ -20,10 +20,11 @@ public sealed partial class RawGbpLedgerTests
 
     private static DataSlice TerminalMarket(DateTimeOffset at, CorporateAction action, bool ended = false,
         Denomination? successorUnits = null, decimal successorPrice = 80, ImmutableArray<CorporateAction> extra = default,
-        ImmutableArray<FxRate> rates = default, Denomination? originalUnits = null, DateTimeOffset? successorStart = null)
+        ImmutableArray<FxRate> rates = default, Denomination? originalUnits = null, DateTimeOffset? successorStart = null,
+        DateTimeOffset? priceCloseAt = null)
     {
         var fixture = DatasetJson.Read(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "point-in-time.v1.json")));
-        var market = Market(at, originalUnits, fx: .75m, fxRates: rates);
+        var market = Market(at, originalUnits, fx: .75m, fxRates: rates, priceCloseAt: priceCloseAt);
         var rows = market.Observations.ToList(); var original = rows.OfType<Listing>().Single();
         if (ended)
         {

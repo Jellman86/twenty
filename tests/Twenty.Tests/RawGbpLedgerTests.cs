@@ -11,14 +11,15 @@ public sealed partial class RawGbpLedgerTests
     private static Evidence Known(DateTimeOffset at) => new("fixture-source", at, at, AvailabilityEvidence.ArchivedPublication, TimePrecision.Second, null, null);
     private static DataSlice Market(DateTimeOffset at, Denomination? denomination = null, decimal price = 100m,
         decimal fx = .8m, FxPurpose purpose = FxPurpose.Executable, bool adjustedOnly = false,
-        bool reverseFx = false, int fxAgeDays = 0, int priceAgeDays = 0, bool futureFx = false, bool split = false, ImmutableArray<CorporateAction> actions = default, ImmutableArray<FxRate> fxRates = default)
+        bool reverseFx = false, int fxAgeDays = 0, int priceAgeDays = 0, bool futureFx = false, bool split = false, ImmutableArray<CorporateAction> actions = default, ImmutableArray<FxRate> fxRates = default,
+        DateTimeOffset? priceCloseAt = null)
     {
         var fixture = DatasetJson.Read(File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "point-in-time.v1.json")));
         var units = denomination ?? new("USD", QuoteUnit.Major);
         var start = BuyAt.AddDays(-1);
         var listing = fixture.Observations.OfType<Listing>().First() with { Evidence = Known(start), EffectiveFrom = start,
             EffectiveUntil = null, Denomination = units, Status = ListingStatus.Active };
-        var close = new DateTimeOffset(at.UtcDateTime.Date, TimeSpan.Zero).AddHours(16).AddMinutes(30).AddDays(-priceAgeDays);
+        var close = priceCloseAt ?? new DateTimeOffset(at.UtcDateTime.Date, TimeSpan.Zero).AddHours(16).AddMinutes(30).AddDays(-priceAgeDays);
         var observed = at.AddDays(-fxAgeDays).AddMinutes(futureFx ? 1 : -1);
         var rows = ImmutableArray.CreateBuilder<Observation>(); rows.Add(listing);
         rows.Add(new PriceBar("raw", Known(close.AddMinutes(2)), listing.ListingId, DateOnly.FromDateTime(close.UtcDateTime), close,

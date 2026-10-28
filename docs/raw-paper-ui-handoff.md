@@ -12,9 +12,11 @@ Owner direction, 28 October 2026: another agent will own the UI work; this check
 
 ## Errors and truthful scope
 
-Show safe explanations for `raw-paper-actions-unsupported`, `raw-paper-split-vintage`, `raw-paper-split-ambiguous`, `raw-paper-action-during-batch`, `raw-paper-action-binding`, `raw-paper-split-price`, `raw-paper-action-history`, `raw-ledger-action-history` and `raw-paper-arithmetic`, alongside existing busy/quota/head/input/status codes. A preparation refusal admits no attempt. An admitted apply failure retains an immutable failed attempt and stops future batches, preserving accepted capital.
+Show safe explanations for `raw-paper-actions-unsupported`, `raw-paper-split-vintage`, `raw-paper-split-ambiguous`, `raw-paper-action-during-batch`, `raw-paper-action-binding`, `raw-paper-split-price`, `raw-price-share-units`, `raw-paper-action-history`, `raw-ledger-action-history` and `raw-paper-arithmetic`, alongside existing busy/quota/head/input/status codes. A preparation refusal admits no attempt. An admitted apply failure retains an immutable failed attempt and stops future batches, preserving accepted capital.
 
 The mode accepts only authored pure positive-ratio splits with a single original action vintage. Multiple equal effective or booking instants refuse. A split during the complete fill batch refuses. Valuation/target quotes must use post-split share units; a raw close before the known effective split refuses rather than creating a false gain. Dividends, terminal proceeds, pending claims, partial/asynchronous fills, genuine forward evaluation and broker execution remain unsupported.
+
+The subsequent [shared quote-unit guard](raw-price-share-units.md) changes Core identity as well as the earlier Research change. Use the final committed backend revision and generate fresh authored studies/accounts with that exact running build; do not silently resume a fixture frozen under the prior backend. Old bytes/retries are deliberately read-only. Neutral 1:1 splits do not change quote units. The API fields above remain unchanged by the shared guard.
 
 ## UI acceptance cases
 

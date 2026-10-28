@@ -90,6 +90,7 @@ public static class RawRebalancePlanner
                 if (price is null || market.DecisionAt - price.SessionCloseAt > maximumPriceAge)
                     throw new ResearchException("raw-rebalance-price");
                 if (price.Denomination != listing.Denomination) throw new ResearchException("raw-rebalance-units");
+                RawPriceShareUnits.Validate(market, price);
                 var fx = listing.Denomination.Currency == "GBP" ? null : market.Fx(listing.Denomination.Currency, "GBP", FxPurpose.Executable, maximumFxAge);
                 var unitValue = listing.Denomination.ToMajor(price.Close) * (fx?.QuoteUnitsPerBase ?? 1);
                 if (unitValue <= 0) throw new ResearchException("raw-rebalance-arithmetic");

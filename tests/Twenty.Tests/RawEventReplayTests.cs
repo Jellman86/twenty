@@ -119,7 +119,7 @@ public sealed partial class RawGbpLedgerTests
         var split = Split() with { ListingId = "successor", EffectiveAt = after, Evidence = Known(after) };
         var initial = Market(BuyAt); var exit = TerminalMarket(TerminalAt, terminal, ended: true);
         var delivered = TerminalMarket(paid, terminal, ended: true);
-        var splitMarket = TerminalMarket(after, terminal, ended: true, successorPrice: 40, extra: [split]);
+        var splitMarket = TerminalMarket(after.AddMinutes(3), terminal, ended: true, successorPrice: 40, extra: [split], priceCloseAt: after);
         RawReplayItem[] events =
         [
             new("cash", 0, initial, new RawReplayDeposit(300)),

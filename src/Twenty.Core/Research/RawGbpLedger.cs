@@ -197,6 +197,7 @@ public sealed partial class RawGbpLedger
             if (price is null || market.DecisionAt - price.SessionCloseAt > maximumPriceAge)
                 throw new ResearchException("raw-ledger-price");
             if (price.Denomination != position.Denomination) throw new ResearchException("raw-ledger-units");
+            RawPriceShareUnits.Validate(market, price);
             var (rate, fxId) = Conversion(market, position.Denomination.Currency, purpose, maximumFxAge);
             values.Add(new(id, position.Quantity, price.Id, fxId, price.Close, price.Denomination, rate,
                 position.Quantity * price.Denomination.ToMajor(price.Close) * rate));
