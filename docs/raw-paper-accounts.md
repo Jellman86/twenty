@@ -2,6 +2,8 @@
 
 Status: first scope implemented and [deployed with authored acceptance](raw-paper-deployment-2026-10-27.md). This is an independent persistent raw-share/GBP paper ledger, rather than playback of a study report or the existing model simulator. It deliberately supports authored inputs and complete offline batches only. Corporate actions, pending claims, asynchronous/partial fills, genuine forward evaluation and broker execution remain outside this scope. The initial-v1 paper gate remains partial.
 
+The subsequent [pure-split backend](raw-paper-splits.md) adds an explicitly frozen opt-in account version. Default no-action accounts retain this page's original contract. Dividend/terminal/pending-claim support remains unimplemented; the broader action boolean must be read with the new `actionSupport` matrix. Split UI integration and deployment await the [UI handoff](raw-paper-ui-handoff.md), as requested by the owner.
+
 ## Frozen account and independent capital
 
 `POST /api/research/raw-paper-accounts` binds a current authored study with a frozen development selection, its exact plan/selection hashes, one selected candidate and an explicit base/stress scenario. It reads the selection metadata and development bindings, never a final report. An account starts empty; no development/final balance or receipt is transferred. Only one account per study/scenario can ever be created, including after stopping or failure. Creation retries use the original UUID and return the retained account's current metadata without reading originals or reopening selection.

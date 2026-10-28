@@ -45,7 +45,9 @@ public static class ResearchModule
             var rawTrials = store.ListRawTrials().Count;
             return new { total = modelTrials + universeTrials + rawTrials, modelTrials, universeTrials, rawTrials, displayedLimit = 100 };
         });
-        api.MapGet("/raw-paper-accounts", () => Results.Json(new { authoredOnly=true, corporateActions=false, asynchronousFills=false, preparationAvailable=true, accounts=store.RawPaperAccounts() }, RawReplayJson.Options));
+        api.MapGet("/raw-paper-accounts", () => Results.Json(new { authoredOnly=true, corporateActions=true, pureSplitsAvailable=true,
+            actionSupport=new { pureSplits=true, dividends=false, terminals=false, pendingClaims=false },
+            asynchronousFills=false, preparationAvailable=true, accounts=store.RawPaperAccounts() }, RawReplayJson.Options));
         api.MapPost("/raw-paper-accounts", (RawPaperCreateRequest request) => Results.Json(store.CreateRawPaperAccount(request),RawReplayJson.Options));
         api.MapGet("/raw-paper-accounts/{id}/operations", (string id) => Results.Json(store.RawPaperOperations(id),RawReplayJson.Options));
         api.MapPost("/raw-paper-accounts/{id}/advance", (string id,RawPaperAdvanceRequest request,CancellationToken ct) => Results.Json(store.AdvanceRawPaperAccount(id,request,ct),RawReplayJson.Options));
