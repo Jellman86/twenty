@@ -12,6 +12,7 @@ public sealed record RawPaperCreateRequest(string RequestId, string StudyId, str
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ActionMode { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public ImmutableArray<RawPaperDividendTerms> Dividends { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public ImmutableArray<RawPaperTerminalTerms> Terminals { get; init; }
 }
 public sealed record RawPaperAdvanceRequest(string RequestId, string? ExpectedReceiptSha256, string ReplaySha256);
 public sealed record RawPaperDividendClaimBalance(int Count, decimal NetExpectedValueGbp, decimal ExpectedFeesGbp, decimal ExpectedEquityGbp);
@@ -58,7 +59,9 @@ public sealed partial class ResearchStore
             {
                 var own = operations.Where(o => o.AccountId == account.Id).ToArray();
                 if (account.Policy is null || account.Balance is null || account.Version != RawPaperContract.AccountVersion(account.Policy.ActionMode) ||
-                    !RawPaperContract.IsKnownMode(account.Policy.ActionMode) || account.Attempts != own.Length || account.AcceptedPeriods != own.Count(o => o.Status == "succeeded") ||
+                    !RawPaperContract.IsKnownMode(account.Policy.ActionMode) ||
+                    (account.Policy.ActionMode == RawPaperContract.TerminalMode ? account.Policy.Terminals.IsDefault : !account.Policy.Terminals.IsDefault) ||
+                    account.Attempts != own.Length || account.AcceptedPeriods != own.Count(o => o.Status == "succeeded") ||
                     (account.HeadOperationId is null) != (account.HeadReceiptSha256 is null) || account.HeadOperationId is { } head &&
                     !own.Any(o => o.Id == head && o.Status == "succeeded" && o.ReceiptSha256 == account.HeadReceiptSha256) ||
                     account.Status is not ("ready" or "active" or "running" or "failed" or "stopped" or "completed") || !ValidPaperClaimBalance(account)) throw new ResearchException("raw-paper-integrity");
@@ -131,6 +134,7 @@ public sealed partial class ResearchStore
             if (RawHash(data) != request.DatasetSha256) throw new ResearchException("dataset-integrity");
             var file = DatasetJson.Read(data); var validation = DatasetValidator.Validate(file); if (!validation.IsValid) throw new InvalidDatasetException(validation);
             if (!file.Manifest.Synthetic) throw new ResearchException("raw-paper-authored-only");
+            _ = PaperTerminalEvents(file, request.ActionMode, request.Terminals, request.Decisions, request.DatasetSha256);
             _ = PaperDividendEvents(file, request.ActionMode, request.Dividends, request.Decisions, request.DatasetSha256);
             _ = ValidatePaperActions(file, request.ActionMode, request.DatasetSha256);
             if (!file.Manifest.Universes.Any(u => u.Id == source.Plan.UniverseId) || file.Manifest.CreatedAt < request.Decisions[^1]) throw new ResearchException("raw-paper-dataset");
@@ -149,7 +153,7 @@ public sealed partial class ResearchStore
             if (calendars.Select(c => c.Reference.Id).Distinct(StringComparer.Ordinal).Count() != calendars.Count || file.Observations.OfType<Listing>().Any(l => !calendars.Any(c => c.Reference.Id == l.CalendarId && c.Venue == l.Venue))) throw new ResearchException("raw-paper-calendar");
             var execution = request.CostScenario == "base" ? source.Plan.BaseExecution : source.Plan.StressExecution;
             var policy = new RawPaperPolicy(request.DatasetSha256, source.Plan.UniverseId, request.FirstDecisionAt, source.Plan.MonthlyGbp,
-                source.Plan.Candidates.Single(c => c.Id == source.SelectedCandidateId).Config, execution, request.Calendars, RawReplayBuildIdentity.Current, request.Decisions) { ActionMode = request.ActionMode, Dividends = request.Dividends };
+                source.Plan.Candidates.Single(c => c.Id == source.SelectedCandidateId).Config, execution, request.Calendars, RawReplayBuildIdentity.Current, request.Decisions) { ActionMode = request.ActionMode, Dividends = request.Dividends, Terminals = request.Terminals };
             var account = new RawPaperAccount(Guid.NewGuid().ToString("N"), RawPaperContract.AccountVersion(request.ActionMode), request.RequestId, sha, source.Id, source.PlanSha256,
                 request.SelectionSha256, source.SelectedCandidateId, request.CostScenario, source.Plan.ReservedEnd, policy, ResearchIdentity.Current.Sha256,
                 clock.GetUtcNow(), "ready", 0, 0, null, null, null, new(0, 0, 0, ImmutableSortedDictionary<string, RawQuantityPosition>.Empty, 0, null) { DividendClaims = request.ActionMode == RawPaperContract.DividendClaimsMode ? new(0, 0, 0, 0) : null }, originals.Select(o => o.Original).ToImmutableArray());
@@ -211,7 +215,7 @@ public sealed partial class ResearchStore
                     if (document.Events.Select(e => e.Operation).OfType<RawReplayRebalanceDecision>().Any(d => d.UniverseStrategy!.Spec.Decisions[0] <= account.SourceReservedEnd)) throw new ResearchException("raw-paper-information-window");
                     var original = account.Originals.Single(o => o.Kind == "dataset");
                     RawReplayReceipt receipt;
-                    if (account.Policy.ActionMode == RawPaperContract.SplitMode || RawPaperContract.IsDividendMode(account.Policy.ActionMode))
+                    if (account.Policy.ActionMode is RawPaperContract.SplitMode or RawPaperContract.TerminalMode || RawPaperContract.IsDividendMode(account.Policy.ActionMode))
                     {
                         var generated = BuildPaperBatch(account, deadline.Token);
                         if (!generated.Bytes.AsSpan().SequenceEqual(bytes)) throw new ResearchException("raw-paper-action-binding");
@@ -219,7 +223,7 @@ public sealed partial class ResearchStore
                     }
                     else receipt = RawReplayArchive.Execute(bytes, sha => sha == account.Policy.DatasetSha256 ? PaperReadArtifact(PaperInputPath(original), original.Sha256, DatasetJson.MaximumBytes) : throw new ResearchException("raw-paper-dataset"), deadline.Token);
                     var result = JsonSerializer.Deserialize<RawEventReplayResult>(Convert.FromBase64String(receipt.ResultBase64), RawReplayJson.Options)!;
-                    if (result.TerminalEntitlements.Length != 0 || !RawPaperContract.IsDividendMode(account.Policy.ActionMode) && result.DividendEntitlements.Length != 0 ||
+                    if ((account.Policy.ActionMode == RawPaperContract.TerminalMode ? result.TerminalEntitlements.Any(t => t.SettledAt is null) : result.TerminalEntitlements.Length != 0) || !RawPaperContract.IsDividendMode(account.Policy.ActionMode) && result.DividendEntitlements.Length != 0 ||
                         account.Policy.ActionMode == RawPaperContract.DividendMode && result.DividendEntitlements.Any(d => d.PaidAt is null)) throw new ResearchException("raw-paper-actions-unsupported");
                     if (account.Policy.ActionMode == RawPaperContract.DividendClaimsMode && account.AcceptedPeriods + 1 == account.Policy.Decisions.Length - RawUniverseDecision.HistoryDecisions &&
                         result.DividendEntitlements.Any(d => d.PaidAt is null)) throw new ResearchException("raw-paper-dividend-final-unsettled");

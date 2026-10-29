@@ -29,6 +29,7 @@ function decimal(text:string,label:string,positive=false) {
   if(coefficient>maximumDecimal||(positive&&coefficient===0n))throw new Error(`${label} is outside the supported decimal range.`);
   return {coefficient,scale:fraction.length};
 }
+export {decimal as validateDecimal};
 
 export function dividendCatalogJson(rows:DividendDraft[],datasetSha256:string,withClaims=false):string {
   if(!hash.test(datasetSha256))throw new Error('Dataset SHA-256 must contain 64 lowercase hexadecimal characters.');

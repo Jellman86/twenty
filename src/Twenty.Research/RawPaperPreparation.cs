@@ -50,7 +50,9 @@ public sealed partial class ResearchStore
         if (!file.Manifest.Synthetic) throw new ResearchException("raw-paper-authored-only");
         var actions = ValidatePaperActions(file, policy.ActionMode, policy.DatasetSha256);
         var splits = actions.Where(a => a.Action == CorporateActionKind.Split).ToArray();
-        var actionEvents = RawPaperContract.IsDividendMode(policy.ActionMode)
+        var actionEvents = policy.ActionMode == RawPaperContract.TerminalMode
+            ? PaperTerminalEvents(file, policy.ActionMode, policy.Terminals, policy.Decisions, policy.DatasetSha256)
+            : RawPaperContract.IsDividendMode(policy.ActionMode)
             ? PaperDividendEvents(file, policy.ActionMode, policy.Dividends, policy.Decisions, policy.DatasetSha256)
             : splits.Select(s => new PaperActionEvent(s, SplitBooking(s), new RawReplaySplit(s.ListingId, s.ActionId),
                 "split-" + RawHash(System.Text.Encoding.UTF8.GetBytes(s.Id)))).ToArray();
@@ -108,6 +110,10 @@ public sealed partial class ResearchStore
                     ledger.CaptureDividend(item.Id, Slice(item.At), capture.ListingId, capture.ActionId, capture.Evidence); break;
                 case RawReplayDividendPayment payment when RawPaperContract.IsDividendMode(policy.ActionMode):
                     ledger.PayDividend(item.Id, Slice(item.At), payment.ListingId, payment.ActionId, payment.Payment, fxAge); break;
+                case RawReplayTerminalCapture capture when policy.ActionMode == RawPaperContract.TerminalMode:
+                    ledger.CaptureTerminal(item.Id, Slice(item.At), capture.ListingId, capture.ActionId, capture.Evidence); break;
+                case RawReplayTerminalSettlement settlement when policy.ActionMode == RawPaperContract.TerminalMode:
+                    ledger.SettleTerminal(item.Id, Slice(item.At), settlement.ListingId, settlement.ActionId, settlement.Settlement, fxAge); break;
                 default: throw new ResearchException("raw-paper-batch");
             }
         }
@@ -138,17 +144,36 @@ public sealed partial class ResearchStore
                     ledger.PayDividend(id, Slice(booked), action.ListingId, action.ActionId, actual, fxAge);
                     continue;
                 }
-                decimal quantity = 0;
-                foreach (var entry in ledger.Entries.Where(e => e.ListingId == action.ListingId))
+                if (item.Operation is RawReplayTerminalSettlement settlement)
                 {
-                    var cutoff = entry.Kind == "split" ? entry.ActionEffectiveAt : entry.ModelledExecution?.Timing.Session.OpenAt ?? entry.At;
-                    if (cutoff < action.EffectiveAt) quantity += entry.Quantity;
+                    var entitlement = ledger.TerminalEntitlements.SingleOrDefault(e => e.Action.ListingId == action.ListingId && e.Action.ActionId == action.ActionId);
+                    if (entitlement is null) continue;
+                    var actual = settlement.Settlement with { GrossLocal = settlement.Settlement.GrossLocal * entitlement.Quantity,
+                        WithheldLocal = settlement.Settlement.WithheldLocal * entitlement.Quantity,
+                        SuccessorQuantity = settlement.Settlement.SuccessorQuantity * entitlement.Quantity };
+                    var id = Add(item.Key, booked, settlement with { Settlement = actual });
+                    ledger.SettleTerminal(id, Slice(booked), action.ListingId, action.ActionId, actual, fxAge);
+                    continue;
+                }
+                decimal quantity = 0;
+                foreach (var entry in ledger.Entries.Where(e => e.ListingId == action.ListingId || e.TerminalSettlement?.SuccessorListingId == action.ListingId))
+                {
+                    if (entry.TerminalSettlement is { SuccessorQuantity: > 0 } delivered && delivered.SuccessorListingId == action.ListingId)
+                    {
+                        if (delivered.SettledAt < action.EffectiveAt) quantity += delivered.SuccessorQuantity;
+                    }
+                    else
+                    {
+                        var cutoff = entry.Kind is "split" or "terminal-entitlement" ? entry.ActionEffectiveAt : entry.ModelledExecution?.Timing.Session.OpenAt ?? entry.At;
+                        if (cutoff < action.EffectiveAt) quantity += entry.Quantity;
+                    }
                 }
                 if (quantity < 0) throw new ResearchException("raw-paper-action-history");
                 if (quantity == 0) continue;
                 var actionId = Add(item.Key, booked, item.Operation);
                 if (item.Operation is RawReplaySplit) ledger.ApplySplit(actionId, Slice(booked), action.ListingId, action.ActionId);
                 else if (item.Operation is RawReplayDividendCapture capture) ledger.CaptureDividend(actionId, Slice(booked), action.ListingId, action.ActionId, capture.Evidence);
+                else if (item.Operation is RawReplayTerminalCapture terminal) ledger.CaptureTerminal(actionId, Slice(booked), action.ListingId, action.ActionId, terminal.Evidence);
                 else throw new ResearchException("raw-paper-batch");
             }
         }

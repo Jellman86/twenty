@@ -43,3 +43,7 @@ The subsequent [dividend authoring form](raw-paper-dividend-authoring.md) now su
 ## Pending cash dividends (29 October 2026)
 
 [The pending-dividend extension](raw-paper-pending-dividends.md) adds a separate version/mode, exact scoped capability, explicit expected-policy fields and optional dividend-claim balances. It preserves the original paid-within-month capability and payload. The adapter recognises the new mode, displays estimated equity and deductions separately from settled cash/actual fees, and retains explicit prepare/apply/stop and original-receipt behavior. This new mode is separate from the deployed `2defc65` authoring checkpoint.
+
+## Settled terminal mode (29 October 2026)
+
+The separate [terminal settlement contract](raw-paper-terminals.md) adds `raw-paper-terminal-batches-v1`, exact zero/cash/stock authoring and scoped capability gates. `terminal-settlements-v1` requires `settled-before-monthly-marks`; pending terminal claims remain unavailable. Other modes omit the catalog. Native API/browser, cold retry, killed-process and exact older-account evidence remain separate from deployment and genuine financial acceptance.

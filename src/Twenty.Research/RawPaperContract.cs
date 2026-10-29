@@ -12,6 +12,8 @@ public sealed record RawPaperPolicy(string DatasetSha256, string UniverseId, Dat
     public string? ActionMode { get; init; }
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
     public ImmutableArray<RawPaperDividendTerms> Dividends { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public ImmutableArray<RawPaperTerminalTerms> Terminals { get; init; }
 }
 
 /// <summary>Metadata-only binding for an authored, complete offline paper batch.
@@ -25,10 +27,12 @@ public static class RawPaperContract
     public const string DividendVersion = "raw-paper-dividend-batches-v1";
     public const string DividendClaimsMode = "dividend-claims-v1";
     public const string DividendClaimsVersion = "raw-paper-dividend-claim-batches-v1";
+    public const string TerminalMode = "terminal-settlements-v1";
+    public const string TerminalVersion = "raw-paper-terminal-batches-v1";
     public static bool IsDividendMode(string? mode) => mode is DividendMode or DividendClaimsMode;
-    public static bool IsKnownMode(string? mode) => mode is null or SplitMode or DividendMode or DividendClaimsMode;
+    public static bool IsKnownMode(string? mode) => mode is null or SplitMode or DividendMode or DividendClaimsMode or TerminalMode;
     public static string AccountVersion(string? mode) => mode switch
-    { null => Version, SplitMode => SplitVersion, DividendMode => DividendVersion, DividendClaimsMode => DividendClaimsVersion, _ => "" };
+    { null => Version, SplitMode => SplitVersion, DividendMode => DividendVersion, DividendClaimsMode => DividendClaimsVersion, TerminalMode => TerminalVersion, _ => "" };
     public static RawReplayDocument ValidateAppend(RawPaperPolicy policy, byte[]? previousBytes, byte[] nextBytes)
     {
         if (policy is null || !IsKnownMode(policy.ActionMode) || policy.Execution is null || policy.Config is null || policy.FirstDecisionAt == default ||
@@ -36,6 +40,8 @@ public static class RawPaperContract
             policy.Decisions.IsDefault || policy.Decisions.Length is < 14 or > 133 || policy.FirstDecisionAt != policy.Decisions[RawUniverseDecision.HistoryDecisions - 1] ||
             !IsDividendMode(policy.ActionMode) && !policy.Dividends.IsDefault ||
             IsDividendMode(policy.ActionMode) && policy.Dividends.IsDefault ||
+            policy.ActionMode != TerminalMode && !policy.Terminals.IsDefault ||
+            policy.ActionMode == TerminalMode && policy.Terminals.IsDefault ||
             policy.Calendars.IsDefaultOrEmpty || policy.Calendars.Length > 16 || policy.Calendars.Any(p => p is null))
             throw new ResearchException("raw-paper-policy");
         var next = Read(nextBytes);
@@ -55,7 +61,8 @@ public static class RawPaperContract
         // Ordinary archive replay still enforces that no action interrupts ordered fills.
         var batch = next.Events.Skip(start).Where(e =>
             !(policy.ActionMode == SplitMode && e.Operation is RawReplaySplit) &&
-            !(IsDividendMode(policy.ActionMode) && e.Operation is RawReplayDividendCapture or RawReplayDividendPayment)).ToArray();
+            !(IsDividendMode(policy.ActionMode) && e.Operation is RawReplayDividendCapture or RawReplayDividendPayment) &&
+            !(policy.ActionMode == TerminalMode && e.Operation is RawReplayTerminalCapture or RawReplayTerminalSettlement)).ToArray();
         if (batch.Length < 4 || batch.Any(e => e is null) || batch[0].Operation is not RawReplayDeposit deposit ||
             batch[1].Operation is not RawReplayMark open || batch[2].Operation is not RawReplayRebalanceDecision decision ||
             batch[^1].Operation is not RawReplayMark close || !ValidMark(open, policy.ActionMode) || !ValidMark(close, policy.ActionMode))
