@@ -1,6 +1,6 @@
 # Raw paper-account integration: next contract
 
-Status: broader design boundary. A first [authored complete-batch account](raw-paper-accounts.md) is implemented under acceptance; action/claim integration, asynchronous execution and genuine forward evidence remain unimplemented. This document does not count as initial-v1 paper acceptance.
+Status: broader design boundary. A first [authored complete-batch account](raw-paper-accounts.md) is implemented under acceptance; [bounded split/dividend integration](raw-paper-pending-dividends.md) now includes pending cash dividends; terminal/combined actions, asynchronous execution and genuine forward evidence remain open. This document does not count as initial-v1 paper acceptance.
 
 The current `PaperLedger` rehearses a frozen model allocation with authored GBP quotes and a buy-only planner. Raw studies instead use fractional shares, explicit executable FX, sales, ordered fee/cash constraints, action entitlements, unsettled claims and complete bound fill batches. Passing raw weights into the existing simulator would change those conventions. Viewing a stored report or advancing through its recorded marks is report inspection, not a paper account.
 

@@ -266,7 +266,9 @@ public sealed partial class RawPaperStoreTests
             var operation = (await applied.Content.ReadFromJsonAsync<RawPaperOperation>(RawReplayJson.Options))!; Assert.Equal("succeeded", operation.Status);
             using var capability = JsonDocument.Parse(await client.GetByteArrayAsync("/api/research/raw-paper-accounts"));
             Assert.True(capability.RootElement.GetProperty("actionSupport").GetProperty("dividends").GetBoolean());
-            Assert.False(capability.RootElement.GetProperty("actionSupport").GetProperty("pendingClaims").GetBoolean());
+            Assert.True(capability.RootElement.GetProperty("actionSupport").GetProperty("pendingClaims").GetBoolean());
+            Assert.True(capability.RootElement.GetProperty("actionSupport").GetProperty("pendingDividendClaims").GetBoolean());
+            Assert.False(capability.RootElement.GetProperty("actionSupport").GetProperty("terminals").GetBoolean());
             store.Dispose(); store = new(root);
             Assert.Equal(operation, store.AdvanceRawPaperAccount(account.Id, apply)); Assert.Equal(19.99921875m, store.RawPaperAccounts().Single().Balance.EquityGbp);
         }

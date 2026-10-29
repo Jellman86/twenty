@@ -23,13 +23,19 @@ public static class RawPaperContract
     public const string SplitMode = "pure-splits-v1";
     public const string DividendMode = "cash-dividends-v1";
     public const string DividendVersion = "raw-paper-dividend-batches-v1";
+    public const string DividendClaimsMode = "dividend-claims-v1";
+    public const string DividendClaimsVersion = "raw-paper-dividend-claim-batches-v1";
+    public static bool IsDividendMode(string? mode) => mode is DividendMode or DividendClaimsMode;
+    public static bool IsKnownMode(string? mode) => mode is null or SplitMode or DividendMode or DividendClaimsMode;
+    public static string AccountVersion(string? mode) => mode switch
+    { null => Version, SplitMode => SplitVersion, DividendMode => DividendVersion, DividendClaimsMode => DividendClaimsVersion, _ => "" };
     public static RawReplayDocument ValidateAppend(RawPaperPolicy policy, byte[]? previousBytes, byte[] nextBytes)
     {
-        if (policy is null || policy.ActionMode is not (null or SplitMode or DividendMode) || policy.Execution is null || policy.Config is null || policy.FirstDecisionAt == default ||
+        if (policy is null || !IsKnownMode(policy.ActionMode) || policy.Execution is null || policy.Config is null || policy.FirstDecisionAt == default ||
             policy.MonthlyGbp is < 1 or > 1000 || policy.Config.MonthlyGbp != policy.MonthlyGbp ||
             policy.Decisions.IsDefault || policy.Decisions.Length is < 14 or > 133 || policy.FirstDecisionAt != policy.Decisions[RawUniverseDecision.HistoryDecisions - 1] ||
-            policy.ActionMode != DividendMode && !policy.Dividends.IsDefault ||
-            policy.ActionMode == DividendMode && policy.Dividends.IsDefault ||
+            !IsDividendMode(policy.ActionMode) && !policy.Dividends.IsDefault ||
+            IsDividendMode(policy.ActionMode) && policy.Dividends.IsDefault ||
             policy.Calendars.IsDefaultOrEmpty || policy.Calendars.Length > 16 || policy.Calendars.Any(p => p is null))
             throw new ResearchException("raw-paper-policy");
         var next = Read(nextBytes);
@@ -49,10 +55,10 @@ public static class RawPaperContract
         // Ordinary archive replay still enforces that no action interrupts ordered fills.
         var batch = next.Events.Skip(start).Where(e =>
             !(policy.ActionMode == SplitMode && e.Operation is RawReplaySplit) &&
-            !(policy.ActionMode == DividendMode && e.Operation is RawReplayDividendCapture or RawReplayDividendPayment)).ToArray();
+            !(IsDividendMode(policy.ActionMode) && e.Operation is RawReplayDividendCapture or RawReplayDividendPayment)).ToArray();
         if (batch.Length < 4 || batch.Any(e => e is null) || batch[0].Operation is not RawReplayDeposit deposit ||
             batch[1].Operation is not RawReplayMark open || batch[2].Operation is not RawReplayRebalanceDecision decision ||
-            batch[^1].Operation is not RawReplayMark close || !Empty(open) || !Empty(close))
+            batch[^1].Operation is not RawReplayMark close || !ValidMark(open, policy.ActionMode) || !ValidMark(close, policy.ActionMode))
             throw new ResearchException("raw-paper-batch");
         var at = batch[0].At;
         var gridIndex = (prior?.Events.Count(e => e.Operation is RawReplayRebalanceDecision) ?? 0) + RawUniverseDecision.HistoryDecisions - 1;
@@ -65,7 +71,9 @@ public static class RawPaperContract
         if (binding?.Spec is not { } spec || spec.Strategy != "momentum" || spec.Version != RawUniverseDecision.Version ||
             spec.UniverseId != policy.UniverseId || spec.Config != policy.Config || spec.MaximumPriceAgeDays != execution.MaximumPriceAgeDays ||
             spec.Decisions.IsDefaultOrEmpty || !spec.Decisions.SequenceEqual(policy.Decisions.Skip(gridIndex - RawUniverseDecision.HistoryDecisions + 1).Take(RawUniverseDecision.HistoryDecisions)) || spec.Decisions[^1] != at || plan.UniverseId != policy.UniverseId ||
-            plan.Version != RawRebalancePlanner.Version || plan.ClaimAssumptions is not null ||
+            (policy.ActionMode == DividendClaimsMode
+                ? plan.Version != RawRebalancePlanner.ClaimsVersion || plan.ClaimAssumptions is null
+                : plan.Version != RawRebalancePlanner.Version || plan.ClaimAssumptions is not null) ||
             plan.CashReserveGbp != execution.CashReserveGbp || plan.FeePerFillGbp != execution.FeePerFillGbp ||
             plan.MaximumPriceAgeTicks != next.MaximumPriceAgeTicks || plan.MaximumFxAgeTicks != next.MaximumFxAgeTicks)
             throw new ResearchException("raw-paper-policy");
@@ -83,7 +91,8 @@ public static class RawPaperContract
         }
         return next;
     }
-    private static bool Empty(RawReplayMark mark) => !mark.Dividends.IsDefault && mark.Dividends.IsEmpty && !mark.Terminals.IsDefault && mark.Terminals.IsEmpty;
+    private static bool ValidMark(RawReplayMark mark, string? mode) => !mark.Dividends.IsDefault &&
+        (mode == DividendClaimsMode || mark.Dividends.IsEmpty) && !mark.Terminals.IsDefault && mark.Terminals.IsEmpty;
     private static bool Monthly(DateTimeOffset from, DateTimeOffset to)
     {
         from = from.ToUniversalTime(); to = to.ToUniversalTime();

@@ -50,10 +50,12 @@ public sealed partial class ResearchStore
         if (!file.Manifest.Synthetic) throw new ResearchException("raw-paper-authored-only");
         var actions = ValidatePaperActions(file, policy.ActionMode, policy.DatasetSha256);
         var splits = actions.Where(a => a.Action == CorporateActionKind.Split).ToArray();
-        var actionEvents = policy.ActionMode == RawPaperContract.DividendMode
+        var actionEvents = RawPaperContract.IsDividendMode(policy.ActionMode)
             ? PaperDividendEvents(file, policy.ActionMode, policy.Dividends, policy.Decisions, policy.DatasetSha256)
             : splits.Select(s => new PaperActionEvent(s, SplitBooking(s), new RawReplaySplit(s.ListingId, s.ActionId),
                 "split-" + RawHash(System.Text.Encoding.UTF8.GetBytes(s.Id)))).ToArray();
+        var claimsMode = policy.ActionMode == RawPaperContract.DividendClaimsMode;
+        var claimCatalog = claimsMode ? PaperDividendClaimCatalog(policy) : null;
         var dataset = new PointInTimeDataset(file);
         var calendars = new Dictionary<string, ExecutionCalendar>(StringComparer.Ordinal);
         // Calendar pins hash semantic session tables; original hashes bind their wire bytes.
@@ -72,7 +74,7 @@ public sealed partial class ResearchStore
             previous = PaperReadArtifact(PaperOperationPath(head, "request"), operation.ReplaySha256, RawReplayArchive.MaximumRequestBytes);
             var verified = RawReplayArchive.Verify(RawPaperReceiptBytes(head), Resolve, token);
             if (verified.RequestSha256 != operation.ReplaySha256 || !Convert.FromBase64String(verified.RequestBase64).AsSpan().SequenceEqual(previous) ||
-                !RawBytes(Balance(JsonSerializer.Deserialize<RawEventReplayResult>(Convert.FromBase64String(verified.ResultBase64), RawReplayJson.Options)!)).AsSpan().SequenceEqual(RawBytes(account.Balance)))
+                !RawBytes(Balance(JsonSerializer.Deserialize<RawEventReplayResult>(Convert.FromBase64String(verified.ResultBase64), RawReplayJson.Options)!, policy.ActionMode)).AsSpan().SequenceEqual(RawBytes(account.Balance)))
                 throw new ResearchException("raw-paper-integrity");
             prior = JsonSerializer.Deserialize<RawReplayDocument>(previous, RawReplayJson.Options)!;
         }
@@ -102,9 +104,9 @@ public sealed partial class ResearchStore
                 case RawReplayRebalanceDecision: case RawReplayMark: break;
                 case RawReplaySplit split when policy.ActionMode == RawPaperContract.SplitMode:
                     ledger.ApplySplit(item.Id, Slice(item.At), split.ListingId, split.ActionId); break;
-                case RawReplayDividendCapture capture when policy.ActionMode == RawPaperContract.DividendMode:
+                case RawReplayDividendCapture capture when RawPaperContract.IsDividendMode(policy.ActionMode):
                     ledger.CaptureDividend(item.Id, Slice(item.At), capture.ListingId, capture.ActionId, capture.Evidence); break;
-                case RawReplayDividendPayment payment when policy.ActionMode == RawPaperContract.DividendMode:
+                case RawReplayDividendPayment payment when RawPaperContract.IsDividendMode(policy.ActionMode):
                     ledger.PayDividend(item.Id, Slice(item.At), payment.ListingId, payment.ActionId, payment.Payment, fxAge); break;
                 default: throw new ResearchException("raw-paper-batch");
             }
@@ -164,14 +166,20 @@ public sealed partial class ResearchStore
         }
         Through(at);
         var market = Slice(at, 3); var depositId = Add("deposit", at, new RawReplayDeposit(policy.MonthlyGbp));
-        ledger.Deposit(depositId, at, policy.MonthlyGbp); Add("open", at, new RawReplayMark([], []));
+        ledger.Deposit(depositId, at, policy.MonthlyGbp);
+        var openingClaims = claimsMode ? PaperDividendClaims(ledger, claimCatalog!, at) : new RawRebalanceClaimAssumptions([], []);
+        if (openingClaims.Dividends.Length > 0) _ = Slice(at, openingClaims.Dividends.Length);
+        Add("open", at, new RawReplayMark(openingClaims.Dividends, openingClaims.Terminals));
         var spec = new RawUniverseStrategySpec(RawUniverseDecision.Version, policy.UniverseId,
             policy.Decisions.Skip(index - RawUniverseDecision.HistoryDecisions + 1).Take(RawUniverseDecision.HistoryDecisions).ToImmutableArray(), execution.MaximumPriceAgeDays, policy.Config, "momentum");
         foreach (var time in spec.Decisions) _ = Slice(time);
         var allocation = RawUniverseDecision.Allocate(dataset, spec);
         CheckSplitPrices(market, allocation.Weights.Where(w => w.Value > 0).Select(w => w.Key).Concat(ledger.Holdings.Keys));
-        var plan = RawRebalancePlanner.Plan(ledger, market, policy.UniverseId, allocation.Weights, next,
-            execution.CashReserveGbp, execution.FeePerFillGbp, priceAge, fxAge);
+        var plan = claimsMode
+            ? RawRebalancePlanner.PlanWithReceivables(ledger, market, policy.UniverseId, allocation.Weights, next,
+                execution.CashReserveGbp, execution.FeePerFillGbp, priceAge, fxAge, openingClaims.Dividends, openingClaims.Terminals)
+            : RawRebalancePlanner.Plan(ledger, market, policy.UniverseId, allocation.Weights, next,
+                execution.CashReserveGbp, execution.FeePerFillGbp, priceAge, fxAge);
         var decisionId = Add("decision", at, new RawReplayRebalanceDecision(plan) { UniverseStrategy = new(spec, allocation) });
         var tables = (prior is null || prior.Calendars.IsDefault ? ImmutableArray<ExecutionCalendar>.Empty : prior.Calendars).ToDictionary(c => c.Sha256, StringComparer.Ordinal);
         if (!plan.Orders.IsEmpty)
@@ -202,7 +210,10 @@ public sealed partial class ResearchStore
                     PriceBasis.Raw, execution.FeePerFillGbp, fxAge, fill, calendar);
             }
         }
-        Through(next); var closing = Slice(next); CheckSplitPrices(closing, ledger.Holdings.Keys); Add("close", next, new RawReplayMark([], []));
+        Through(next); var closing = Slice(next); CheckSplitPrices(closing, ledger.Holdings.Keys);
+        var closingClaims = claimsMode ? PaperDividendClaims(ledger, claimCatalog!, next) : new RawRebalanceClaimAssumptions([], []);
+        if (closingClaims.Dividends.Length > 0) _ = Slice(next, closingClaims.Dividends.Length);
+        Add("close", next, new RawReplayMark(closingClaims.Dividends, closingClaims.Terminals));
         var document = new RawReplayDocument(RawReplayArchive.Version, RawEventReplay.Version, policy.Build,
             priceAge.Ticks, fxAge.Ticks, FxPurpose.Executable, events.ToImmutable())
             { Calendars = tables.Values.OrderBy(c => c.Sha256, StringComparer.Ordinal).ToImmutableArray() };
@@ -211,7 +222,7 @@ public sealed partial class ResearchStore
         var receipt = RawReplayArchive.Execute(bytes, Resolve, token);
         if (RawBytes(receipt).Length > 8 * 1024 * 1024) throw new ResearchException("raw-paper-capacity");
         var result = JsonSerializer.Deserialize<RawEventReplayResult>(Convert.FromBase64String(receipt.ResultBase64), RawReplayJson.Options)!;
-        return new(bytes, receipt, Balance(result), at, next);
+        return new(bytes, receipt, Balance(result, policy.ActionMode), at, next);
     }
 
 }
