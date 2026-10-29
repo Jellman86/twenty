@@ -63,7 +63,7 @@
 </script>
 
 <div class="page-head">
-  <h1>Activity</h1>
+  <div class="title"><p class="eyebrow">Trading</p><h1>Activity</h1><p class="lede">Every order the bot has placed, and how much of each was actually bought.</p></div>
   <div class="tools">
     <div class="seg" role="group" aria-label="Filter">
       <button aria-pressed={filter === 'all'} onclick={() => (filter = 'all')}>All</button>

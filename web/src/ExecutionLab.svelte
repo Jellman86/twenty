@@ -20,7 +20,7 @@
   onMount(()=>{void Promise.all([api('/api/research/runs'),api('/api/research/capabilities'),refresh()]).then(([all,cap])=>{runs=all.filter((r:Run)=>r.status==='succeeded');runId=runs[0]?.id??'';capabilities=cap;}).catch(e=>error=e.message);});
 </script>
 <div class="page-head">
-  <h1>Orders</h1>
+  <div class="title"><p class="eyebrow">Trading</p><h1>Orders</h1><p class="lede">Run the monthly buying cycle against Trading 212, cancel open orders, or pause new ones.</p></div>
   <div class="tools">
     {#if paused}<span class="pill live"><span class="d"></span>New orders paused</span>{/if}
     <button class="secondary small-button" disabled={busy} onclick={()=>void action(`/api/execution/pause?paused=${!paused}`)}>{paused?'Resume new orders':'Pause new orders'}</button>

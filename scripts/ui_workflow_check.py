@@ -288,7 +288,7 @@ def main() -> int:
         with page.expect_request("**/api/execution/broker"):
             page.goto(args.base + "/#execution")
         page.goto(args.base + "/#paper")
-        page.wait_for_selector("main h1:has-text('Paper accounts')", timeout=5000)
+        page.wait_for_selector("main h1:has-text('Paper trading')", timeout=5000)
         for pending in held_orders:
             pending.fulfill(status=200, content_type="application/json", body=json.dumps(SYNTHETIC_BROKER))
         page.wait_for_timeout(300)
@@ -338,7 +338,7 @@ def main() -> int:
             receipts: list[str] = []
             page.on("request", lambda r: receipts.append(r.url) if "/receipt" in r.url else None)
             page.goto(args.base + "/#paper")
-            page.wait_for_selector("main h1:has-text('Paper accounts')", timeout=8000)
+            page.wait_for_selector("main h1:has-text('Paper trading')", timeout=8000)
             page.get_by_text("£39.50").first.wait_for(timeout=8000)
             paper = text(page)
             checks.run(f"{width}: real paper account shows £39.50 equity and 0.9875 shares", lambda: ("£39.50" in paper and "0.9875" in paper, paper[:500]))
@@ -347,6 +347,7 @@ def main() -> int:
             checks.run(f"{width}: no hashes or UUIDs on paper main screen", lambda: (not re.search(r"[0-9a-f]{32,64}", visible), re.findall(r"[0-9a-f]{32,64}", visible)[:3]))
             checks.run(f"{width}: receipts not fetched automatically", lambda: (not receipts, receipts))
             checks.run(f"{width}: paper has no horizontal overflow", lambda: (no_overflow(page), None))
+            checks.run(f"{width}: authored-only paper trading is labelled as test data", lambda: ("Test data only" in paper, paper[:300]))
             page.screenshot(path=str(out / f"paper-{width}.png"), full_page=True)
             page.close()
 
@@ -354,7 +355,7 @@ def main() -> int:
         page.route("**/api/research/raw-paper-accounts", lambda r: r.fulfill(status=200, content_type="application/json", body=json.dumps({
             "accounts": [], "preparationAvailable": True, "authoredOnly": True})) if r.request.method == "GET" else r.continue_())
         page.goto(args.base + "/#paper")
-        page.wait_for_selector("main h1:has-text('Paper accounts')", timeout=8000)
+        page.wait_for_selector("main h1:has-text('Paper trading')", timeout=8000)
         page.wait_for_timeout(800)
         page.get_by_text("New paper account").click()
         checks.run("older server without action capabilities hides action opt-in", lambda: (page.get_by_role("combobox", name=re.compile("^Corporate actions")).count() == 0, None))
@@ -375,7 +376,7 @@ def main() -> int:
                     route.continue_()
             page.route("**/api/research/raw-paper-accounts", refuse_once)
             page.goto(args.base + "/#paper")
-            page.wait_for_selector("main h1:has-text('Paper accounts')", timeout=8000)
+            page.wait_for_selector("main h1:has-text('Paper trading')", timeout=8000)
             page.get_by_text("£39.50").first.wait_for(timeout=8000)
             page.get_by_text("New paper account").click()
             page.get_by_role("combobox", name="Costs").select_option("stress")
@@ -404,6 +405,59 @@ def main() -> int:
             checks.run("apply records the batch (3 accepted periods)", lambda: ("3 periods" in text(page) and "Not yet applied" not in text(page), None))
             page.screenshot(path=str(out / "paper-applied-1280.png"), full_page=True)
             page.close()
+
+        # Shell layout: labelled sidebar on wide screens, icon rail on medium ones, bottom
+        # tab bar on phones, and content that uses the whole width of a large display.
+        shell_js = """(() => {
+            const nav = document.querySelector('nav[aria-label=Main]').getBoundingClientRect();
+            const side = document.querySelector('.sidebar').getBoundingClientRect();
+            const main = document.querySelector('main').getBoundingClientRect();
+            const panelRight = Math.max(...[...document.querySelectorAll('main .panel')].map(x => x.getBoundingClientRect().right));
+            const hint = document.querySelector('nav[aria-label=Main] .nav-hint');
+            return { w: innerWidth, h: innerHeight, navTop: nav.top, navBottom: nav.bottom, navLeft: nav.left, navRight: nav.right,
+                     sideWidth: side.width, mainLeft: main.left, mainWidth: main.width, panelRight,
+                     hintShown: !!hint && getComputedStyle(hint).display !== 'none',
+                     groups: [...document.querySelectorAll('nav[aria-label=Main] .nav-group')].filter(g => getComputedStyle(g).display !== 'none').map(g => g.textContent) };
+        })()"""
+        for width, kind in ((2560, "sidebar"), (1440, "sidebar"), (1024, "rail"), (390, "tabs")):
+            page = new_page(width)
+            mock_broker(page)
+            page.goto(args.base + "/#portfolio")
+            page.wait_for_selector("main .panel", timeout=8000)
+            g = page.evaluate(shell_js)
+            if kind == "tabs":
+                checks.run(f"{width}: main navigation is a bottom tab bar", lambda: (g["navBottom"] >= g["h"] - 1 and g["navTop"] > g["h"] - 120 and g["navLeft"] <= 1 and g["navRight"] >= g["w"] - 1, g))
+                checks.run(f"{width}: page content starts at the left edge", lambda: (g["mainLeft"] <= 1, g))
+            else:
+                checks.run(f"{width}: main navigation is a left {kind}", lambda: (g["navLeft"] < g["mainLeft"] and g["navTop"] < 200 and abs(g["mainLeft"] - g["sideWidth"]) <= 1, g))
+                checks.run(f"{width}: {kind} width suits the window", lambda: ((200 <= g["sideWidth"] <= 320) if kind == "sidebar" else (g["sideWidth"] <= 120), g))
+                checks.run(f"{width}: content fills the rest of the window", lambda: (g["mainLeft"] + g["mainWidth"] >= g["w"] - 1 and g["panelRight"] >= g["w"] - 80, g))
+            if kind == "sidebar":
+                checks.run(f"{width}: sidebar explains each page and groups trading apart from the lab", lambda: (g["hintShown"] and g["groups"] == ["Trading", "Strategy lab"], g))
+            page.screenshot(path=str(out / f"shell-{kind}-{width}.png"))
+            page.close()
+
+        # Colour theme: follows the device until chosen, then the choice survives reloads.
+        theme_js = "[document.documentElement.dataset.theme, getComputedStyle(document.body).backgroundColor, getComputedStyle(document.querySelector('main h1')).color]"
+        for scheme in ("light", "dark"):
+            ctx = browser.new_context(viewport={"width": 1280, "height": 900}, color_scheme=scheme)
+            page = ctx.new_page()
+            page.on("pageerror", lambda e: checks.add("no page error", False, str(e)[:300]))
+            mock_broker(page)
+            page.goto(args.base + "/#portfolio")
+            page.wait_for_selector("main h1", timeout=8000)
+            got = page.evaluate(theme_js)
+            checks.run(f"theme follows a {scheme} device by default", lambda: (got[0] == scheme and page.get_by_role("button", name="Match this device").get_attribute("aria-pressed") == "true", got))
+            other = "dark" if scheme == "light" else "light"
+            page.get_by_role("button", name=f"{other.title()} theme").click()
+            switched = page.evaluate(theme_js)
+            checks.run(f"choosing {other} on a {scheme} device restyles the page", lambda: (switched[0] == other and switched[1] != got[1] and switched[2] != got[2], [got, switched]))
+            page.reload()
+            page.wait_for_selector("main h1", timeout=8000)
+            kept = page.evaluate(theme_js)
+            checks.run(f"{other} choice survives a reload", lambda: (kept[0] == other and page.get_by_role("button", name=f"{other.title()} theme").get_attribute("aria-pressed") == "true", kept))
+            page.screenshot(path=str(out / f"theme-{other}-1280.png"))
+            ctx.close()
 
         page = new_page(390)
         page.route("**/api/auth/state", fulfil({"authenticated": False, "username": None, "setupRequired": False, "passwordChangedAt": None}))

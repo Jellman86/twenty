@@ -150,13 +150,13 @@
 </script>
 
 {#if standalone}
-  <div class="page-head"><h1>Paper accounts</h1><button class="secondary small-button" disabled={busy} onclick={()=>void refresh().catch(e=>error=e.message)}>Refresh</button></div>
+  <div class="page-head"><div class="title"><p class="eyebrow">Strategy lab</p><h1>Paper trading</h1><p class="lede">Pretend accounts that follow one researched strategy month by month with fake deposits, so it can be judged before real money is involved.</p></div><button class="secondary small-button" disabled={busy} onclick={()=>void refresh().catch(e=>error=e.message)}>Refresh</button></div>
 {:else}
   <div class="panel-heading"><h2>Paper accounts</h2></div>
 {/if}
 {#if error}<p class="error" role="alert">{error}</p>{/if}
 {#if !ready}<p class="loading" role="status">Loading paper accounts…</p>{/if}
-{#if ready&&authoredOnly}<p class="dataset-note">Balances use authored inputs for accounting rehearsals.</p>{/if}
+{#if ready&&authoredOnly}<p class="callout" role="note"><strong>Test data only.</strong> Paper trading currently runs on made-up prices to check the accounting (fees, splits, dividends). Its balances say nothing yet about whether a strategy makes money.</p>{/if}
 {#if ready&&!accounts.length}<section class="panel empty"><h3>No paper accounts</h3><p>Create one below from a study with a frozen candidate.</p></section>{/if}
 
 {#if accounts.length}

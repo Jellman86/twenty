@@ -94,7 +94,7 @@
 </script>
 
 <div class="page-head">
-  <h1>Settings</h1>
+  <div class="title"><p class="eyebrow">Account</p><h1>Settings</h1><p class="lede">Your sign-in, how orders are allowed to run, and where market data comes from.</p></div>
   <span class="pill">{authDisabled ? 'Sign-in off' : `Signed in as ${username}`}</span>
 </div>
 {#if error}<p class="error" role="alert">{error}</p>{/if}

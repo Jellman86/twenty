@@ -19,6 +19,6 @@
 {#if ready}
   <RawPaperAccounts standalone {sources} {currentCode} {studyNames} />
 {:else}
-  <div class="page-head"><h1>Paper accounts</h1></div>
+  <div class="page-head"><div class="title"><p class="eyebrow">Strategy lab</p><h1>Paper trading</h1><p class="lede">Pretend accounts that follow one researched strategy month by month with fake deposits, so it can be judged before real money is involved.</p></div></div>
   <p class="loading" role="status">Loading…</p>
 {/if}

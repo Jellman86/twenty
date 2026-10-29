@@ -49,7 +49,7 @@
 </script>
 
 <div class="page-head">
-  <h1>Portfolio</h1>
+  <div class="title"><p class="eyebrow">Trading</p><h1>Portfolio</h1><p class="lede">What you hold right now and what it is worth, in your broker account or a simulated one.</p></div>
   <div class="tools">
     {#if overview && (overview.brokerConfigured || overview.simulated.length)}
       <div class="seg" role="group" aria-label="Account">
