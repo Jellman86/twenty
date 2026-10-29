@@ -38,7 +38,7 @@ jobs:
       - run: npm ci --prefix web && npm test --prefix web && npm run check --prefix web && npm run build --prefix web
       - run: dotnet restore Twenty.slnx --locked-mode
       # Non-vacuous evidence: refuses zero-match, skipped-as-passed, failed or source-changing runs.
-      - run: python3 scripts/checkpoint.py dotnet --project Twenty.slnx --min-passed 1540 --timeout-seconds 3600 --output-dir "$RUNNER_TEMP/checkpoint-dotnet"
+      - run: python3 scripts/checkpoint.py dotnet --project Twenty.slnx --min-passed 1582 --timeout-seconds 3600 --output-dir "$RUNNER_TEMP/checkpoint-dotnet"
       - if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

@@ -159,7 +159,8 @@ public sealed partial class RawPaperStoreTests
             using var cap = JsonDocument.Parse(await client.GetByteArrayAsync("/api/research/raw-paper-accounts"));
             Assert.Equal(TerminalMode, cap.RootElement.GetProperty("terminalMode").GetString());
             Assert.Equal("settled-before-monthly-marks", cap.RootElement.GetProperty("terminalScope").GetString());
-            Assert.False(cap.RootElement.GetProperty("actionSupport").GetProperty("pendingTerminalClaims").GetBoolean());
+            Assert.True(cap.RootElement.GetProperty("actionSupport").GetProperty("pendingTerminalClaims").GetBoolean());
+            Assert.Equal("settled-by-final-monthly-mark", cap.RootElement.GetProperty("pendingTerminalScope").GetString());
         }
         finally { await app.StopAsync(); }
     }

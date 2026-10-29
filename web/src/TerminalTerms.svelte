@@ -1,7 +1,7 @@
 <script lang="ts">
-  import {terminalCommonFields,terminalDeliveryFields,terminalCashFields,terminalStockFields,emptyTerminal,terminalAmount} from './raw-paper-terminals';
+  import {terminalCommonFields,terminalDeliveryFields,terminalCashFields,terminalStockFields,terminalClaimFields,terminalCashClaimFields,emptyTerminal,terminalAmount} from './raw-paper-terminals';
   import type {TerminalDraft} from './raw-paper-terminals';
-  let {rows=$bindable<TerminalDraft[]>([emptyTerminal()])}=$props();
+  let {rows=$bindable<TerminalDraft[]>([emptyTerminal()]),withClaims=false}=$props();
 </script>
 
 <p class="dataset-note">Supply one row for every terminal action in the dataset. Cash and successor quantities are per retired cutoff share; the GBP fee is per entitled account. Evidence and actual settlement terms are fixed at creation. Times require seconds and UTC (Z or +00:00).</p>
@@ -19,6 +19,12 @@
         <label>{label}<input bind:value={row[key]} maxlength={max} required={key!=='fxObservationId'} inputmode={terminalAmount(key)?'decimal':'text'} spellcheck="false" placeholder={key.endsWith('At')?'YYYY-MM-DDTHH:mm:ssZ':undefined}/></label>
       {/each}
       <p class="dataset-note">Declare the actual fee explicitly, including zero. Cash payouts need explicit withholding. Stock delivery never creates cash or permits selling shares before delivery.</p>
+      {#if withClaims}
+        <p class="dataset-note">Declare the expected deductions and their evidence independently of actual settlement. These estimates value pending claims; they provide no spendable cash or delivered shares.</p>
+        {#each [...(row.outcome==='cash'?terminalCashClaimFields:[]),...terminalClaimFields] as [key,label,max]}
+          <label>{label}<input bind:value={row[key]} maxlength={max} required inputmode={terminalAmount(key)?'decimal':'text'} spellcheck="false" placeholder={key.endsWith('At')?'YYYY-MM-DDTHH:mm:ssZ':undefined}/></label>
+        {/each}
+      {/if}
     {/if}
     <button type="button" class="secondary small-button" disabled={rows.length===1} onclick={()=>rows=rows.filter((_,i)=>i!==index)}>Remove terminal action {index+1}</button>
   </fieldset>

@@ -269,7 +269,7 @@ public sealed partial class RawPaperStoreTests
             Assert.True(capability.RootElement.GetProperty("actionSupport").GetProperty("pendingClaims").GetBoolean());
             Assert.True(capability.RootElement.GetProperty("actionSupport").GetProperty("pendingDividendClaims").GetBoolean());
             Assert.True(capability.RootElement.GetProperty("actionSupport").GetProperty("terminals").GetBoolean());
-            Assert.False(capability.RootElement.GetProperty("actionSupport").GetProperty("pendingTerminalClaims").GetBoolean());
+            Assert.True(capability.RootElement.GetProperty("actionSupport").GetProperty("pendingTerminalClaims").GetBoolean());
             store.Dispose(); store = new(root);
             Assert.Equal(operation, store.AdvanceRawPaperAccount(account.Id, apply)); Assert.Equal(19.99921875m, store.RawPaperAccounts().Single().Balance.EquityGbp);
         }

@@ -50,14 +50,14 @@ public sealed partial class ResearchStore
         if (!file.Manifest.Synthetic) throw new ResearchException("raw-paper-authored-only");
         var actions = ValidatePaperActions(file, policy.ActionMode, policy.DatasetSha256);
         var splits = actions.Where(a => a.Action == CorporateActionKind.Split).ToArray();
-        var actionEvents = policy.ActionMode == RawPaperContract.TerminalMode
+        var actionEvents = RawPaperContract.IsTerminalMode(policy.ActionMode)
             ? PaperTerminalEvents(file, policy.ActionMode, policy.Terminals, policy.Decisions, policy.DatasetSha256)
             : RawPaperContract.IsDividendMode(policy.ActionMode)
             ? PaperDividendEvents(file, policy.ActionMode, policy.Dividends, policy.Decisions, policy.DatasetSha256)
             : splits.Select(s => new PaperActionEvent(s, SplitBooking(s), new RawReplaySplit(s.ListingId, s.ActionId),
                 "split-" + RawHash(System.Text.Encoding.UTF8.GetBytes(s.Id)))).ToArray();
-        var claimsMode = policy.ActionMode == RawPaperContract.DividendClaimsMode;
-        var claimCatalog = claimsMode ? PaperDividendClaimCatalog(policy) : null;
+        var claimsMode = RawPaperContract.IsClaimsMode(policy.ActionMode);
+        var claimCatalog = policy.ActionMode == RawPaperContract.TerminalClaimsMode ? PaperTerminalClaimCatalog(policy) : claimsMode ? PaperDividendClaimCatalog(policy) : null;
         var dataset = new PointInTimeDataset(file);
         var calendars = new Dictionary<string, ExecutionCalendar>(StringComparer.Ordinal);
         // Calendar pins hash semantic session tables; original hashes bind their wire bytes.
@@ -110,9 +110,9 @@ public sealed partial class ResearchStore
                     ledger.CaptureDividend(item.Id, Slice(item.At), capture.ListingId, capture.ActionId, capture.Evidence); break;
                 case RawReplayDividendPayment payment when RawPaperContract.IsDividendMode(policy.ActionMode):
                     ledger.PayDividend(item.Id, Slice(item.At), payment.ListingId, payment.ActionId, payment.Payment, fxAge); break;
-                case RawReplayTerminalCapture capture when policy.ActionMode == RawPaperContract.TerminalMode:
+                case RawReplayTerminalCapture capture when RawPaperContract.IsTerminalMode(policy.ActionMode):
                     ledger.CaptureTerminal(item.Id, Slice(item.At), capture.ListingId, capture.ActionId, capture.Evidence); break;
-                case RawReplayTerminalSettlement settlement when policy.ActionMode == RawPaperContract.TerminalMode:
+                case RawReplayTerminalSettlement settlement when RawPaperContract.IsTerminalMode(policy.ActionMode):
                     ledger.SettleTerminal(item.Id, Slice(item.At), settlement.ListingId, settlement.ActionId, settlement.Settlement, fxAge); break;
                 default: throw new ResearchException("raw-paper-batch");
             }
@@ -192,8 +192,8 @@ public sealed partial class ResearchStore
         Through(at);
         var market = Slice(at, 3); var depositId = Add("deposit", at, new RawReplayDeposit(policy.MonthlyGbp));
         ledger.Deposit(depositId, at, policy.MonthlyGbp);
-        var openingClaims = claimsMode ? PaperDividendClaims(ledger, claimCatalog!, at) : new RawRebalanceClaimAssumptions([], []);
-        if (openingClaims.Dividends.Length > 0) _ = Slice(at, openingClaims.Dividends.Length);
+        var openingClaims = claimsMode ? PaperClaims(ledger, claimCatalog!, at, policy.ActionMode) : new RawRebalanceClaimAssumptions([], []);
+        if (openingClaims.Dividends.Length + openingClaims.Terminals.Length > 0) _ = Slice(at, openingClaims.Dividends.Length + openingClaims.Terminals.Length);
         Add("open", at, new RawReplayMark(openingClaims.Dividends, openingClaims.Terminals));
         var spec = new RawUniverseStrategySpec(RawUniverseDecision.Version, policy.UniverseId,
             policy.Decisions.Skip(index - RawUniverseDecision.HistoryDecisions + 1).Take(RawUniverseDecision.HistoryDecisions).ToImmutableArray(), execution.MaximumPriceAgeDays, policy.Config, "momentum");
@@ -236,8 +236,8 @@ public sealed partial class ResearchStore
             }
         }
         Through(next); var closing = Slice(next); CheckSplitPrices(closing, ledger.Holdings.Keys);
-        var closingClaims = claimsMode ? PaperDividendClaims(ledger, claimCatalog!, next) : new RawRebalanceClaimAssumptions([], []);
-        if (closingClaims.Dividends.Length > 0) _ = Slice(next, closingClaims.Dividends.Length);
+        var closingClaims = claimsMode ? PaperClaims(ledger, claimCatalog!, next, policy.ActionMode) : new RawRebalanceClaimAssumptions([], []);
+        if (closingClaims.Dividends.Length + closingClaims.Terminals.Length > 0) _ = Slice(next, closingClaims.Dividends.Length + closingClaims.Terminals.Length);
         Add("close", next, new RawReplayMark(closingClaims.Dividends, closingClaims.Terminals));
         var document = new RawReplayDocument(RawReplayArchive.Version, RawEventReplay.Version, policy.Build,
             priceAge.Ticks, fxAge.Ticks, FxPurpose.Executable, events.ToImmutable())

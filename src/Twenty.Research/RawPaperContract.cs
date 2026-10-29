@@ -29,10 +29,14 @@ public static class RawPaperContract
     public const string DividendClaimsVersion = "raw-paper-dividend-claim-batches-v1";
     public const string TerminalMode = "terminal-settlements-v1";
     public const string TerminalVersion = "raw-paper-terminal-batches-v1";
+    public const string TerminalClaimsMode = "terminal-claims-v1";
+    public const string TerminalClaimsVersion = "raw-paper-terminal-claim-batches-v1";
     public static bool IsDividendMode(string? mode) => mode is DividendMode or DividendClaimsMode;
-    public static bool IsKnownMode(string? mode) => mode is null or SplitMode or DividendMode or DividendClaimsMode or TerminalMode;
+    public static bool IsTerminalMode(string? mode) => mode is TerminalMode or TerminalClaimsMode;
+    public static bool IsClaimsMode(string? mode) => mode is DividendClaimsMode or TerminalClaimsMode;
+    public static bool IsKnownMode(string? mode) => mode is null or SplitMode or DividendMode or DividendClaimsMode or TerminalMode or TerminalClaimsMode;
     public static string AccountVersion(string? mode) => mode switch
-    { null => Version, SplitMode => SplitVersion, DividendMode => DividendVersion, DividendClaimsMode => DividendClaimsVersion, TerminalMode => TerminalVersion, _ => "" };
+    { null => Version, SplitMode => SplitVersion, DividendMode => DividendVersion, DividendClaimsMode => DividendClaimsVersion, TerminalMode => TerminalVersion, TerminalClaimsMode => TerminalClaimsVersion, _ => "" };
     public static RawReplayDocument ValidateAppend(RawPaperPolicy policy, byte[]? previousBytes, byte[] nextBytes)
     {
         if (policy is null || !IsKnownMode(policy.ActionMode) || policy.Execution is null || policy.Config is null || policy.FirstDecisionAt == default ||
@@ -40,8 +44,8 @@ public static class RawPaperContract
             policy.Decisions.IsDefault || policy.Decisions.Length is < 14 or > 133 || policy.FirstDecisionAt != policy.Decisions[RawUniverseDecision.HistoryDecisions - 1] ||
             !IsDividendMode(policy.ActionMode) && !policy.Dividends.IsDefault ||
             IsDividendMode(policy.ActionMode) && policy.Dividends.IsDefault ||
-            policy.ActionMode != TerminalMode && !policy.Terminals.IsDefault ||
-            policy.ActionMode == TerminalMode && policy.Terminals.IsDefault ||
+            !IsTerminalMode(policy.ActionMode) && !policy.Terminals.IsDefault ||
+            IsTerminalMode(policy.ActionMode) && policy.Terminals.IsDefault ||
             policy.Calendars.IsDefaultOrEmpty || policy.Calendars.Length > 16 || policy.Calendars.Any(p => p is null))
             throw new ResearchException("raw-paper-policy");
         var next = Read(nextBytes);
@@ -62,7 +66,7 @@ public static class RawPaperContract
         var batch = next.Events.Skip(start).Where(e =>
             !(policy.ActionMode == SplitMode && e.Operation is RawReplaySplit) &&
             !(IsDividendMode(policy.ActionMode) && e.Operation is RawReplayDividendCapture or RawReplayDividendPayment) &&
-            !(policy.ActionMode == TerminalMode && e.Operation is RawReplayTerminalCapture or RawReplayTerminalSettlement)).ToArray();
+            !(IsTerminalMode(policy.ActionMode) && e.Operation is RawReplayTerminalCapture or RawReplayTerminalSettlement)).ToArray();
         if (batch.Length < 4 || batch.Any(e => e is null) || batch[0].Operation is not RawReplayDeposit deposit ||
             batch[1].Operation is not RawReplayMark open || batch[2].Operation is not RawReplayRebalanceDecision decision ||
             batch[^1].Operation is not RawReplayMark close || !ValidMark(open, policy.ActionMode) || !ValidMark(close, policy.ActionMode))
@@ -78,7 +82,7 @@ public static class RawPaperContract
         if (binding?.Spec is not { } spec || spec.Strategy != "momentum" || spec.Version != RawUniverseDecision.Version ||
             spec.UniverseId != policy.UniverseId || spec.Config != policy.Config || spec.MaximumPriceAgeDays != execution.MaximumPriceAgeDays ||
             spec.Decisions.IsDefaultOrEmpty || !spec.Decisions.SequenceEqual(policy.Decisions.Skip(gridIndex - RawUniverseDecision.HistoryDecisions + 1).Take(RawUniverseDecision.HistoryDecisions)) || spec.Decisions[^1] != at || plan.UniverseId != policy.UniverseId ||
-            (policy.ActionMode == DividendClaimsMode
+            (IsClaimsMode(policy.ActionMode)
                 ? plan.Version != RawRebalancePlanner.ClaimsVersion || plan.ClaimAssumptions is null
                 : plan.Version != RawRebalancePlanner.Version || plan.ClaimAssumptions is not null) ||
             plan.CashReserveGbp != execution.CashReserveGbp || plan.FeePerFillGbp != execution.FeePerFillGbp ||
@@ -99,7 +103,7 @@ public static class RawPaperContract
         return next;
     }
     private static bool ValidMark(RawReplayMark mark, string? mode) => !mark.Dividends.IsDefault &&
-        (mode == DividendClaimsMode || mark.Dividends.IsEmpty) && !mark.Terminals.IsDefault && mark.Terminals.IsEmpty;
+        (mode == DividendClaimsMode || mark.Dividends.IsEmpty) && !mark.Terminals.IsDefault && (mode == TerminalClaimsMode || mark.Terminals.IsEmpty);
     private static bool Monthly(DateTimeOffset from, DateTimeOffset to)
     {
         from = from.ToUniversalTime(); to = to.ToUniversalTime();

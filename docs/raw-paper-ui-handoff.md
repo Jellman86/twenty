@@ -47,3 +47,7 @@ The subsequent [dividend authoring form](raw-paper-dividend-authoring.md) now su
 ## Settled terminal mode (29 October 2026)
 
 The separate [terminal settlement contract](raw-paper-terminals.md) adds `raw-paper-terminal-batches-v1`, exact zero/cash/stock authoring and scoped capability gates. `terminal-settlements-v1` requires `settled-before-monthly-marks`; pending terminal claims remain unavailable. Other modes omit the catalog. Native API/browser, cold retry, killed-process and exact older-account evidence remain separate from deployment and genuine financial acceptance.
+
+## Pending terminal mode (29 October 2026)
+
+[Pending terminal claims](raw-paper-terminal-claims.md) add the separate `raw-paper-terminal-claim-batches-v1` / `terminal-claims-v1` contract. Require all three: `actionSupport.pendingTerminalClaims: true`, `pendingTerminalMode: "terminal-claims-v1"` and `pendingTerminalScope: "settled-by-final-monthly-mark"`. The earlier settled-terminal scope is unchanged. Expected deduction evidence is authored separately from actual settlement. `balance.terminalClaims` is omitted from other modes; base equity remains delivered holdings plus settled cash. Missing/unknown capability hides creation/calculation while retaining inspection. New claims must settle by the final mark. Combined actions, partial settlement and genuine forward acceptance remain open.

@@ -16,9 +16,11 @@ public sealed record RawPaperCreateRequest(string RequestId, string StudyId, str
 }
 public sealed record RawPaperAdvanceRequest(string RequestId, string? ExpectedReceiptSha256, string ReplaySha256);
 public sealed record RawPaperDividendClaimBalance(int Count, decimal NetExpectedValueGbp, decimal ExpectedFeesGbp, decimal ExpectedEquityGbp);
+public sealed record RawPaperTerminalClaimBalance(int Count, decimal NetExpectedValueGbp, decimal ExpectedFeesGbp, decimal ExpectedEquityGbp);
 public sealed record RawPaperBalance(decimal CashGbp, decimal ContributionsGbp, decimal FeesGbp, ImmutableSortedDictionary<string, RawQuantityPosition> Holdings, decimal EquityGbp, DateTimeOffset? ValuedAt)
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public RawPaperDividendClaimBalance? DividendClaims { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public RawPaperTerminalClaimBalance? TerminalClaims { get; init; }
 }
 public sealed record RawPaperOriginal(string Kind, string Sha256, int Bytes);
 public sealed record RawPaperAccount(string Id, string Version, string RequestId, string RequestSha256, string StudyId,
@@ -60,7 +62,7 @@ public sealed partial class ResearchStore
                 var own = operations.Where(o => o.AccountId == account.Id).ToArray();
                 if (account.Policy is null || account.Balance is null || account.Version != RawPaperContract.AccountVersion(account.Policy.ActionMode) ||
                     !RawPaperContract.IsKnownMode(account.Policy.ActionMode) ||
-                    (account.Policy.ActionMode == RawPaperContract.TerminalMode ? account.Policy.Terminals.IsDefault : !account.Policy.Terminals.IsDefault) ||
+                    (RawPaperContract.IsTerminalMode(account.Policy.ActionMode) ? account.Policy.Terminals.IsDefault : !account.Policy.Terminals.IsDefault) ||
                     account.Attempts != own.Length || account.AcceptedPeriods != own.Count(o => o.Status == "succeeded") ||
                     (account.HeadOperationId is null) != (account.HeadReceiptSha256 is null) || account.HeadOperationId is { } head &&
                     !own.Any(o => o.Id == head && o.Status == "succeeded" && o.ReceiptSha256 == account.HeadReceiptSha256) ||
@@ -71,12 +73,18 @@ public sealed partial class ResearchStore
     }
     private static bool ValidPaperClaimBalance(RawPaperAccount account)
     {
-        var claims = account.Balance.DividendClaims;
-        if (account.Policy.ActionMode != RawPaperContract.DividendClaimsMode) return claims is null;
-        if (claims is null || claims.Count is < 0 or > RawRebalancePlanner.MaximumPendingClaims || claims.ExpectedFeesGbp < 0 ||
-            claims.Count == 0 && (claims.NetExpectedValueGbp != 0 || claims.ExpectedFeesGbp != 0) ||
-            account.AcceptedPeriods == 0 && claims.Count != 0) return false;
-        try { return claims.ExpectedEquityGbp == account.Balance.EquityGbp + claims.NetExpectedValueGbp; }
+        var dividend = account.Balance.DividendClaims; var terminal = account.Balance.TerminalClaims;
+        if (account.Policy.ActionMode == RawPaperContract.DividendClaimsMode)
+            return dividend is not null && terminal is null && ValidClaimNumbers(dividend.Count, dividend.NetExpectedValueGbp, dividend.ExpectedFeesGbp, dividend.ExpectedEquityGbp, account);
+        if (account.Policy.ActionMode == RawPaperContract.TerminalClaimsMode)
+            return terminal is not null && dividend is null && ValidClaimNumbers(terminal.Count, terminal.NetExpectedValueGbp, terminal.ExpectedFeesGbp, terminal.ExpectedEquityGbp, account);
+        return dividend is null && terminal is null;
+    }
+    private static bool ValidClaimNumbers(int count, decimal net, decimal fees, decimal expected, RawPaperAccount account)
+    {
+        if (count is < 0 or > RawRebalancePlanner.MaximumPendingClaims || fees < 0 ||
+            count == 0 && (net != 0 || fees != 0) || account.AcceptedPeriods == 0 && count != 0) return false;
+        try { return expected == account.Balance.EquityGbp + net; }
         catch (OverflowException) { return false; }
     }
     public List<RawPaperOperation> RawPaperOperations(string id)
@@ -156,7 +164,9 @@ public sealed partial class ResearchStore
                 source.Plan.Candidates.Single(c => c.Id == source.SelectedCandidateId).Config, execution, request.Calendars, RawReplayBuildIdentity.Current, request.Decisions) { ActionMode = request.ActionMode, Dividends = request.Dividends, Terminals = request.Terminals };
             var account = new RawPaperAccount(Guid.NewGuid().ToString("N"), RawPaperContract.AccountVersion(request.ActionMode), request.RequestId, sha, source.Id, source.PlanSha256,
                 request.SelectionSha256, source.SelectedCandidateId, request.CostScenario, source.Plan.ReservedEnd, policy, ResearchIdentity.Current.Sha256,
-                clock.GetUtcNow(), "ready", 0, 0, null, null, null, new(0, 0, 0, ImmutableSortedDictionary<string, RawQuantityPosition>.Empty, 0, null) { DividendClaims = request.ActionMode == RawPaperContract.DividendClaimsMode ? new(0, 0, 0, 0) : null }, originals.Select(o => o.Original).ToImmutableArray());
+                clock.GetUtcNow(), "ready", 0, 0, null, null, null, new(0, 0, 0, ImmutableSortedDictionary<string, RawQuantityPosition>.Empty, 0, null) {
+                    DividendClaims = request.ActionMode == RawPaperContract.DividendClaimsMode ? new(0, 0, 0, 0) : null,
+                    TerminalClaims = request.ActionMode == RawPaperContract.TerminalClaimsMode ? new(0, 0, 0, 0) : null }, originals.Select(o => o.Original).ToImmutableArray());
             EnsureAdditionalArtifactCapacity(originals.Where(o => !File.Exists(PaperInputPath(o.Original))).Sum(o => (long)o.Bytes.Length) + 1024 * 1024);
             foreach (var item in originals) { var path = PaperInputPath(item.Original); Directory.CreateDirectory(Path.GetDirectoryName(path)!); ImmutableWrite(path, item.Bytes); }
             SavePaper(account); return account;
@@ -215,7 +225,7 @@ public sealed partial class ResearchStore
                     if (document.Events.Select(e => e.Operation).OfType<RawReplayRebalanceDecision>().Any(d => d.UniverseStrategy!.Spec.Decisions[0] <= account.SourceReservedEnd)) throw new ResearchException("raw-paper-information-window");
                     var original = account.Originals.Single(o => o.Kind == "dataset");
                     RawReplayReceipt receipt;
-                    if (account.Policy.ActionMode is RawPaperContract.SplitMode or RawPaperContract.TerminalMode || RawPaperContract.IsDividendMode(account.Policy.ActionMode))
+                    if (account.Policy.ActionMode == RawPaperContract.SplitMode || RawPaperContract.IsTerminalMode(account.Policy.ActionMode) || RawPaperContract.IsDividendMode(account.Policy.ActionMode))
                     {
                         var generated = BuildPaperBatch(account, deadline.Token);
                         if (!generated.Bytes.AsSpan().SequenceEqual(bytes)) throw new ResearchException("raw-paper-action-binding");
@@ -223,10 +233,13 @@ public sealed partial class ResearchStore
                     }
                     else receipt = RawReplayArchive.Execute(bytes, sha => sha == account.Policy.DatasetSha256 ? PaperReadArtifact(PaperInputPath(original), original.Sha256, DatasetJson.MaximumBytes) : throw new ResearchException("raw-paper-dataset"), deadline.Token);
                     var result = JsonSerializer.Deserialize<RawEventReplayResult>(Convert.FromBase64String(receipt.ResultBase64), RawReplayJson.Options)!;
-                    if ((account.Policy.ActionMode == RawPaperContract.TerminalMode ? result.TerminalEntitlements.Any(t => t.SettledAt is null) : result.TerminalEntitlements.Length != 0) || !RawPaperContract.IsDividendMode(account.Policy.ActionMode) && result.DividendEntitlements.Length != 0 ||
+                    if ((!RawPaperContract.IsTerminalMode(account.Policy.ActionMode) && result.TerminalEntitlements.Length != 0 ||
+                        account.Policy.ActionMode == RawPaperContract.TerminalMode && result.TerminalEntitlements.Any(t => t.SettledAt is null)) || !RawPaperContract.IsDividendMode(account.Policy.ActionMode) && result.DividendEntitlements.Length != 0 ||
                         account.Policy.ActionMode == RawPaperContract.DividendMode && result.DividendEntitlements.Any(d => d.PaidAt is null)) throw new ResearchException("raw-paper-actions-unsupported");
                     if (account.Policy.ActionMode == RawPaperContract.DividendClaimsMode && account.AcceptedPeriods + 1 == account.Policy.Decisions.Length - RawUniverseDecision.HistoryDecisions &&
                         result.DividendEntitlements.Any(d => d.PaidAt is null)) throw new ResearchException("raw-paper-dividend-final-unsettled");
+                    if (account.Policy.ActionMode == RawPaperContract.TerminalClaimsMode && account.AcceptedPeriods + 1 == account.Policy.Decisions.Length - RawUniverseDecision.HistoryDecisions &&
+                        result.TerminalEntitlements.Any(t => t.SettledAt is null)) throw new ResearchException("raw-paper-terminal-final-unsettled");
                     var receiptBytes = RawBytes(receipt); if (receiptBytes.Length > 8 * 1024 * 1024) throw new ResearchException("raw-paper-capacity");
                     deadline.Token.ThrowIfCancellationRequested(); EnsureArtifactCapacity(receiptBytes); ImmutableWrite(PaperOperationPath(row.Id, "receipt"), receiptBytes);
                     row = row with { Status = "succeeded", ReceiptSha256 = RawHash(receiptBytes), FinishedAt = LaterPaper(clock.GetUtcNow(), at) };
@@ -258,7 +271,9 @@ public sealed partial class ResearchStore
         return new(result.CashGbp, result.ContributionsGbp, result.FeesGbp, result.Holdings, mark.HoldingsAndCash.EquityGbp, mark.HoldingsAndCash.At)
         {
             DividendClaims = mode == RawPaperContract.DividendClaimsMode ? new(mark.DividendReceivables.Length, mark.ExpectedDividendReceivablesGbp,
-                mark.DividendReceivables.Sum(c => c.Assumption.ExpectedFeeGbp), mark.ExpectedEquityGbp) : null
+                mark.DividendReceivables.Sum(c => c.Assumption.ExpectedFeeGbp), mark.ExpectedEquityGbp) : null,
+            TerminalClaims = mode == RawPaperContract.TerminalClaimsMode ? new(mark.TerminalReceivables.Length, mark.ExpectedTerminalReceivablesGbp,
+                mark.TerminalReceivables.Sum(c => c.Assumption.ExpectedFeeGbp), mark.ExpectedEquityGbp) : null
         };
     }
 }

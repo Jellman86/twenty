@@ -7,7 +7,7 @@
   type Source={id:string;name:string;planSha256:string;selectionReportSha256:string;selectedCandidateId:string;monthlyGbp:number};
   type Holding={quantity:number;denomination?:{currency:string;unit:string}};
   type ClaimBalance={count:number;netExpectedValueGbp:number;expectedFeesGbp:number;expectedEquityGbp:number};
-  type Balance={dividendClaims?:ClaimBalance;equityGbp:number;valuedAt?:string;cashGbp:number;contributionsGbp:number;feesGbp:number;holdings:Record<string,Holding>};
+  type Balance={terminalClaims?:ClaimBalance;dividendClaims?:ClaimBalance;equityGbp:number;valuedAt?:string;cashGbp:number;contributionsGbp:number;feesGbp:number;holdings:Record<string,Holding>};
   type Account={id:string;version:string;studyId:string;planSha256:string;selectionSha256:string;candidateId:string;costScenario:string;status:string;acceptedPeriods:number;attempts:number;
     headReceiptSha256?:string;codeSha256:string;balance:Balance;
     policy:{firstDecisionAt:string;decisions:string[];datasetSha256:string;execution:unknown;actionMode?:string}};
@@ -18,7 +18,7 @@
   let accounts=$state<Account[]>([]),selected=$state<Account|null>(null),operations=$state<Operation[]>([]),busy=$state(false),error=$state(''),ready=$state(false);
   let sourceId=$state(''),dataset=$state(''),calendars=$state(''),dates=$state(''),scenario=$state('base'),replaySha=$state(''),actionMode=$state('');
   let dividendRows=$state([emptyDividend()]),dividendsAvailable=$state(false),pendingDividendsAvailable=$state(false),authoredOnly=$state(false);
-  let terminalRows=$state([emptyTerminal()]),terminalsAvailable=$state(false);
+  let terminalRows=$state([emptyTerminal()]),terminalsAvailable=$state(false),pendingTerminalsAvailable=$state(false);
   let preparationAvailable=$state(false),pureSplitsAvailable=$state(false),support=$state<Support|null>(null),prepared=$state<Prepared|null>(null);
   let wanted='',revision=0;const requests=new Map<string,string>();
   const source=$derived(sources.find(s=>s.id===sourceId)??sources[0]??null);
@@ -27,12 +27,13 @@
   const stamp=(s:string)=>new Date(s).toISOString().slice(0,16).replace('T',' ')+' UTC';
   const statusLabel:Record<string,string>={ready:'Ready',active:'Active',stopped:'Stopped',failed:'Failed',succeeded:'Applied',running:'Running',refused:'Refused'};
   // Frozen at creation; unsupported version/mode combinations remain read-only.
-  const KNOWN:Record<string,string|undefined>={'raw-paper-batches-v1':undefined,'raw-paper-split-batches-v1':'pure-splits-v1','raw-paper-dividend-batches-v1':'cash-dividends-v1','raw-paper-dividend-claim-batches-v1':'dividend-claims-v1','raw-paper-terminal-batches-v1':'terminal-settlements-v1'};
+  const KNOWN:Record<string,string|undefined>={'raw-paper-batches-v1':undefined,'raw-paper-split-batches-v1':'pure-splits-v1','raw-paper-dividend-batches-v1':'cash-dividends-v1','raw-paper-dividend-claim-batches-v1':'dividend-claims-v1','raw-paper-terminal-batches-v1':'terminal-settlements-v1','raw-paper-terminal-claim-batches-v1':'terminal-claims-v1'};
   const known=(a:Account)=>a.version in KNOWN&&KNOWN[a.version]===a.policy.actionMode;
-  const modeLabel=(a:Account)=>!known(a)?'Unsupported mode':a.policy.actionMode==='pure-splits-v1'?'Stock splits':a.policy.actionMode==='cash-dividends-v1'?'Cash dividends':a.policy.actionMode==='dividend-claims-v1'?'Pending dividends':a.policy.actionMode==='terminal-settlements-v1'?'Terminal settlements':'No corporate actions';
-  const equity=(b:Balance)=>b.dividendClaims?.expectedEquityGbp??b.equityGbp;
+  const modeLabel=(a:Account)=>!known(a)?'Unsupported mode':a.policy.actionMode==='pure-splits-v1'?'Stock splits':a.policy.actionMode==='cash-dividends-v1'?'Cash dividends':a.policy.actionMode==='dividend-claims-v1'?'Pending dividends':a.policy.actionMode==='terminal-claims-v1'?'Pending terminal claims':a.policy.actionMode==='terminal-settlements-v1'?'Terminal settlements':'No corporate actions';
+  const claims=(b:Balance)=>b.terminalClaims??b.dividendClaims;
+  const equity=(b:Balance)=>claims(b)?.expectedEquityGbp??b.equityGbp;
   const name=(a:Account)=>studyNames[a.studyId]??`Study ${a.studyId.slice(0,8)}`;
-  const writable=(a:Account)=>known(a)&&a.codeSha256===currentCode&&(a.policy.actionMode!=='dividend-claims-v1'||pendingDividendsAvailable)&&(a.policy.actionMode!=='terminal-settlements-v1'||terminalsAvailable)&&['ready','active'].includes(a.status);
+  const writable=(a:Account)=>known(a)&&a.codeSha256===currentCode&&(a.policy.actionMode!=='dividend-claims-v1'||pendingDividendsAvailable)&&(a.policy.actionMode!=='terminal-settlements-v1'||terminalsAvailable)&&(a.policy.actionMode!=='terminal-claims-v1'||pendingTerminalsAvailable)&&['ready','active'].includes(a.status);
   const messages:Record<string,string>={
     'raw-paper-dataset-unattested':'Re-import the exact authored dataset to record its provenance first.',
     'raw-paper-authored-only':'Paper accounts accept authored datasets and studies only.',
@@ -53,6 +54,9 @@
     'raw-paper-dividend-ambiguous':'Dividend events overlap; their order needs a separate supported contract.',
     'raw-paper-terminal-policy':'The terminal terms do not match the frozen dataset or settlement policy.',
     'raw-paper-terminal-unsettled':'This terminal action is unsettled at a monthly boundary. Pending terminal claims need a separate supported policy.',
+    'raw-paper-terminal-mark-coverage':'Every pending terminal claim needs an expected deduction policy available by its first monthly mark.',
+    'raw-paper-terminal-final-unsettled':'Every captured terminal claim must settle by the last account mark.',
+    'raw-paper-terminal-claim-capacity':'This account exceeds the supported pending terminal claim capacity.',
     'raw-paper-terminal-ambiguous':'Terminal events overlap; their order needs a separate supported contract.',
     'raw-ledger-terminal-fx':'The settlement needs its exact executable FX observation at the actual settlement time.',
     'raw-ledger-terminal-successor-history':'Successor actions or quantity changes require explicit ownership reconstruction.',
@@ -86,13 +90,14 @@
     return response.json();
   }
   async function refresh(){
-    const result=await api<{accounts?:Account[];authoredOnly?:boolean;preparationAvailable?:boolean;pureSplitsAvailable?:boolean;actionSupport?:Support;dividendMode?:string;dividendScope?:string;pendingDividendMode?:string;pendingDividendScope?:string;terminalMode?:string;terminalScope?:string}>('/api/research/raw-paper-accounts');
+    const result=await api<{accounts?:Account[];authoredOnly?:boolean;preparationAvailable?:boolean;pureSplitsAvailable?:boolean;actionSupport?:Support;dividendMode?:string;dividendScope?:string;pendingDividendMode?:string;pendingDividendScope?:string;terminalMode?:string;terminalScope?:string;pendingTerminalMode?:string;pendingTerminalScope?:string}>('/api/research/raw-paper-accounts');
     accounts=result.accounts??[];preparationAvailable=result.preparationAvailable===true;pureSplitsAvailable=result.pureSplitsAvailable===true;support=result.actionSupport??null;ready=true;
     authoredOnly=result.authoredOnly===true;
     dividendsAvailable=support?.dividends===true&&result.dividendMode==='cash-dividends-v1'&&result.dividendScope==='paid-before-monthly-marks';
     pendingDividendsAvailable=support?.pendingDividendClaims===true&&result.pendingDividendMode==='dividend-claims-v1'&&result.pendingDividendScope==='paid-by-final-monthly-mark';
     terminalsAvailable=support?.terminals===true&&result.terminalMode==='terminal-settlements-v1'&&result.terminalScope==='settled-before-monthly-marks';
-    if(actionMode==='pure-splits-v1'&&!pureSplitsAvailable||actionMode==='cash-dividends-v1'&&!dividendsAvailable||actionMode==='dividend-claims-v1'&&!pendingDividendsAvailable||actionMode==='terminal-settlements-v1'&&!terminalsAvailable)actionMode='';
+    pendingTerminalsAvailable=support?.pendingTerminalClaims===true&&result.pendingTerminalMode==='terminal-claims-v1'&&result.pendingTerminalScope==='settled-by-final-monthly-mark';
+    if(actionMode==='pure-splits-v1'&&!pureSplitsAvailable||actionMode==='cash-dividends-v1'&&!dividendsAvailable||actionMode==='dividend-claims-v1'&&!pendingDividendsAvailable||actionMode==='terminal-settlements-v1'&&!terminalsAvailable||actionMode==='terminal-claims-v1'&&!pendingTerminalsAvailable)actionMode='';
     if(wanted)selected=accounts.find(a=>a.id===wanted)??null;
     else if(standalone&&accounts.length&&!selected)void inspect(accounts[0]);
     if(prepared&&(!selected||selected.id!==prepared.accountId||(selected.headReceiptSha256??null)!==prepared.expectedReceiptSha256||!['ready','active'].includes(selected.status)))prepared=null;
@@ -116,11 +121,11 @@
       let pins:unknown,grid:unknown;try{pins=JSON.parse(calendars);grid=JSON.parse(dates);}catch{throw new Error('Calendar pins and decision dates must be JSON arrays.');}
       if(!Array.isArray(grid)||grid.length<14||grid.length>133||grid.some(d=>typeof d!=='string'))throw new Error('Supply 14–133 ordered UTC decision dates, including the 13-date signal history.');
       // Omit action fields by default. Dividend decimal tokens go directly to System.Decimal.
-      if(actionMode==='pure-splits-v1'&&!pureSplitsAvailable||actionMode==='cash-dividends-v1'&&!dividendsAvailable||actionMode==='dividend-claims-v1'&&!pendingDividendsAvailable||actionMode==='terminal-settlements-v1'&&!terminalsAvailable)throw new Error('Refresh server support before creating this account.');
+      if(actionMode==='pure-splits-v1'&&!pureSplitsAvailable||actionMode==='cash-dividends-v1'&&!dividendsAvailable||actionMode==='dividend-claims-v1'&&!pendingDividendsAvailable||actionMode==='terminal-settlements-v1'&&!terminalsAvailable||actionMode==='terminal-claims-v1'&&!pendingTerminalsAvailable)throw new Error('Refresh server support before creating this account.');
       const payload={studyId:source.id,planSha256:source.planSha256,selectionSha256:source.selectionReportSha256,costScenario:scenario,datasetSha256:dataset,calendars:pins,firstDecisionAt:grid[12],decisions:grid,...(actionMode?{actionMode}:{})};
       let json=JSON.stringify(payload);
       if(actionMode==='cash-dividends-v1'||actionMode==='dividend-claims-v1')json=json.slice(0,-1)+',"dividends":'+dividendCatalogJson(dividendRows,dataset,actionMode==='dividend-claims-v1')+'}';
-      if(actionMode==='terminal-settlements-v1')json=json.slice(0,-1)+',"terminals":'+terminalCatalogJson(terminalRows,dataset)+'}';
+      if(actionMode==='terminal-settlements-v1'||actionMode==='terminal-claims-v1')json=json.slice(0,-1)+',"terminals":'+terminalCatalogJson(terminalRows,dataset,actionMode==='terminal-claims-v1')+'}';
       const body='{"requestId":'+JSON.stringify(requestId(json))+','+json.slice(1);
       const account=await api<Account>('/api/research/raw-paper-accounts',body,true);
       await refresh();await inspect(account);onUpdated();
@@ -159,7 +164,7 @@
     {#each accounts as account}
       <button class="acct" aria-pressed={selected?.id===account.id} disabled={busy} onclick={()=>void inspect(account)}>
         <span class="row"><strong>{name(account)} · {account.costScenario} costs</strong><span class="badge">{statusLabel[account.status]??account.status}</span></span>
-        <span class="num">{money(equity(account.balance))}{#if account.balance.dividendClaims?.count}<small class="muted"> estimated</small>{/if}</span>
+        <span class="num">{money(equity(account.balance))}{#if claims(account.balance)?.count}<small class="muted"> estimated</small>{/if}</span>
         <span class="muted">{account.acceptedPeriods} {account.acceptedPeriods===1?'period':'periods'} · {modeLabel(account)}</span>
       </button>
     {/each}
@@ -172,7 +177,7 @@
     <div class="col">
       <section class="panel" aria-labelledby="paper-balance-title">
         <div class="panel-heading"><h2 id="paper-balance-title">{name(a)} · {a.costScenario} costs</h2><span class="pill sim"><span class="d"></span>Paper · {modeLabel(a)}</span></div>
-        {#if a.balance.dividendClaims?.count}<p class="eyebrow">Estimated equity</p>{/if}
+        {#if claims(a.balance)?.count}<p class="eyebrow">Estimated equity</p>{/if}
         <div class="big"><b>{money(equity(a.balance))}</b><span class="muted">{a.balance.valuedAt?`at ${day(a.balance.valuedAt)}`:'not yet valued'}</span></div>
         <div class="kvs"><div class="kv"><span>Contributed</span><b>{money(a.balance.contributionsGbp)}</b></div><div class="kv"><span>Cash</span><b>{money(a.balance.cashGbp)}</b></div><div class="kv"><span>Fees</span><b>{money(a.balance.feesGbp)}</b></div><div class="kv"><span>Accepted</span><b>{a.acceptedPeriods} {a.acceptedPeriods===1?'period':'periods'}</b></div></div>
         {#if a.balance.dividendClaims}
@@ -181,6 +186,13 @@
             <dt>Estimated dividend receivable</dt><dd>{money(a.balance.dividendClaims.netExpectedValueGbp)}</dd>
             <dt>Estimated dividend fees</dt><dd>{money(a.balance.dividendClaims.expectedFeesGbp)}</dd></dl>
           <p class="dataset-note">The receivable includes estimated deductions. Cash and Fees above contain settled amounts only.</p>
+        {/if}
+        {#if a.balance.terminalClaims}
+          <dl class="claim-values"><dt>Delivered holdings and cash</dt><dd>{money(a.balance.equityGbp)}</dd>
+            <dt>Pending terminal claims</dt><dd>{a.balance.terminalClaims.count}</dd>
+            <dt>Estimated terminal receivable</dt><dd>{money(a.balance.terminalClaims.netExpectedValueGbp)}</dd>
+            <dt>Estimated terminal fees</dt><dd>{money(a.balance.terminalClaims.expectedFeesGbp)}</dd></dl>
+          <p class="dataset-note">Estimates include expected deductions. Cash and Fees contain settled amounts only; Holdings exclude undelivered shares.</p>
         {/if}
         <h3>Holdings</h3>
         {#if Object.keys(a.balance.holdings).length}
@@ -201,6 +213,7 @@
         {:else if a.codeSha256!==currentCode}<p class="dataset-note">Created with an older build. Read-only.</p>
         {:else if a.policy.actionMode==='dividend-claims-v1'&&!pendingDividendsAvailable}<p class="dataset-note">This server does not advertise this account’s pending-dividend policy. It is read-only.</p>
         {:else if a.policy.actionMode==='terminal-settlements-v1'&&!terminalsAvailable}<p class="dataset-note">This server does not advertise this account’s terminal-settlement policy. It is read-only.</p>
+        {:else if a.policy.actionMode==='terminal-claims-v1'&&!pendingTerminalsAvailable}<p class="dataset-note">This server does not advertise this account’s pending-terminal policy. It is read-only.</p>
         {:else if !['ready','active'].includes(a.status)}<p class="dataset-note">This account is {statusLabel[a.status]?.toLowerCase()??a.status} and accepts no more batches.</p>{/if}
         {#if writable(a)&&preparationAvailable}
           <p class="dataset-note">Prepare previews the next month. Nothing changes until you apply it.</p>
@@ -209,11 +222,15 @@
             <div class="proj" aria-live="polite">
               <h3>Projected batch {prepared.period} · Not yet applied</h3>
               <p class="dataset-note">{day(prepared.decisionAt)} to {day(prepared.nextDecisionAt)}</p>
-              <dl><dt>{prepared.projectedBalance.dividendClaims?.count?'Estimated equity':'Equity'}</dt><dd>{money(equity(prepared.projectedBalance))}</dd><dt>Cash</dt><dd>{money(prepared.projectedBalance.cashGbp)}</dd><dt>Contributed</dt><dd>{money(prepared.projectedBalance.contributionsGbp)}</dd><dt>Fees</dt><dd>{money(prepared.projectedBalance.feesGbp)}</dd>
+              <dl><dt>{claims(prepared.projectedBalance)?.count?'Estimated equity':'Equity'}</dt><dd>{money(equity(prepared.projectedBalance))}</dd><dt>Cash</dt><dd>{money(prepared.projectedBalance.cashGbp)}</dd><dt>Contributed</dt><dd>{money(prepared.projectedBalance.contributionsGbp)}</dd><dt>Fees</dt><dd>{money(prepared.projectedBalance.feesGbp)}</dd>
                 {#if prepared.projectedBalance.dividendClaims}<dt>Holdings and cash</dt><dd>{money(prepared.projectedBalance.equityGbp)}</dd>
                   <dt>Pending dividends</dt><dd>{prepared.projectedBalance.dividendClaims.count}</dd>
                   <dt>Estimated dividend receivable</dt><dd>{money(prepared.projectedBalance.dividendClaims.netExpectedValueGbp)}</dd>
                   <dt>Estimated dividend fees</dt><dd>{money(prepared.projectedBalance.dividendClaims.expectedFeesGbp)}</dd>{/if}
+                {#if prepared.projectedBalance.terminalClaims}<dt>Delivered holdings and cash</dt><dd>{money(prepared.projectedBalance.equityGbp)}</dd>
+                  <dt>Pending terminal claims</dt><dd>{prepared.projectedBalance.terminalClaims.count}</dd>
+                  <dt>Estimated terminal receivable</dt><dd>{money(prepared.projectedBalance.terminalClaims.netExpectedValueGbp)}</dd>
+                  <dt>Estimated terminal fees</dt><dd>{money(prepared.projectedBalance.terminalClaims.expectedFeesGbp)}</dd>{/if}
                 {#each Object.entries(prepared.projectedBalance.holdings) as [id,holding]}<dt>{id} shares</dt><dd>{holding.quantity}</dd>{/each}</dl>
               <button disabled={busy} onclick={()=>void advance()}>{busy?'Applying…':'Apply batch'}</button>
             </div>
@@ -232,7 +249,7 @@
         {#if support}
           <p class="eyebrow">Server action support</p>
           <div class="matrix">
-            {#each [['Stock splits',support.pureSplits],['Dividends paid within each month',support.dividends],['Settled terminal actions',terminalsAvailable],['Pending dividend claims',support.pendingDividendClaims],['Pending terminal claims',support.pendingTerminalClaims]] as [label,ok]}<div><span>{label}</span><span class:gain={ok===true} class:muted={ok!==true}>{ok===true?'Supported':'Not supported'}</span></div>{/each}
+            {#each [['Stock splits',support.pureSplits],['Dividends paid within each month',support.dividends],['Settled terminal actions',terminalsAvailable],['Pending dividend claims',support.pendingDividendClaims],['Pending terminal claims',pendingTerminalsAvailable]] as [label,ok]}<div><span>{label}</span><span class:gain={ok===true} class:muted={ok!==true}>{ok===true?'Supported':'Not supported'}</span></div>{/each}
           </div>
         {/if}
         <p class="proof">version {a.version}{a.policy.actionMode?` · mode ${a.policy.actionMode}`:''}<br/>account {a.id}<br/>study {a.studyId}<br/>plan {a.planSha256}<br/>selection {a.selectionSha256}<br/>dataset {a.policy.datasetSha256}<br/>build {a.codeSha256}<br/>head {a.headReceiptSha256??'none'}{#if prepared}<br/>prepared replay {prepared.replaySha256} · {prepared.replayBytes} bytes{/if}</p>
@@ -258,9 +275,9 @@
       <label>Dataset SHA-256<input bind:value={dataset} pattern={'[0-9a-f]{64}'} minlength="64" maxlength="64" required spellcheck="false"/></label>
       <label>Calendar pins (JSON)<textarea bind:value={calendars} rows="3" maxlength="6000" required spellcheck="false"></textarea></label>
       <label>Decision dates (JSON)<textarea bind:value={dates} rows="4" maxlength="6000" required spellcheck="false"></textarea></label>
-      {#if pureSplitsAvailable||dividendsAvailable||pendingDividendsAvailable||terminalsAvailable}
-        <label>Corporate actions<select bind:value={actionMode}><option value="">No corporate actions</option>{#if pureSplitsAvailable}<option value="pure-splits-v1">Stock splits</option>{/if}{#if dividendsAvailable}<option value="cash-dividends-v1">Cash dividends</option>{/if}{#if pendingDividendsAvailable}<option value="dividend-claims-v1">Pending dividends</option>{/if}{#if terminalsAvailable}<option value="terminal-settlements-v1">Terminal settlements</option>{/if}</select></label>
-        <p class="dataset-note">Fixed permanently at creation. Corporate-action modes cannot be combined. Pending terminal claims are not supported.</p>
+      {#if pureSplitsAvailable||dividendsAvailable||pendingDividendsAvailable||terminalsAvailable||pendingTerminalsAvailable}
+        <label>Corporate actions<select bind:value={actionMode}><option value="">No corporate actions</option>{#if pureSplitsAvailable}<option value="pure-splits-v1">Stock splits</option>{/if}{#if dividendsAvailable}<option value="cash-dividends-v1">Cash dividends</option>{/if}{#if pendingDividendsAvailable}<option value="dividend-claims-v1">Pending dividends</option>{/if}{#if terminalsAvailable}<option value="terminal-settlements-v1">Terminal settlements</option>{/if}{#if pendingTerminalsAvailable}<option value="terminal-claims-v1">Pending terminal claims</option>{/if}</select></label>
+        <p class="dataset-note">Fixed permanently at creation. Corporate-action modes cannot be combined.</p>
       {/if}
       {#if actionMode==='cash-dividends-v1'&&dividendsAvailable}
         <p class="dataset-note">Authored cash dividends only. Every captured claim must be paid before each monthly mark, including the first decision.</p>
@@ -271,6 +288,9 @@
       {:else if actionMode==='terminal-settlements-v1'&&terminalsAvailable}
         <p class="dataset-note">Authored zero, cash or stock terminal outcomes only. Every captured claim must settle before each monthly mark, including the first decision. Mixed consideration is not supported.</p>
         <TerminalTerms bind:rows={terminalRows}/>
+      {:else if actionMode==='terminal-claims-v1'&&pendingTerminalsAvailable}
+        <p class="dataset-note">Authored cash or stock terminal claims may remain unsettled between months. Declare expected deductions separately; every captured claim must settle by the last account mark. Confirmed zero needs no estimate.</p>
+        <TerminalTerms bind:rows={terminalRows} withClaims/>
       {/if}
       <div class="actions"><button disabled={busy}>Create account</button></div>
     </fieldset></form>

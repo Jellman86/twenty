@@ -72,14 +72,15 @@ public sealed partial class ResearchStore
         policy.Dividends.ToDictionary(t => (t.ListingId, t.ActionId), t => (RawActionSchedule)new RawStudyDividendSchedule(
             t.ListingId, t.ActionId, t.ObservationId, new("paper-claim-policy", 0, policy.DatasetSha256), t.Evidence, t.Delivery) { MarkPolicy = t.MarkPolicy });
 
-    private static RawRebalanceClaimAssumptions PaperDividendClaims(RawGbpLedger ledger,
-        IReadOnlyDictionary<(string ListingId, string ActionId), RawActionSchedule> catalog, DateTimeOffset at)
+    private static RawRebalanceClaimAssumptions PaperClaims(RawGbpLedger ledger,
+        IReadOnlyDictionary<(string ListingId, string ActionId), RawActionSchedule> catalog, DateTimeOffset at, string? mode)
     {
         try { return RawStudyClaimMarks.ForLedger(ledger, catalog, at); }
         catch (ResearchException e) when (e.Code.StartsWith("raw-study-claim-", StringComparison.Ordinal))
         {
-            throw new ResearchException(e.Code == "raw-study-claim-capacity" ? "raw-paper-dividend-claim-capacity" :
-                e.Code == "raw-study-claim-arithmetic" ? "raw-paper-arithmetic" : "raw-paper-dividend-mark-coverage");
+            var prefix = mode == RawPaperContract.TerminalClaimsMode ? "raw-paper-terminal-" : "raw-paper-dividend-";
+            throw new ResearchException(e.Code == "raw-study-claim-capacity" ? prefix + "claim-capacity" :
+                e.Code == "raw-study-claim-arithmetic" ? "raw-paper-arithmetic" : prefix + "mark-coverage");
         }
     }
 }
