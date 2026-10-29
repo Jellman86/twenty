@@ -1,5 +1,7 @@
 <script lang="ts">
   import {onMount} from 'svelte';
+  import DividendTerms from './DividendTerms.svelte';
+  import {dividendCatalogJson,emptyDividend} from './raw-paper-dividends';
   type Source={id:string;name:string;planSha256:string;selectionReportSha256:string;selectedCandidateId:string;monthlyGbp:number};
   type Holding={quantity:number;denomination?:{currency:string;unit:string}};
   type Balance={equityGbp:number;valuedAt?:string;cashGbp:number;contributionsGbp:number;feesGbp:number;holdings:Record<string,Holding>};
@@ -11,7 +13,8 @@
   type Support={pureSplits?:boolean;dividends?:boolean;terminals?:boolean;pendingClaims?:boolean};
   let {sources=[],currentCode='',studyNames={},standalone=false,onUpdated=()=>{}}:{sources?:Source[];currentCode?:string;studyNames?:Record<string,string>;standalone?:boolean;onUpdated?:()=>void}=$props();
   let accounts=$state<Account[]>([]),selected=$state<Account|null>(null),operations=$state<Operation[]>([]),busy=$state(false),error=$state(''),ready=$state(false);
-  let sourceId=$state(''),dataset=$state(''),calendars=$state(''),dates=$state(''),scenario=$state('base'),replaySha=$state(''),splits=$state(false);
+  let sourceId=$state(''),dataset=$state(''),calendars=$state(''),dates=$state(''),scenario=$state('base'),replaySha=$state(''),actionMode=$state('');
+  let dividendRows=$state([emptyDividend()]),dividendsAvailable=$state(false);
   let preparationAvailable=$state(false),pureSplitsAvailable=$state(false),support=$state<Support|null>(null),prepared=$state<Prepared|null>(null);
   let wanted='',revision=0;const requests=new Map<string,string>();
   const source=$derived(sources.find(s=>s.id===sourceId)??sources[0]??null);
@@ -55,7 +58,7 @@
     'raw-paper-calendar':'The calendars differ from the frozen reviewed tables.',
     'raw-paper-capacity':'The account or storage limit has been reached.',
     'raw-paper-execution-refused':'The frozen costs cannot produce a complete next batch. Balances are unchanged.',
-    'raw-paper-action-mode':'Unknown corporate-action mode. Create the account without it, or with stock splits.',
+    'raw-paper-action-mode':'This corporate-action mode is not supported by the server.',
     'raw-ledger-cash':'The opening fill would exceed available cash. Nothing changed.',
     'raw-paper-arithmetic':'The inputs exceeded the decimal arithmetic limits. Balances are unchanged.',
     'process-restarted':'The server restarted before this attempt finished. The earlier balance is kept.',
@@ -63,15 +66,16 @@
     'research-worker-busy':'Another calculation is running. Try again shortly.',
     'artifact-capacity':'Not enough storage space; nothing was started.'
   };
-  async function api<T>(path:string,body?:unknown):Promise<T>{
-    const response=await fetch(path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json','X-Twenty-Request':'1'},body:JSON.stringify(body)});
+  async function api<T>(path:string,body?:unknown,rawJson=false):Promise<T>{
+    const response=await fetch(path,body===undefined?undefined:{method:'POST',headers:{'Content-Type':'application/json','X-Twenty-Request':'1'},body:rawJson?body as string:JSON.stringify(body)});
     if(!response.ok){let code='Paper account request failed.';try{code=(await response.json()).error??code;}catch{}throw new Error(messages[code]??code);}
     return response.json();
   }
   async function refresh(){
-    const result=await api<{accounts?:Account[];preparationAvailable?:boolean;pureSplitsAvailable?:boolean;actionSupport?:Support}>('/api/research/raw-paper-accounts');
+    const result=await api<{accounts?:Account[];preparationAvailable?:boolean;pureSplitsAvailable?:boolean;actionSupport?:Support;dividendMode?:string;dividendScope?:string}>('/api/research/raw-paper-accounts');
     accounts=result.accounts??[];preparationAvailable=result.preparationAvailable===true;pureSplitsAvailable=result.pureSplitsAvailable===true;support=result.actionSupport??null;ready=true;
-    if(!pureSplitsAvailable)splits=false;
+    dividendsAvailable=support?.dividends===true&&result.dividendMode==='cash-dividends-v1'&&result.dividendScope==='paid-before-monthly-marks';
+    if(actionMode==='pure-splits-v1'&&!pureSplitsAvailable||actionMode==='cash-dividends-v1'&&!dividendsAvailable)actionMode='';
     if(wanted)selected=accounts.find(a=>a.id===wanted)??null;
     else if(standalone&&accounts.length&&!selected)void inspect(accounts[0]);
     if(prepared&&(!selected||selected.id!==prepared.accountId||(selected.headReceiptSha256??null)!==prepared.expectedReceiptSha256||!['ready','active'].includes(selected.status)))prepared=null;
@@ -94,9 +98,13 @@
     try{
       let pins:unknown,grid:unknown;try{pins=JSON.parse(calendars);grid=JSON.parse(dates);}catch{throw new Error('Calendar pins and decision dates must be JSON arrays.');}
       if(!Array.isArray(grid)||grid.length<14||grid.length>133||grid.some(d=>typeof d!=='string'))throw new Error('Supply 14–133 ordered UTC decision dates, including the 13-date signal history.');
-      // Omit actionMode entirely unless explicitly opted in, so legacy requests keep their exact bytes.
-      const payload={studyId:source.id,planSha256:source.planSha256,selectionSha256:source.selectionReportSha256,costScenario:scenario,datasetSha256:dataset,calendars:pins,firstDecisionAt:grid[12],decisions:grid,...(splits&&pureSplitsAvailable?{actionMode:'pure-splits-v1'}:{})};
-      const account=await api<Account>('/api/research/raw-paper-accounts',{requestId:requestId(JSON.stringify(payload)),...payload});
+      // Omit action fields by default. Dividend decimal tokens go directly to System.Decimal.
+      if(actionMode==='pure-splits-v1'&&!pureSplitsAvailable||actionMode==='cash-dividends-v1'&&!dividendsAvailable)throw new Error('Refresh server support before creating this account.');
+      const payload={studyId:source.id,planSha256:source.planSha256,selectionSha256:source.selectionReportSha256,costScenario:scenario,datasetSha256:dataset,calendars:pins,firstDecisionAt:grid[12],decisions:grid,...(actionMode?{actionMode}:{})};
+      let json=JSON.stringify(payload);
+      if(actionMode==='cash-dividends-v1')json=json.slice(0,-1)+',"dividends":'+dividendCatalogJson(dividendRows,dataset)+'}';
+      const body='{"requestId":'+JSON.stringify(requestId(json))+','+json.slice(1);
+      const account=await api<Account>('/api/research/raw-paper-accounts',body,true);
       await refresh();await inspect(account);onUpdated();
     }catch(e){error=e instanceof Error?e.message:'Account creation failed.';}finally{busy=false;}
   }
@@ -217,8 +225,13 @@
       <label>Dataset SHA-256<input bind:value={dataset} pattern={'[0-9a-f]{64}'} minlength="64" maxlength="64" required spellcheck="false"/></label>
       <label>Calendar pins (JSON)<textarea bind:value={calendars} rows="3" maxlength="6000" required spellcheck="false"></textarea></label>
       <label>Decision dates (JSON)<textarea bind:value={dates} rows="4" maxlength="6000" required spellcheck="false"></textarea></label>
-      {#if pureSplitsAvailable}
-        <label class="check"><input type="checkbox" bind:checked={splits}/><span>Process authored stock splits<small>Fixed permanently when the account is created. Dividends, delistings and pending claims are not supported.</small></span></label>
+      {#if pureSplitsAvailable||dividendsAvailable}
+        <label>Corporate actions<select bind:value={actionMode}><option value="">No corporate actions</option>{#if pureSplitsAvailable}<option value="pure-splits-v1">Stock splits</option>{/if}{#if dividendsAvailable}<option value="cash-dividends-v1">Cash dividends</option>{/if}</select></label>
+        <p class="dataset-note">Fixed permanently at creation. Splits and dividends cannot be combined. Delistings and pending claims are not supported.</p>
+      {/if}
+      {#if actionMode==='cash-dividends-v1'&&dividendsAvailable}
+        <p class="dataset-note">Authored cash dividends only. Every captured claim must be paid before each monthly mark, including the first decision.</p>
+        <DividendTerms bind:rows={dividendRows}/>
       {/if}
       <div class="actions"><button disabled={busy}>Create account</button></div>
     </fieldset></form>

@@ -357,7 +357,7 @@ def main() -> int:
         page.wait_for_selector("main h1:has-text('Paper accounts')", timeout=8000)
         page.wait_for_timeout(800)
         page.get_by_text("New paper account").click()
-        checks.run("older server without pureSplitsAvailable hides split opt-in", lambda: (page.get_by_label(re.compile("stock splits", re.IGNORECASE)).count() == 0, None))
+        checks.run("older server without action capabilities hides action opt-in", lambda: (page.get_by_role("combobox", name=re.compile("^Corporate actions")).count() == 0, None))
         page.close()
 
         if args.create_fixture:
@@ -384,12 +384,13 @@ def main() -> int:
             page.get_by_label("Decision dates").fill(json.dumps(create["decisions"]))
             page.get_by_role("button", name="Create account").click()
             page.wait_for_timeout(800)
-            checks.run("default creation omits actionMode (intercepted refusal)", lambda: (bodies and "actionMode" not in bodies[-1], bodies[-1:] and list(bodies[-1].keys())))
+            checks.run("default creation omits actionMode and dividends (intercepted refusal)", lambda: (bodies and "actionMode" not in bodies[-1] and "dividends" not in bodies[-1], bodies[-1:] and list(bodies[-1].keys())))
             checks.run("refusal shown as concise message", lambda: ("already has a paper account" in text(page), None))
-            page.get_by_label(re.compile("stock splits", re.IGNORECASE)).check()
+            page.get_by_role("combobox", name=re.compile("^Corporate actions")).select_option("pure-splits-v1")
             page.get_by_role("button", name="Create account").click()
             page.get_by_text("stress costs").first.wait_for(timeout=15000)
             checks.run("opt-in creation sends pure-splits-v1 (real backend)", lambda: (bodies[-1].get("actionMode") == "pure-splits-v1", bodies[-1].get("actionMode")))
+            checks.run("split creation omits dividend terms", lambda: ("dividends" not in bodies[-1], None))
             page.screenshot(path=str(out / "paper-created-1280.png"), full_page=True)
             # Return to the original account and run one prepare/apply.
             page.get_by_role("button", name=re.compile("base costs")).click()

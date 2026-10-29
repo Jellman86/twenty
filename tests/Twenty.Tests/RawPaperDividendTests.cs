@@ -215,6 +215,36 @@ public sealed partial class RawPaperStoreTests
     }
 
     [Fact]
+    public async Task RawPaperDividendHttpPersistsExactDecimalTokensFromAuthoredForm()
+    {
+        var request = DividendRequest();
+        var document = System.Text.Json.Nodes.JsonNode.Parse(JsonSerializer.Serialize(request, RawReplayJson.Options))!;
+        var delivery = document["dividends"]![0]!["delivery"]!;
+        delivery["withheldPerShare"] = System.Text.Json.Nodes.JsonNode.Parse("0.5000000000000000000000000001");
+        delivery["fixedFeeGbp"] = System.Text.Json.Nodes.JsonNode.Parse("0.0100000000000000000000000001");
+        var json = document.ToJsonString();
+        Assert.Contains("0.5000000000000000000000000001", json);
+        Assert.Contains("0.0100000000000000000000000001", json);
+        var builder = WebApplication.CreateBuilder(); builder.Logging.ClearProviders(); builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build(); ResearchModule.Map(app, store, new DiagnosticStore(store), () => new { mode = "disconnected" }); await app.StartAsync();
+        try
+        {
+            using var client = new HttpClient { BaseAddress = new Uri(app.Urls.Single()) };
+            client.DefaultRequestHeaders.Add("X-Twenty-Request", "1");
+            using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            using var created = await client.PostAsync("/api/research/raw-paper-accounts", content);
+            Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+            var frozen = Assert.Single(store.RawPaperAccounts()).Policy.Dividends.Single().Delivery;
+            Assert.Equal(0.5000000000000000000000000001m, frozen.WithheldPerShare);
+            Assert.Equal(0.0100000000000000000000000001m, frozen.FixedFeeGbp);
+            store.Dispose(); store = new(root);
+            Assert.Equal(frozen, store.RawPaperAccounts().Single().Policy.Dividends.Single().Delivery);
+            Assert.Empty(store.RawPaperOperations(store.RawPaperAccounts().Single().Id));
+        }
+        finally { await app.StopAsync(); }
+    }
+
+    [Fact]
     public async Task RawPaperDividendHttpCreatePrepareApplyAndColdRetryUseTheRealLedger()
     {
         var request = DividendRequest();

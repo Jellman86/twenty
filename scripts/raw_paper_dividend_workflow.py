@@ -20,6 +20,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import sync_playwright
 
 
@@ -38,6 +39,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--fixture', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--create-in-browser', action='store_true', help='Author dividend terms through the rendered form')
     args = parser.parse_args()
     repo = Path(__file__).resolve().parents[1]
     out = args.out.resolve()
@@ -102,8 +104,118 @@ def main():
         start('first')
         initial = {path: http(path) for path in ('/api/research/raw-studies', '/api/research/raw-trials')}
         reports = {str(p.relative_to(workspace)): digest(p) for p in (workspace / 'runs').rglob('*') if p.is_file()}
-        check('fixture has no paper accounts', http('/api/research/raw-paper-accounts')['accounts'] == [])
-        account = http('/api/research/raw-paper-accounts', create)
+        capabilities = http('/api/research/raw-paper-accounts')
+        (out / 'capabilities.json').write_text(json.dumps(capabilities, indent=2) + '\n')
+        check('fixture has no paper accounts', capabilities['accounts'] == [])
+        if args.create_in_browser:
+            with sync_playwright() as playwright:
+                browser = playwright.chromium.launch(headless=True)
+                try:
+                    def advertised_response(payload):
+                        return lambda route: route.fulfill(status=200, content_type='application/json', body=json.dumps(payload))
+
+                    for label, advertised in (
+                        ('older server', {'accounts': [], 'preparationAvailable': True}),
+                        ('unknown dividend scope', {**capabilities, 'dividendScope': 'future-scope'}),
+                        ('unknown dividend mode', {**capabilities, 'dividendMode': 'cash-dividends-v2'}),
+                    ):
+                        page = browser.new_page(viewport={'width': 1280, 'height': 960})
+                        page.route('**/api/research/raw-paper-accounts', advertised_response(advertised))
+                        page.goto(base + '/#paper')
+                        page.get_by_role('heading', name='No paper accounts', exact=True).wait_for()
+                        page.get_by_text('New paper account', exact=True).click()
+                        check(f'{label}: creation hides unsupported dividend choice', page.locator('option[value="cash-dividends-v1"]').count() == 0)
+                        if label == 'older server':
+                            check('older server: creation hides all action choices', page.get_by_role('combobox', name=re.compile('^Corporate actions')).count() == 0)
+                        page.close()
+                    page = browser.new_page(viewport={'width': 390, 'height': 960})
+                    page.goto(base + '/#paper')
+                    page.get_by_text('New paper account', exact=True).click()
+                    page.get_by_label('Dataset SHA-256', exact=True).fill(create['datasetSha256'])
+                    page.get_by_label('Calendar pins (JSON)', exact=True).fill(json.dumps(create['calendars']))
+                    page.get_by_label('Decision dates (JSON)', exact=True).fill(json.dumps(create['decisions']))
+                    page.get_by_role('combobox', name=re.compile('^Corporate actions')).select_option('cash-dividends-v1', timeout=5000)
+                    term = create['dividends'][0]
+                    values = {
+                        'Listing ID': term['listingId'], 'Action ID': term['actionId'], 'Observation ID': term['observationId'],
+                        'Entitlement time (UTC)': term['evidence']['entitlementAt'],
+                        'Cutoff proof available (UTC)': term['evidence']['availableAt'],
+                        'Cutoff source reference': term['evidence']['sourceReference'], 'Cutoff content SHA-256': term['evidence']['contentSha256'],
+                        'Source payment ID': term['delivery']['sourcePaymentId'], 'Payment source reference': term['delivery']['sourceReference'],
+                        'Payment content SHA-256': term['delivery']['contentSha256'], 'Paid time (UTC)': term['delivery']['paidAt'],
+                        'Payment available (UTC)': term['delivery']['availableAt'], 'Payment currency': term['delivery']['currency'],
+                        'Gross per cutoff share': str(term['delivery']['grossPerShare']),
+                        'Withheld per cutoff share': str(term['delivery']['withheldPerShare']),
+                        'Fixed fee per entitled account (GBP)': str(term['delivery']['fixedFeeGbp']),
+                        'Payment FX observation ID': term['delivery']['fxObservationId'] or '',
+                    }
+                    for label, value in values.items():
+                        page.get_by_label(label, exact=True).fill(value)
+                    page.get_by_role('button', name='Add dividend', exact=True).click()
+                    check('multiple dividend rows have independent controls', page.get_by_role('group', name='Dividend 2', exact=True).count() == 1)
+                    page.get_by_role('button', name='Remove dividend 2', exact=True).click()
+                    check('removing another dividend preserves the first row', page.get_by_label('Action ID', exact=True).input_value() == term['actionId'])
+                    # A local policy refusal must not create an account or admit an attempt.
+                    page.get_by_label('Withheld per cutoff share', exact=True).fill('3')
+                    page.get_by_role('button', name='Create account', exact=True).click()
+                    page.get_by_role('alert').filter(has_text='Withheld per cutoff share cannot exceed gross.').wait_for()
+                    check('local invalid terms admit no account', http('/api/research/raw-paper-accounts')['accounts'] == [])
+                    page.get_by_label('Withheld per cutoff share', exact=True).fill(values['Withheld per cutoff share'])
+                    # Record request bytes at the HTTP boundary, before any numeric JSON decoding.
+                    intercepted = []
+
+                    def refuse_creation(route):
+                        if route.request.method == 'POST':
+                            intercepted.append(route.request.post_data)
+                            route.fulfill(status=409, content_type='application/json', body=json.dumps({'error': 'raw-paper-already-created'}))
+                        else:
+                            route.continue_()
+
+                    page.route('**/api/research/raw-paper-accounts', refuse_creation)
+                    page.get_by_label('Withheld per cutoff share', exact=True).fill('0.5000000000000000000000000001')
+                    page.get_by_role('button', name='Create account', exact=True).click()
+                    page.get_by_role('alert').filter(has_text='already has a paper account').wait_for()
+                    check('browser sends exact decimal tokens over HTTP', '"withheldPerShare":0.5000000000000000000000000001' in intercepted[-1])
+                    page.get_by_label('Withheld per cutoff share', exact=True).fill(values['Withheld per cutoff share'])
+                    # Changing the action mode must omit the unsent catalog, even after authoring it.
+                    for mode in ('', 'pure-splits-v1'):
+                        page.get_by_role('combobox', name=re.compile('^Corporate actions')).select_option(mode)
+                        with page.expect_response(lambda r: r.request.method == 'POST' and r.url.endswith('/api/research/raw-paper-accounts')):
+                            page.get_by_role('button', name='Create account', exact=True).click()
+                        sent = json.loads(intercepted[-1])
+                        check(f'{mode or "default"}: switching mode omits dividend terms', 'dividends' not in sent and sent.get('actionMode') == (mode or None))
+                    page.get_by_role('combobox', name=re.compile('^Corporate actions')).select_option('cash-dividends-v1')
+                    with page.expect_response(lambda r: r.request.method == 'POST' and r.url.endswith('/api/research/raw-paper-accounts')):
+                        page.get_by_role('button', name='Create account', exact=True).click()
+                    refused_request = json.loads(intercepted[-1])
+                    page.unroute('**/api/research/raw-paper-accounts', refuse_creation)
+                    check('creation form fits mobile width', page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+                    page.screenshot(path=str(out / 'dividend-authoring-390.png'), full_page=True)
+                    page.set_viewport_size({'width': 1280, 'height': 960})
+                    check('creation form fits desktop width', page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+                    page.screenshot(path=str(out / 'dividend-authoring-1280.png'), full_page=True)
+                    with page.expect_response(lambda r: r.request.method == 'POST' and r.url.endswith('/api/research/raw-paper-accounts'), timeout=120000) as response:
+                        page.get_by_role('button', name='Create account', exact=True).press('Enter')
+                    account = response.value.json()
+                    check('graphical dividend creation uses real admission', response.value.status == 200 and account.get('version') == 'raw-paper-dividend-batches-v1')
+                    check('retry after refusal retains the exact request UUID', json.loads(response.value.request.post_data)['requestId'] == refused_request['requestId'])
+                    frozen = account['policy']['dividends'][0]
+                    check('graphical terms retain cutoff/payment evidence and exact amounts', frozen['evidence'] == term['evidence']
+                          and all(frozen['delivery'][key] == value for key, value in term['delivery'].items() if key != 'booking'))
+                    check('payment booking binds the chosen dataset', frozen['delivery']['booking']['datasetSha256'] == create['datasetSha256'])
+                    page.close()
+                except Exception as error:
+                    (out / 'creation-error.txt').write_text(repr(error))
+                    try:
+                        (out / 'creation-page.txt').write_text(page.locator('body').inner_text())
+                        page.screenshot(path=str(out / 'creation-failure.png'), full_page=True)
+                    except (OSError, TypeError, ValueError, PlaywrightError) as diagnostic:
+                        (out / 'creation-diagnostic-error.txt').write_text(repr(diagnostic))
+                    raise
+                finally:
+                    browser.close()
+        else:
+            account = http('/api/research/raw-paper-accounts', create)
         path = '/api/research/raw-paper-accounts/' + account['id']
         (out / 'created.json').write_text(json.dumps(account, indent=2) + '\n')
         # Hide source study reports: preparation must use its own pinned originals.
