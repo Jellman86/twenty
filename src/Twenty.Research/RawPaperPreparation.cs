@@ -48,7 +48,12 @@ public sealed partial class ResearchStore
         byte[] Resolve(string sha) => sha == original.Sha256 ? data : throw new ResearchException("raw-paper-dataset");
         var file = DatasetJson.Read(data);
         if (!file.Manifest.Synthetic) throw new ResearchException("raw-paper-authored-only");
-        var splits = ValidatePaperActions(file, policy.ActionMode, policy.DatasetSha256);
+        var actions = ValidatePaperActions(file, policy.ActionMode, policy.DatasetSha256);
+        var splits = actions.Where(a => a.Action == CorporateActionKind.Split).ToArray();
+        var actionEvents = policy.ActionMode == RawPaperContract.DividendMode
+            ? PaperDividendEvents(file, policy.ActionMode, policy.Dividends, policy.Decisions, policy.DatasetSha256)
+            : splits.Select(s => new PaperActionEvent(s, SplitBooking(s), new RawReplaySplit(s.ListingId, s.ActionId),
+                "split-" + RawHash(System.Text.Encoding.UTF8.GetBytes(s.Id)))).ToArray();
         var dataset = new PointInTimeDataset(file);
         var calendars = new Dictionary<string, ExecutionCalendar>(StringComparer.Ordinal);
         // Calendar pins hash semantic session tables; original hashes bind their wire bytes.
@@ -97,6 +102,10 @@ public sealed partial class ResearchStore
                 case RawReplayRebalanceDecision: case RawReplayMark: break;
                 case RawReplaySplit split when policy.ActionMode == RawPaperContract.SplitMode:
                     ledger.ApplySplit(item.Id, Slice(item.At), split.ListingId, split.ActionId); break;
+                case RawReplayDividendCapture capture when policy.ActionMode == RawPaperContract.DividendMode:
+                    ledger.CaptureDividend(item.Id, Slice(item.At), capture.ListingId, capture.ActionId, capture.Evidence); break;
+                case RawReplayDividendPayment payment when policy.ActionMode == RawPaperContract.DividendMode:
+                    ledger.PayDividend(item.Id, Slice(item.At), payment.ListingId, payment.ActionId, payment.Payment, fxAge); break;
                 default: throw new ResearchException("raw-paper-batch");
             }
         }
@@ -110,24 +119,35 @@ public sealed partial class ResearchStore
         var cursor = 0; long actionWork = 0;
         void Through(DateTimeOffset until, bool pendingBatch = false)
         {
-            while (cursor < splits.Length && SplitBooking(splits[cursor]) <= until)
+            while (cursor < actionEvents.Length && actionEvents[cursor].At <= until)
             {
-                token.ThrowIfCancellationRequested(); var split = splits[cursor++]; var booked = SplitBooking(split);
+                token.ThrowIfCancellationRequested(); var item = actionEvents[cursor++]; var action = item.Action; var booked = item.At;
                 if (prior is not null && booked <= prior.Events[^1].At) continue;
                 if ((actionWork += ledger.Entries.Length) > RawReplayArchive.MaximumEventObservationWork) throw new ResearchException("raw-paper-action-work");
-                // Even an unheld split may affect an intention about to execute. The complete batch is indivisible.
+                // Even an unheld action may affect an intention about to execute. The complete batch is indivisible.
                 if (pendingBatch) throw new ResearchException("raw-paper-action-during-batch");
+                if (item.Operation is RawReplayDividendPayment payment)
+                {
+                    var entitlement = ledger.DividendEntitlements.SingleOrDefault(e => e.ListingId == action.ListingId && e.ActionId == action.ActionId);
+                    if (entitlement is null) continue;
+                    var actual = payment.Payment with { GrossLocal = payment.Payment.GrossLocal * entitlement.Quantity,
+                        WithheldLocal = payment.Payment.WithheldLocal * entitlement.Quantity };
+                    var id = Add(item.Key, booked, payment with { Payment = actual });
+                    ledger.PayDividend(id, Slice(booked), action.ListingId, action.ActionId, actual, fxAge);
+                    continue;
+                }
                 decimal quantity = 0;
-                foreach (var entry in ledger.Entries.Where(e => e.ListingId == split.ListingId))
+                foreach (var entry in ledger.Entries.Where(e => e.ListingId == action.ListingId))
                 {
                     var cutoff = entry.Kind == "split" ? entry.ActionEffectiveAt : entry.ModelledExecution?.Timing.Session.OpenAt ?? entry.At;
-                    if (cutoff < split.EffectiveAt) quantity += entry.Quantity;
+                    if (cutoff < action.EffectiveAt) quantity += entry.Quantity;
                 }
                 if (quantity < 0) throw new ResearchException("raw-paper-action-history");
                 if (quantity == 0) continue;
-                var key = "split-" + RawHash(System.Text.Encoding.UTF8.GetBytes(split.Id));
-                var actionId = Add(key, booked, new RawReplaySplit(split.ListingId, split.ActionId));
-                ledger.ApplySplit(actionId, Slice(booked), split.ListingId, split.ActionId);
+                var actionId = Add(item.Key, booked, item.Operation);
+                if (item.Operation is RawReplaySplit) ledger.ApplySplit(actionId, Slice(booked), action.ListingId, action.ActionId);
+                else if (item.Operation is RawReplayDividendCapture capture) ledger.CaptureDividend(actionId, Slice(booked), action.ListingId, action.ActionId, capture.Evidence);
+                else throw new ResearchException("raw-paper-batch");
             }
         }
         void CheckSplitPrices(DataSlice slice, IEnumerable<string> subjects)

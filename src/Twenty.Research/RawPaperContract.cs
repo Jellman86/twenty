@@ -10,6 +10,8 @@ public sealed record RawPaperPolicy(string DatasetSha256, string UniverseId, Dat
 {
     [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     public string? ActionMode { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)]
+    public ImmutableArray<RawPaperDividendTerms> Dividends { get; init; }
 }
 
 /// <summary>Metadata-only binding for an authored, complete offline paper batch.
@@ -19,11 +21,15 @@ public static class RawPaperContract
     public const string Version = "raw-paper-batches-v1";
     public const string SplitVersion = "raw-paper-split-batches-v1";
     public const string SplitMode = "pure-splits-v1";
+    public const string DividendMode = "cash-dividends-v1";
+    public const string DividendVersion = "raw-paper-dividend-batches-v1";
     public static RawReplayDocument ValidateAppend(RawPaperPolicy policy, byte[]? previousBytes, byte[] nextBytes)
     {
-        if (policy is null || policy.ActionMode is not (null or SplitMode) || policy.Execution is null || policy.Config is null || policy.FirstDecisionAt == default ||
+        if (policy is null || policy.ActionMode is not (null or SplitMode or DividendMode) || policy.Execution is null || policy.Config is null || policy.FirstDecisionAt == default ||
             policy.MonthlyGbp is < 1 or > 1000 || policy.Config.MonthlyGbp != policy.MonthlyGbp ||
             policy.Decisions.IsDefault || policy.Decisions.Length is < 14 or > 133 || policy.FirstDecisionAt != policy.Decisions[RawUniverseDecision.HistoryDecisions - 1] ||
+            policy.ActionMode != DividendMode && !policy.Dividends.IsDefault ||
+            policy.ActionMode == DividendMode && policy.Dividends.IsDefault ||
             policy.Calendars.IsDefaultOrEmpty || policy.Calendars.Length > 16 || policy.Calendars.Any(p => p is null))
             throw new ResearchException("raw-paper-policy");
         var next = Read(nextBytes);
@@ -39,9 +45,11 @@ public static class RawPaperContract
             var newTables = next.Calendars.IsDefault ? [] : next.Calendars;
             if (oldTables.Any(t => !newTables.Any(c => c.Sha256 == t.Sha256))) throw new ResearchException("raw-paper-history");
         }
-        // The split mode is additionally regenerated at service admission from the frozen originals.
+        // Action modes are additionally regenerated at service admission from the frozen originals.
         // Ordinary archive replay still enforces that no action interrupts ordered fills.
-        var batch = next.Events.Skip(start).Where(e => policy.ActionMode != SplitMode || e.Operation is not RawReplaySplit).ToArray();
+        var batch = next.Events.Skip(start).Where(e =>
+            !(policy.ActionMode == SplitMode && e.Operation is RawReplaySplit) &&
+            !(policy.ActionMode == DividendMode && e.Operation is RawReplayDividendCapture or RawReplayDividendPayment)).ToArray();
         if (batch.Length < 4 || batch.Any(e => e is null) || batch[0].Operation is not RawReplayDeposit deposit ||
             batch[1].Operation is not RawReplayMark open || batch[2].Operation is not RawReplayRebalanceDecision decision ||
             batch[^1].Operation is not RawReplayMark close || !Empty(open) || !Empty(close))

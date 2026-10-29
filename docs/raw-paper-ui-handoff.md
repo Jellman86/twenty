@@ -33,3 +33,7 @@ The original no-action hand calculation remains £19.75 / £39.50 equity after o
 The web app now lands on Portfolio and has a top navigation: Portfolio, Activity, Orders, Paper accounts, Research and Settings. Old `#workbench`, `#roadmap`, `#evidence` and `#execution` links still resolve. Paper accounts (`#paper`) consume the contract above: split opt-in only when `pureSplitsAvailable`, `actionMode` omitted otherwise, projected preparation shown separately from accepted balances, unknown modes and older builds read-only, receipts as explicit downloads, and identity hashes inside a collapsed details panel.
 
 `scripts/ui_workflow_check.py` drives the rendered app with Playwright against a private loopback fixture copy. Broker, journal and simulated-ledger responses in it are synthetic intercepted fixtures; raw paper checks use the real backend.
+
+## Cash-dividend mode (29 October 2026)
+
+[Bounded dividend integration](raw-paper-dividends.md) adds `raw-paper-dividend-batches-v1` / `cash-dividends-v1`. Creation freezes a required `dividends` catalog through the API; the current graphical creation form is unchanged. The Paper accounts adapter recognises the version/mode and exposes the same Prepare/Apply/Stop controls. Capabilities now declare `actionSupport.dividends: true`, `dividendMode` and `dividendScope: "paid-before-monthly-marks"`; pending claims and terminal proceeds remain false. No-action/split creation still omits `dividends` entirely. Old-code accounts remain read-only, with original receipt and exact retry inspection preserved.

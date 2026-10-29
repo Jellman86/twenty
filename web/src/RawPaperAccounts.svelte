@@ -19,10 +19,10 @@
   const day=(s:string)=>new Date(s).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric',timeZone:'UTC'});
   const stamp=(s:string)=>new Date(s).toISOString().slice(0,16).replace('T',' ')+' UTC';
   const statusLabel:Record<string,string>={ready:'Ready',active:'Active',stopped:'Stopped',failed:'Failed',succeeded:'Applied',running:'Running',refused:'Refused'};
-  // Frozen at creation: legacy accounts omit actionMode; split accounts carry pure-splits-v1. Anything else is read-only.
-  const KNOWN:Record<string,string|undefined>={'raw-paper-batches-v1':undefined,'raw-paper-split-batches-v1':'pure-splits-v1'};
+  // Frozen at creation; unsupported version/mode combinations remain read-only.
+  const KNOWN:Record<string,string|undefined>={'raw-paper-batches-v1':undefined,'raw-paper-split-batches-v1':'pure-splits-v1','raw-paper-dividend-batches-v1':'cash-dividends-v1'};
   const known=(a:Account)=>a.version in KNOWN&&KNOWN[a.version]===a.policy.actionMode;
-  const modeLabel=(a:Account)=>!known(a)?'Unsupported mode':a.policy.actionMode==='pure-splits-v1'?'Stock splits':'No corporate actions';
+  const modeLabel=(a:Account)=>!known(a)?'Unsupported mode':a.policy.actionMode==='pure-splits-v1'?'Stock splits':a.policy.actionMode==='cash-dividends-v1'?'Cash dividends':'No corporate actions';
   const name=(a:Account)=>studyNames[a.studyId]??`Study ${a.studyId.slice(0,8)}`;
   const writable=(a:Account)=>known(a)&&a.codeSha256===currentCode&&['ready','active'].includes(a.status);
   const messages:Record<string,string>={
@@ -32,11 +32,14 @@
     'raw-paper-information-window':'All history and dates must follow the study’s reserved window.',
     'raw-paper-already-created':'This study already has a paper account for these costs. Open it from the list.',
     'raw-paper-head-conflict':'The account has moved on. Refresh and prepare again.',
-    'raw-paper-actions-unsupported':'This account cannot process that corporate action. Only authored pure stock splits are supported, in split-enabled accounts.',
+    'raw-paper-actions-unsupported':'This account cannot process that corporate action in its frozen mode.',
     'raw-paper-split-vintage':'Split inputs must come from a single original action record.',
     'raw-paper-split-ambiguous':'Two splits share an effective or booking time; the batch was refused.',
-    'raw-paper-action-during-batch':'A split falls inside the fill batch; the batch was refused.',
-    'raw-paper-action-binding':'The split record does not match the frozen account inputs.',
+    'raw-paper-action-during-batch':'A corporate action falls inside the fill batch; the batch was refused.',
+    'raw-paper-action-binding':'The action record does not match the frozen account inputs.',
+    'raw-paper-dividend-policy':'The dividend terms do not match the frozen dataset or payment policy.',
+    'raw-paper-dividend-unsettled':'This dividend is unpaid at a monthly boundary. Cross-month claims are not supported.',
+    'raw-paper-dividend-ambiguous':'Dividend events overlap; their order needs a separate supported contract.',
     'raw-paper-split-price':'The split price data is inconsistent with the share ratio.',
     'raw-price-share-units':'A price predates a known split, so it is in old share units. Refused rather than showing a false gain.',
     'raw-paper-action-history':'The corporate-action history changed from the frozen account.',
@@ -188,7 +191,7 @@
         {#if support}
           <p class="eyebrow">Server action support</p>
           <div class="matrix">
-            {#each [['Stock splits',support.pureSplits],['Dividends',support.dividends],['Delistings / terminal proceeds',support.terminals],['Pending claims',support.pendingClaims]] as [label,ok]}<div><span>{label}</span><span class:gain={ok===true} class:muted={ok!==true}>{ok===true?'Supported':'Not supported'}</span></div>{/each}
+            {#each [['Stock splits',support.pureSplits],['Dividends paid within each month',support.dividends],['Delistings / terminal proceeds',support.terminals],['Pending claims',support.pendingClaims]] as [label,ok]}<div><span>{label}</span><span class:gain={ok===true} class:muted={ok!==true}>{ok===true?'Supported':'Not supported'}</span></div>{/each}
           </div>
         {/if}
         <p class="proof">version {a.version}{a.policy.actionMode?` · mode ${a.policy.actionMode}`:''}<br/>account {a.id}<br/>study {a.studyId}<br/>plan {a.planSha256}<br/>selection {a.selectionSha256}<br/>dataset {a.policy.datasetSha256}<br/>build {a.codeSha256}<br/>head {a.headReceiptSha256??'none'}{#if prepared}<br/>prepared replay {prepared.replaySha256} · {prepared.replayBytes} bytes{/if}</p>

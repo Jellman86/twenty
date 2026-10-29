@@ -12,6 +12,13 @@ public sealed partial class ResearchStore
             if (actions.Length != 0) throw new ResearchException("raw-paper-actions-unsupported");
             return [];
         }
+        if (mode == RawPaperContract.DividendMode)
+        {
+            if (actions.Length > RawEventSchedule.MaximumActions) throw new ResearchException("raw-paper-capacity");
+            if (actions.Any(a => a.Action != CorporateActionKind.Dividend)) throw new ResearchException("raw-paper-actions-unsupported");
+            if (actions.GroupBy(a => (a.ListingId, a.ActionId)).Any(g => g.Count() != 1)) throw new ResearchException("raw-paper-dividend-policy");
+            return actions;
+        }
         if (mode != RawPaperContract.SplitMode) throw new ResearchException("raw-paper-policy");
         if (actions.Length > RawEventSchedule.MaximumActions) throw new ResearchException("raw-paper-capacity");
         if (actions.GroupBy(a => (a.ListingId, a.ActionId)).Any(g => g.Count() != 1)) throw new ResearchException("raw-paper-split-vintage");

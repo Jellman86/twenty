@@ -225,7 +225,8 @@ public sealed partial class RawPaperStoreTests : IClassFixture<RawPaperFixture>,
             Assert.Equal(store.RawPaperReceiptBytes(operation.Id), await client.GetByteArrayAsync("/api/research/raw-paper-operations/" + operation.Id + "/receipt"));
             using var body = JsonDocument.Parse(await client.GetByteArrayAsync("/api/research/raw-paper-accounts"));
             Assert.True(body.RootElement.GetProperty("authoredOnly").GetBoolean()); Assert.True(body.RootElement.GetProperty("corporateActions").GetBoolean());
-            Assert.True(body.RootElement.GetProperty("actionSupport").GetProperty("pureSplits").GetBoolean()); Assert.False(body.RootElement.GetProperty("actionSupport").GetProperty("dividends").GetBoolean());
+            Assert.True(body.RootElement.GetProperty("actionSupport").GetProperty("pureSplits").GetBoolean()); Assert.True(body.RootElement.GetProperty("actionSupport").GetProperty("dividends").GetBoolean());
+            Assert.Equal("paid-before-monthly-marks", body.RootElement.GetProperty("dividendScope").GetString());
             Assert.False(body.RootElement.GetProperty("asynchronousFills").GetBoolean()); Assert.Null(store.RawStudies().Single().FinalRequestId);
             client.DefaultRequestHeaders.Add("Sec-Fetch-Site", "cross-site"); using var refused = await client.PostAsJsonAsync("/api/research/raw-paper-accounts/" + account.Id + "/stop", new { });
             Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode); Assert.Equal("active", store.RawPaperAccounts().Single().Status);

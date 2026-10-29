@@ -11,6 +11,7 @@ public sealed record RawPaperCreateRequest(string RequestId, string StudyId, str
     string CostScenario, string DatasetSha256, ImmutableArray<RawStudyCalendarPin> Calendars, DateTimeOffset FirstDecisionAt, ImmutableArray<DateTimeOffset> Decisions)
 {
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? ActionMode { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] public ImmutableArray<RawPaperDividendTerms> Dividends { get; init; }
 }
 public sealed record RawPaperAdvanceRequest(string RequestId, string? ExpectedReceiptSha256, string ReplaySha256);
 public sealed record RawPaperBalance(decimal CashGbp, decimal ContributionsGbp, decimal FeesGbp, ImmutableSortedDictionary<string, RawQuantityPosition> Holdings, decimal EquityGbp, DateTimeOffset? ValuedAt);
@@ -52,8 +53,8 @@ public sealed partial class ResearchStore
             foreach (var account in accounts)
             {
                 var own = operations.Where(o => o.AccountId == account.Id).ToArray();
-                if (account.Version != (account.Policy.ActionMode == RawPaperContract.SplitMode ? RawPaperContract.SplitVersion : RawPaperContract.Version) ||
-                    account.Policy.ActionMode is not (null or RawPaperContract.SplitMode) || account.Attempts != own.Length || account.AcceptedPeriods != own.Count(o => o.Status == "succeeded") ||
+                if (account.Version != (account.Policy.ActionMode == RawPaperContract.SplitMode ? RawPaperContract.SplitVersion : account.Policy.ActionMode == RawPaperContract.DividendMode ? RawPaperContract.DividendVersion : RawPaperContract.Version) ||
+                    account.Policy.ActionMode is not (null or RawPaperContract.SplitMode or RawPaperContract.DividendMode) || account.Attempts != own.Length || account.AcceptedPeriods != own.Count(o => o.Status == "succeeded") ||
                     (account.HeadOperationId is null) != (account.HeadReceiptSha256 is null) || account.HeadOperationId is { } head &&
                     !own.Any(o => o.Id == head && o.Status == "succeeded" && o.ReceiptSha256 == account.HeadReceiptSha256) ||
                     account.Status is not ("ready" or "active" or "running" or "failed" or "stopped" or "completed")) throw new ResearchException("raw-paper-integrity");
@@ -93,7 +94,7 @@ public sealed partial class ResearchStore
     private static string PaperUuid(string value) => Guid.TryParseExact(value, "D", out var id) ? id.ToString("D") : throw new ResearchException("raw-paper-request");
     public RawPaperAccount CreateRawPaperAccount(RawPaperCreateRequest request)
     {
-        if (request is null || request.ActionMode is not (null or RawPaperContract.SplitMode) || !IsSha256(request.PlanSha256) || !IsSha256(request.SelectionSha256) || !IsSha256(request.DatasetSha256) ||
+        if (request is null || request.ActionMode is not (null or RawPaperContract.SplitMode or RawPaperContract.DividendMode) || !IsSha256(request.PlanSha256) || !IsSha256(request.SelectionSha256) || !IsSha256(request.DatasetSha256) ||
             request.CostScenario is not ("base" or "stress") || request.FirstDecisionAt == default || request.Calendars.IsDefaultOrEmpty ||
             request.Decisions.IsDefault || request.Decisions.Length is < 14 or > 133 || request.Calendars.Length > 16 || request.Calendars.Any(c => c is null)) throw new ResearchException("raw-paper-request");
         request = request with { RequestId = PaperUuid(request.RequestId), FirstDecisionAt = request.FirstDecisionAt.ToUniversalTime(), Decisions = request.Decisions.Select(d => d.ToUniversalTime()).ToImmutableArray(), Calendars = request.Calendars.OrderBy(c => c.CalendarId, StringComparer.Ordinal).ToImmutableArray() };
@@ -116,6 +117,7 @@ public sealed partial class ResearchStore
             if (RawHash(data) != request.DatasetSha256) throw new ResearchException("dataset-integrity");
             var file = DatasetJson.Read(data); var validation = DatasetValidator.Validate(file); if (!validation.IsValid) throw new InvalidDatasetException(validation);
             if (!file.Manifest.Synthetic) throw new ResearchException("raw-paper-authored-only");
+            _ = PaperDividendEvents(file, request.ActionMode, request.Dividends, request.Decisions, request.DatasetSha256);
             _ = ValidatePaperActions(file, request.ActionMode, request.DatasetSha256);
             if (!file.Manifest.Universes.Any(u => u.Id == source.Plan.UniverseId) || file.Manifest.CreatedAt < request.Decisions[^1]) throw new ResearchException("raw-paper-dataset");
             var originals = new List<(RawPaperOriginal Original, byte[] Bytes)> { (new("dataset", request.DatasetSha256, data.Length), data) };
@@ -133,8 +135,8 @@ public sealed partial class ResearchStore
             if (calendars.Select(c => c.Reference.Id).Distinct(StringComparer.Ordinal).Count() != calendars.Count || file.Observations.OfType<Listing>().Any(l => !calendars.Any(c => c.Reference.Id == l.CalendarId && c.Venue == l.Venue))) throw new ResearchException("raw-paper-calendar");
             var execution = request.CostScenario == "base" ? source.Plan.BaseExecution : source.Plan.StressExecution;
             var policy = new RawPaperPolicy(request.DatasetSha256, source.Plan.UniverseId, request.FirstDecisionAt, source.Plan.MonthlyGbp,
-                source.Plan.Candidates.Single(c => c.Id == source.SelectedCandidateId).Config, execution, request.Calendars, RawReplayBuildIdentity.Current, request.Decisions) { ActionMode = request.ActionMode };
-            var account = new RawPaperAccount(Guid.NewGuid().ToString("N"), request.ActionMode == RawPaperContract.SplitMode ? RawPaperContract.SplitVersion : RawPaperContract.Version, request.RequestId, sha, source.Id, source.PlanSha256,
+                source.Plan.Candidates.Single(c => c.Id == source.SelectedCandidateId).Config, execution, request.Calendars, RawReplayBuildIdentity.Current, request.Decisions) { ActionMode = request.ActionMode, Dividends = request.Dividends };
+            var account = new RawPaperAccount(Guid.NewGuid().ToString("N"), request.ActionMode == RawPaperContract.SplitMode ? RawPaperContract.SplitVersion : request.ActionMode == RawPaperContract.DividendMode ? RawPaperContract.DividendVersion : RawPaperContract.Version, request.RequestId, sha, source.Id, source.PlanSha256,
                 request.SelectionSha256, source.SelectedCandidateId, request.CostScenario, source.Plan.ReservedEnd, policy, ResearchIdentity.Current.Sha256,
                 clock.GetUtcNow(), "ready", 0, 0, null, null, null, new(0, 0, 0, ImmutableSortedDictionary<string, RawQuantityPosition>.Empty, 0, null), originals.Select(o => o.Original).ToImmutableArray());
             EnsureAdditionalArtifactCapacity(originals.Where(o => !File.Exists(PaperInputPath(o.Original))).Sum(o => (long)o.Bytes.Length) + 1024 * 1024);
@@ -195,7 +197,7 @@ public sealed partial class ResearchStore
                     if (document.Events.Select(e => e.Operation).OfType<RawReplayRebalanceDecision>().Any(d => d.UniverseStrategy!.Spec.Decisions[0] <= account.SourceReservedEnd)) throw new ResearchException("raw-paper-information-window");
                     var original = account.Originals.Single(o => o.Kind == "dataset");
                     RawReplayReceipt receipt;
-                    if (account.Policy.ActionMode == RawPaperContract.SplitMode)
+                    if (account.Policy.ActionMode is RawPaperContract.SplitMode or RawPaperContract.DividendMode)
                     {
                         var generated = BuildPaperBatch(account, deadline.Token);
                         if (!generated.Bytes.AsSpan().SequenceEqual(bytes)) throw new ResearchException("raw-paper-action-binding");
@@ -203,7 +205,7 @@ public sealed partial class ResearchStore
                     }
                     else receipt = RawReplayArchive.Execute(bytes, sha => sha == account.Policy.DatasetSha256 ? PaperReadArtifact(PaperInputPath(original), original.Sha256, DatasetJson.MaximumBytes) : throw new ResearchException("raw-paper-dataset"), deadline.Token);
                     var result = JsonSerializer.Deserialize<RawEventReplayResult>(Convert.FromBase64String(receipt.ResultBase64), RawReplayJson.Options)!;
-                    if (result.DividendEntitlements.Length != 0 || result.TerminalEntitlements.Length != 0) throw new ResearchException("raw-paper-actions-unsupported");
+                    if (result.TerminalEntitlements.Length != 0 || (account.Policy.ActionMode == RawPaperContract.DividendMode ? result.DividendEntitlements.Any(d => d.PaidAt is null) : result.DividendEntitlements.Length != 0)) throw new ResearchException("raw-paper-actions-unsupported");
                     var receiptBytes = RawBytes(receipt); if (receiptBytes.Length > 8 * 1024 * 1024) throw new ResearchException("raw-paper-capacity");
                     deadline.Token.ThrowIfCancellationRequested(); EnsureArtifactCapacity(receiptBytes); ImmutableWrite(PaperOperationPath(row.Id, "receipt"), receiptBytes);
                     row = row with { Status = "succeeded", ReceiptSha256 = RawHash(receiptBytes), FinishedAt = LaterPaper(clock.GetUtcNow(), at) };
