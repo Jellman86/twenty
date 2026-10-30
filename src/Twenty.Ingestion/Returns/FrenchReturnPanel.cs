@@ -13,15 +13,18 @@ namespace Twenty.Ingestion.Returns;
 public sealed record FrenchMonth(DateOnly MonthEnd, ImmutableArray<decimal> PercentReturns);
 public sealed record ReturnPanelFiles(string Id, byte[] Csv, byte[] Metadata, byte[] Audit);
 
-public enum FrenchPortfolioSet { Industry10, SizeValue25 }
+public enum FrenchPortfolioSet { Industry10, SizeValue25, MarketTbill }
 
 /// <summary>Offline conversion of a captured, revised research vintage. These portfolios are never broker instruments.</summary>
 public static class FrenchReturnPanel
 {
     public const string Version = "french-industry-gbp-v1";
     public const string SizeValueVersion = "french-size-value25-gbp-v1";
+    public const string MarketTbillVersion = "french-market-tbill-gbp-v1";
     public const string Restriction = "Non-executable industry research portfolios from a retrospective revised vintage, not individual stocks or historical point-in-time inputs. FX is a reference fixing, not a US-close or broker quote. No strategy promotion or broker signals.";
     public const string SizeValueRestriction = "Non-executable size/value research portfolios from a retrospective revised vintage, not individual stocks or historical point-in-time inputs. FX is a reference fixing, not a US-close or broker quote. No strategy promotion or broker signals.";
+    public const string MarketTbillRestriction = "Non-executable research market and one-month Treasury bill returns from a retrospective revised vintage, unhedged in GBP; not ETF prices or historical point-in-time inputs. FX is a reference fixing, not a US-close or broker quote. No strategy promotion or broker signals.";
+    public static readonly ImmutableArray<string> MarketTbillSymbols = ["FF_MARKET", "FF_TBILL"];
     public static readonly ImmutableArray<string> Industries = ["NoDur", "Durbl", "Manuf", "Enrgy", "HiTec", "Telcm", "Shops", "Hlth", "Utils", "Other"];
     // Upstream column order: size quintiles outer (ME1 smallest), book-to-market inner (BM1 growth .. BM5 value).
     public static readonly ImmutableArray<string> SizeValueColumns = ["SMALL LoBM", "ME1 BM2", "ME1 BM3", "ME1 BM4", "SMALL HiBM",
@@ -29,7 +32,12 @@ public static class FrenchReturnPanel
         "ME4 BM1", "ME4 BM2", "ME4 BM3", "ME4 BM4", "ME4 BM5", "BIG LoBM", "ME5 BM2", "ME5 BM3", "ME5 BM4", "BIG HiBM"];
     public static readonly ImmutableArray<string> SizeValueSymbols =
         [.. Enumerable.Range(1, 5).SelectMany(size => Enumerable.Range(1, 5).Select(bm => $"FF25_ME{size}_BM{bm}"))];
-    public static string VersionFor(FrenchPortfolioSet set) => set == FrenchPortfolioSet.SizeValue25 ? SizeValueVersion : Version;
+    public static string VersionFor(FrenchPortfolioSet set) => set switch
+    {
+        FrenchPortfolioSet.SizeValue25 => SizeValueVersion,
+        FrenchPortfolioSet.MarketTbill => MarketTbillVersion,
+        _ => Version
+    };
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
     public static ImmutableArray<FrenchMonth> Read(byte[] zipBytes, bool industry) =>
@@ -93,16 +101,35 @@ public static class FrenchReturnPanel
             from < new DateOnly(1999, 1, 31) || to <= from) throw new ResearchException("return-panel-window");
         var months = (to.Year - from.Year) * 12 + to.Month - from.Month + 1;
         if (months is < 16 or > 600) throw new ResearchException("return-panel-month-count");
-        var portfolioSource = set == FrenchPortfolioSet.SizeValue25 ? "french-size-value25-monthly" : "french-industry-monthly";
-        var symbols = set == FrenchPortfolioSet.SizeValue25 ? SizeValueSymbols
-            : Industries.Select(i => "FF_" + i.ToUpperInvariant()).ToImmutableArray();
-        var restriction = set == FrenchPortfolioSet.SizeValue25 ? SizeValueRestriction : Restriction;
+        // Market/T-bill is built from the factors file alone; the other sets add a portfolio capture.
+        string? portfolioSource = set switch
+        {
+            FrenchPortfolioSet.SizeValue25 => "french-size-value25-monthly",
+            FrenchPortfolioSet.MarketTbill => null,
+            _ => "french-industry-monthly"
+        };
+        var symbols = set switch
+        {
+            FrenchPortfolioSet.SizeValue25 => SizeValueSymbols,
+            FrenchPortfolioSet.MarketTbill => MarketTbillSymbols,
+            _ => Industries.Select(i => "FF_" + i.ToUpperInvariant()).ToImmutableArray()
+        };
+        var restriction = set switch
+        {
+            FrenchPortfolioSet.SizeValue25 => SizeValueRestriction,
+            FrenchPortfolioSet.MarketTbill => MarketTbillRestriction,
+            _ => Restriction
+        };
         var converter = VersionFor(set);
-        var sources = new[] { portfolioSource, "french-factors-monthly", "ecb-reference-history" }
+        var sources = (portfolioSource is null ? new[] { "french-factors-monthly", "ecb-reference-history" } : new[] { portfolioSource, "french-factors-monthly", "ecb-reference-history" })
             .Select(id => store.Observations(id).OrderBy(o => o.ObservedAt).LastOrDefault() ?? throw new ResearchException("return-capture-missing")).ToArray();
-        var industry = Read(store.Bytes(sources[0].Sha256), set).ToDictionary(x => x.MonthEnd);
-        var factors = Read(store.Bytes(sources[1].Sha256), false).ToDictionary(x => x.MonthEnd);
-        var rates = EcbReferenceRates.Parse(store.Bytes(sources[2].Sha256)).Rates.Where(r => r.Currency is "GBP" or "USD")
+        var factorCapture = sources[^2]; var fxCapture = sources[^1];
+        var factors = Read(store.Bytes(factorCapture.Sha256), false).ToDictionary(x => x.MonthEnd);
+        // Factor columns: Mkt-RF, SMB, HML, RF (percent). The market asset is Mkt-RF + RF; T-bills are RF.
+        var industry = portfolioSource is null
+            ? factors.ToDictionary(x => x.Key, x => new FrenchMonth(x.Key, [x.Value.PercentReturns[0] + x.Value.PercentReturns[3], x.Value.PercentReturns[3]]))
+            : Read(store.Bytes(sources[0].Sha256), set).ToDictionary(x => x.MonthEnd);
+        var rates = EcbReferenceRates.Parse(store.Bytes(fxCapture.Sha256)).Rates.Where(r => r.Currency is "GBP" or "USD")
             .GroupBy(r => r.ReferenceDate).Where(g => g.Count() == 2).ToDictionary(g => g.Key,
                 g => g.Single(r => r.Currency == "GBP").CurrencyUnitsPerEuro / g.Single(r => r.Currency == "USD").CurrencyUnitsPerEuro);
         var csv = new StringBuilder("date,symbol,total_return_index_gbp\n");
@@ -128,9 +155,12 @@ public static class FrenchReturnPanel
         var bytes = Encoding.UTF8.GetBytes(csv.ToString());
         var metadata = JsonSerializer.SerializeToUtf8Bytes(new
         {
-            source = (set == FrenchPortfolioSet.SizeValue25
-                ? "Kenneth French 25 value-weighted size/book-to-market research portfolios + market (Mkt-RF + RF); GBP conversion from ECB reference rates. "
-                : "Kenneth French 10 value-weighted industry research portfolios + market (Mkt-RF + RF); GBP conversion from ECB reference rates. ") + restriction,
+            source = set switch
+            {
+                FrenchPortfolioSet.SizeValue25 => "Kenneth French 25 value-weighted size/book-to-market research portfolios + market (Mkt-RF + RF); GBP conversion from ECB reference rates. ",
+                FrenchPortfolioSet.MarketTbill => "Kenneth French research market (Mkt-RF + RF) and one-month Treasury bill (RF) returns + market benchmark; unhedged GBP conversion from ECB reference rates. ",
+                _ => "Kenneth French 10 value-weighted industry research portfolios + market (Mkt-RF + RF); GBP conversion from ECB reference rates. "
+            } + restriction,
             synthetic = false, currency = "GBP", frequency = "monthly", benchmark = "FRENCH_MARKET", researchOnly = true, researchOnlyReason = restriction,
             converter, from, to, sources,
             returnConvention = "USD monthly total research returns in percent; initial month is an index baseline only. GBP index = USD index * (GBP per USD / initial GBP per USD).",

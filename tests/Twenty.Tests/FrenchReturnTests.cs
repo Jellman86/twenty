@@ -136,4 +136,45 @@ public sealed class FrenchReturnTests
         }
         finally { Directory.Delete(root, true); }
     }
+    [Fact]
+    public void MarketTbillBuildsAResearchOnlyTwoAssetPanelFromFactorsAlone()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "twenty-french-mt-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var archive = new CaptureStore(Path.Combine(root, "captures"));
+            // Authored: market excess -1% for the first 14 months then +3%; RF 0.25% throughout; flat GBP/USD.
+            var factors = new StringBuilder("Authored unit input\n,Mkt-RF,SMB,HML,RF\n");
+            var xml = new StringBuilder("<gesmes:Envelope xmlns:gesmes=\"http://www.gesmes.org/xml/2002-08-01\" xmlns=\"http://www.ecb.int/vocabulary/2002-08-01/eurofxref\"><Cube>");
+            for (var i = 0; i < 16; i++)
+            {
+                var first = new DateOnly(1999, 1, 1).AddMonths(i); var month = first.ToString("yyyyMM", CultureInfo.InvariantCulture);
+                factors.Append(month).Append(i < 14 ? ",-1.00" : ",3.00").Append(",9,9,0.25\n");
+                xml.Append("<Cube time=\"").Append(first.AddMonths(1).AddDays(-1).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).Append("\"><Cube currency=\"USD\" rate=\"2\"/><Cube currency=\"GBP\" rate=\"1\"/></Cube>");
+            }
+            xml.Append("</Cube></gesmes:Envelope>");
+            foreach (var (id, bytes) in new[] { ("french-factors-monthly", Zip(factors.ToString(), false)), ("ecb-reference-history", Encoding.UTF8.GetBytes(xml.ToString())) })
+                archive.Record(new(Guid.NewGuid().ToString("N"), id, CaptureSources.Find(id).Url.AbsoluteUri, CaptureStore.Hash(bytes), bytes.Length,
+                    "application/octet-stream", DateTimeOffset.UtcNow, "authored-unit", false), bytes, false);
+            // No industry or size/value capture exists: the market/T-bill set must not require one.
+            var files = FrenchReturnPanel.Build(archive, new(1999, 1, 31), new(2000, 4, 30), FrenchPortfolioSet.MarketTbill);
+            var panel = MonthlyPanel.Read(files.Csv, files.Metadata);
+            Assert.Equal(["FF_MARKET", "FF_TBILL"], panel.Assets.ToArray()); Assert.Equal("FRENCH_MARKET", panel.Benchmark);
+            Assert.True(panel.ResearchOnly); Assert.False(panel.Synthetic);
+            var tbill = 100m; for (var i = 0; i < 15; i++) tbill *= 1.0025m;
+            Assert.Equal(tbill, panel.Index(15, "FF_TBILL"));
+            var market = 100m; for (var i = 1; i < 16; i++) market *= i < 14 ? 0.9925m : 1.0325m;
+            Assert.Equal(market, panel.Index(15, "FF_MARKET"));
+            Assert.Equal(panel.Index(15, "FF_MARKET"), panel.Index(15, "FRENCH_MARKET"));
+            // The engine's 12-1 momentum feature ranks T-bills above a falling market: the consumer sees an absolute-momentum choice.
+            var momentum = panel.Features(15).Select(f => f[2]).ToArray();
+            Assert.True(momentum[1] > momentum[0]);
+            using var metadata = JsonDocument.Parse(files.Metadata);
+            Assert.Equal("french-market-tbill-gbp-v1", metadata.RootElement.GetProperty("converter").GetString());
+            Assert.Equal(2, metadata.RootElement.GetProperty("sources").GetArrayLength());
+            Assert.Equal("study-research-only-panel", Assert.Throws<ResearchException>(() => StudyProtocol.Declare(panel, 20, new(), "research", "test")).Code);
+            using var audit = JsonDocument.Parse(files.Audit); Assert.Equal(2, audit.RootElement.GetProperty("assets").GetInt32());
+        }
+        finally { Directory.Delete(root, true); }
+    }
 }

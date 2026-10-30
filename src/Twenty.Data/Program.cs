@@ -61,6 +61,7 @@ try
             !DateOnly.TryParseExact(args[6], "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var to)) throw new Twenty.Core.Research.ResearchException("return-panel-window");
         var set = args.Length == 9 || args[10] == "industry" ? FrenchPortfolioSet.Industry10
             : args[10] == "size-value25" ? FrenchPortfolioSet.SizeValue25
+            : args[10] == "market-tbill" ? FrenchPortfolioSet.MarketTbill
             : throw new Twenty.Core.Research.ResearchException("french-portfolio-set");
         using var archive = new CaptureStore(args[2]);
         var files = FrenchReturnPanel.Build(archive, from, to, set);
@@ -394,7 +395,7 @@ try
         Console.Error.WriteLine("Usage: Twenty.Data raw-replay schedule --plan <plan.json> --datasets <private-root> --archive <private-root> | raw-replay identity | raw-replay run --request <request.json> --datasets <private-root> --archive <private-root> | raw-replay verify --request-sha <sha256> --datasets <private-root> --archive <private-root>\nTwenty.Data terminal-history-audit --archive <private-captures> --reference <assertions.json> --sources <private-source-documents> [--dispositions <dispositions.json>]\n" +
             "       Twenty.Data terminal-actions --dataset <input.json> --reference <assertions.json> --dispositions <report.json> --dataset-archive <output> --created-at <iso8601-offset> [--dataset-id <id>]\n" +
             "       Twenty.Data corporate-action-audit --archive <private-captures> --reference <assertions.json> --sources <private-source-documents>\n" +
-            "       Twenty.Data french-panel --archive <captures> --from yyyy-mm-dd --to yyyy-mm-dd --output <private-inbox> [--portfolios industry|size-value25]\n" +
+            "       Twenty.Data french-panel --archive <captures> --from yyyy-mm-dd --to yyyy-mm-dd --output <private-inbox> [--portfolios industry|size-value25|market-tbill]\n" +
             "       Twenty.Data tiingo-check --archive <private-directory>\n" +
             "       Twenty.Data tiingo-history <SYMBOL> --from yyyy-mm-dd --to yyyy-mm-dd --archive <private-directory> --capture\n" +
             "       Twenty.Data listing-intervals --archive <captures> --output <private-directory> [--sources nasdaq-listed,nasdaq-other,tiingo-tickers]\n" +
