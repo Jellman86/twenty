@@ -1,5 +1,7 @@
 # Twenty research workbench
 
+> **Archived 30 October 2026.** On real, survivorship-free data, no strategy tested here beat simply buying the market each month. See [real-data findings](docs/real-data-findings-2026-10-30.md). The code is kept for reference; no further development is planned.
+
 [Public project roadmap](https://github.com/users/Jellman86/projects/1) · [Issues](https://github.com/Jellman86/twenty/issues) · [Critical literature review](docs/literature-review.md)
 
 C#/.NET 10 + Svelte 5, TypeScript and Vite. A working private growth research lab: native C# model training, speculative strategy backtests, conditional forward scenarios and durable simulated stock purchases. Python remains an independent offline research reference. A durable Trading 212 coordinator is implemented and disabled by default. Private credentials enable read-only capture; explicit account/strategy/quote/wallet evidence and compatible demo validation are required before real execution. See [the initial application](docs/initial-application.md) and [API setup instructions](docs/trading212-setup.md).
