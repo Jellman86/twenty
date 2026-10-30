@@ -32,7 +32,7 @@
     research: { title: 'Research', lede: 'Test strategy ideas on historical data before any of them is trusted with money. Every attempt is kept, including the ones that failed.' },
     workbench: { title: 'Scenarios', lede: 'See how regular monthly contributions could grow under a return you choose. This is arithmetic, not a forecast.' },
     roadmap: { title: 'Roadmap', lede: 'What is being built next, from the project board.' },
-    evidence: { title: 'Evidence', lede: 'The published research behind the strategies, and what each one has not yet shown.' },
+    evidence: { title: 'Evidence', lede: 'What Twenty’s own tests on real data have found so far, and the published research behind the strategies.' },
   };
   type ThemePref = 'system' | 'light' | 'dark';
   const themeOptions: [ThemePref, string, string][] = [

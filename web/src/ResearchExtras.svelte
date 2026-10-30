@@ -44,6 +44,16 @@
       untrack(() => void calculate());
     }
   });
+  // Static summary of docs/real-data-findings-2026-10-30.md (development trials; base costs).
+  const findings: [string, string, string][] = [
+    ['Buy the US market every month', '£21,267', ''],
+    ['Market, but move new money to T-bills on a downtrend', '£20,814', '−2%'],
+    ['Breakout: top 4 of 10 industries', '£18,103', '−15%'],
+    ['Equal split across 10 industries', '£16,463', '−23%'],
+    ['Market or T-bills, switching everything on trend', '£13,770', '−35%'],
+    ['Momentum: top 4 of 10 industries', '£13,698', '−36%'],
+    ['Twenty’s trained ridge model, top 4 industries', '£13,428', '−37%'],
+  ];
 </script>
 
 {#if view === 'workbench'}
@@ -91,6 +101,25 @@
   {/each}
   <a class="text-link" href="https://github.com/users/Jellman86/projects/1">Project board ↗</a>
 {:else}
+  <section class="panel findings" aria-labelledby="findings-title">
+    <div class="panel-heading">
+      <div><p class="eyebrow">Twenty's own tests · real data</p><h2 id="findings-title">Nothing has beaten buying the whole market</h2></div>
+      <span class="badge">Development results · Oct 2026</span>
+    </div>
+    <p>£20 a month from August 2005 to July 2024 (£4,540 paid in), on survivorship-free US research portfolios converted to pounds. Base costs.</p>
+    <div class="table-scroll">
+      <table class="stack">
+        <thead><tr><th>Approach</th><th>Ending value</th><th>Versus the market</th></tr></thead>
+        <tbody>
+          {#each findings as [name, value, gap]}
+            <tr class:best={gap === ''}><td>{name}</td><td data-label="Ending value">{value}</td><td data-label="Versus the market">{gap || 'Benchmark'}</td></tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+    <p class="dataset-note">Research index portfolios, not ETFs; the last 24 months are still unevaluated. These results nominate nothing for trading.</p>
+    <a class="text-link" href="https://github.com/Jellman86/twenty/blob/dev/docs/real-data-findings-2026-10-30.md">Full results and limits ↗</a>
+  </section>
   <div class="evidence-grid">
     <article class="panel"><h2>Machine learning in asset pricing</h2><p>Gu, Kelly & Xiu (2020). Transfer to a small long-only ISA, net of costs, is untested.</p><a href="https://doi.org/10.1093/rfs/hhaa009" class="text-link">Paper ↗</a></article>
     <article class="panel"><h2>Equal-weight baseline</h2><p>DeMiguel, Garlappi & Uppal (2009). Same-universe equal weight stays the comparator.</p><a href="https://doi.org/10.1093/rfs/hhm075" class="text-link">Paper ↗</a></article>
